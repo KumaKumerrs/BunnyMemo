@@ -1,0 +1,76 @@
+package com.example.widgets
+
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+enum class PlannerWidgetKind(val providerClass: Class<*>) {
+    CALENDAR(CalendarAppWidgetProvider::class.java),
+    CLASS_SCHEDULE(ClassScheduleAppWidgetProvider::class.java),
+    TASKS(TasksAppWidgetProvider::class.java),
+    QUICK_ACTIONS(QuickActionsAppWidgetProvider::class.java)
+}
+
+/**
+ * Coordinates automatic refresh and one-tap launcher pinning for all Bunny Memo home screen widgets.
+ */
+object WidgetUpdateManager {
+    private const val TAG = "WidgetUpdateMgr"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun refreshAllWidgets(context: Context) {
+        val appContext = context.applicationContext
+        scope.launch {
+            try {
+                val manager = AppWidgetManager.getInstance(appContext)
+                val calIds = manager.getAppWidgetIds(ComponentName(appContext, CalendarAppWidgetProvider::class.java))
+                val clsIds = manager.getAppWidgetIds(ComponentName(appContext, ClassScheduleAppWidgetProvider::class.java))
+                val taskIds = manager.getAppWidgetIds(ComponentName(appContext, TasksAppWidgetProvider::class.java))
+                val quickIds = manager.getAppWidgetIds(ComponentName(appContext, QuickActionsAppWidgetProvider::class.java))
+
+                if (calIds.isEmpty() && clsIds.isEmpty() && taskIds.isEmpty() && quickIds.isEmpty()) {
+                    return@launch
+                }
+
+                val snapshot = WidgetDataLoader.load(appContext)
+                if (calIds.isNotEmpty()) {
+                    CalendarAppWidgetProvider.updateWidgets(appContext, manager, calIds, snapshot)
+                }
+                if (clsIds.isNotEmpty()) {
+                    ClassScheduleAppWidgetProvider.updateWidgets(appContext, manager, clsIds, snapshot)
+                }
+                if (taskIds.isNotEmpty()) {
+                    TasksAppWidgetProvider.updateWidgets(appContext, manager, taskIds, snapshot)
+                }
+                if (quickIds.isNotEmpty()) {
+                    QuickActionsAppWidgetProvider.updateWidgets(appContext, manager, quickIds, snapshot)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Widget refresh skipped: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Requests the launcher to pin the selected widget directly to the user's home screen (API 26+).
+     * Returns true if the pin prompt was dispatched to the launcher.
+     */
+    fun requestPinWidget(context: Context, kind: PlannerWidgetKind): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            val manager = AppWidgetManager.getInstance(context)
+            if (!manager.isRequestPinAppWidgetSupported) return false
+            val provider = ComponentName(context, kind.providerClass)
+            manager.requestPinAppWidget(provider, null, null)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to request pin widget ${kind.name}: ${e.message}")
+            false
+        }
+    }
+}

@@ -21,11 +21,14 @@ data class LocalMigrationSnapshot(
 }
 
 /**
- * Device-local Room implementation of [PlannerDataSource] used whenever the user chooses
- * "Sign in later" and keeps their memos on-device without a Google account.
+ * Offline-first Room implementation of [PlannerDataSource].
+ * Every write persists immediately to Room and records a [PendingSyncOperationEntity] in the
+ * local outbox (`pending_sync_ops`) so [RoomFirestoreSyncService] can push pending local changes
+ * to Firestore automatically whenever signed in and a network connection is available/restored.
  */
 class LocalPlannerRepository(
-    private val dao: LocalPlannerDao
+    private val dao: LocalPlannerDao,
+    private val onMutationEnqueued: (() -> Unit)? = null
 ) : PlannerDataSource {
 
     companion object {
@@ -37,9 +40,9 @@ class LocalPlannerRepository(
 
     private fun Long.toTimestamp(): Timestamp = Timestamp(Date(this))
 
-    private fun LocalProfileEntity.toModel(): UserProfile = UserProfile(
-        id = id,
-        userId = id,
+    private fun LocalProfileEntity.toModel(effectiveUserId: String): UserProfile = UserProfile(
+        id = effectiveUserId,
+        userId = effectiveUserId,
         dedicationText = dedicationText,
         hasSeenDedication = hasSeenDedication,
         defaultReminderHour = defaultReminderHour,
@@ -48,9 +51,9 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    private fun LocalItemEntity.toModel(): PlannerItem = PlannerItem(
+    private fun LocalItemEntity.toModel(effectiveUserId: String): PlannerItem = PlannerItem(
         id = id,
-        userId = LOCAL_USER_ID,
+        userId = effectiveUserId,
         type = type,
         title = title,
         notes = notes,
@@ -65,9 +68,9 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    private fun LocalStepEntity.toModel(): PlannerStep = PlannerStep(
+    private fun LocalStepEntity.toModel(effectiveUserId: String): PlannerStep = PlannerStep(
         id = id,
-        userId = LOCAL_USER_ID,
+        userId = effectiveUserId,
         itemId = itemId,
         title = title,
         completed = completed,
@@ -78,9 +81,9 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    private fun LocalReminderEntity.toModel(): PlannerReminder = PlannerReminder(
+    private fun LocalReminderEntity.toModel(effectiveUserId: String): PlannerReminder = PlannerReminder(
         id = id,
-        userId = LOCAL_USER_ID,
+        userId = effectiveUserId,
         itemId = itemId,
         kind = kind,
         offsetMinutes = offsetMinutes,
@@ -95,9 +98,9 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    private fun LocalClassScheduleEntity.toModel(): ClassScheduleItem = ClassScheduleItem(
+    private fun LocalClassScheduleEntity.toModel(effectiveUserId: String): ClassScheduleItem = ClassScheduleItem(
         id = id,
-        userId = LOCAL_USER_ID,
+        userId = effectiveUserId,
         subject = subject,
         room = room,
         repeatMode = repeatMode,
@@ -119,7 +122,23 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    // --- Migration helpers ---
+    private suspend fun enqueueUpsert(entityType: String, entityId: String, now: Long) {
+        dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(entityType, entityId, now))
+        onMutationEnqueued?.invoke()
+    }
+
+    private suspend fun enqueueDelete(entityType: String, entityId: String, now: Long) {
+        dao.upsertPendingSyncOp(PendingSyncOperationEntity.delete(entityType, entityId, now))
+        onMutationEnqueued?.invoke()
+    }
+
+    private suspend fun enqueueBatch(ops: List<PendingSyncOperationEntity>) {
+        if (ops.isEmpty()) return
+        dao.upsertPendingSyncOps(ops)
+        onMutationEnqueued?.invoke()
+    }
+
+    // --- Migration & Backfill helpers ---
 
     suspend fun readMigrationSnapshot(): LocalMigrationSnapshot {
         return LocalMigrationSnapshot(
@@ -131,6 +150,56 @@ class LocalPlannerRepository(
         )
     }
 
+    /**
+     * Ensures any pre-existing local records (e.g., created in guest mode before sync outbox
+     * existed) are queued as pending UPSERTs so [RoomFirestoreSyncService] pushes them cleanly.
+     */
+    suspend fun enqueueUnqueuedLocalDataForSync() {
+        val now = System.currentTimeMillis()
+        val existingKeys = dao.getAllPendingSyncOps().map { it.opKey }.toSet()
+        val ops = mutableListOf<PendingSyncOperationEntity>()
+
+        val profile = dao.getProfile(LOCAL_USER_ID)
+        if (profile != null &&
+            (profile.hasSeenDedication || profile.dedicationText != UserProfile.DEFAULT_DEDICATION ||
+                profile.defaultReminderHour != 9 || profile.defaultReminderMinute != 0)
+        ) {
+            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.PROFILE, LOCAL_USER_ID)
+            if (key !in existingKeys) {
+                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now))
+            }
+        }
+
+        dao.getAllItems().forEach { item ->
+            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.ITEM, item.id)
+            if (key !in existingKeys) {
+                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, item.id, now))
+            }
+        }
+        dao.getAllSteps().forEach { step ->
+            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.STEP, step.id)
+            if (key !in existingKeys) {
+                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, step.id, now))
+            }
+        }
+        dao.getAllReminders().forEach { rem ->
+            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.REMINDER, rem.id)
+            if (key !in existingKeys) {
+                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, rem.id, now))
+            }
+        }
+        dao.getAllClassSchedules().forEach { cls ->
+            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.CLASS_SCHEDULE, cls.id)
+            if (key !in existingKeys) {
+                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.CLASS_SCHEDULE, cls.id, now))
+            }
+        }
+
+        if (ops.isNotEmpty()) {
+            dao.upsertPendingSyncOps(ops)
+        }
+    }
+
     suspend fun clearAllAfterMigration() {
         dao.clearAllLocalPlannerData()
     }
@@ -138,19 +207,31 @@ class LocalPlannerRepository(
     // --- Reactive Observations ---
 
     override fun observeProfile(userId: String): Flow<UserProfile?> =
-        dao.observeProfile(LOCAL_USER_ID).map { it?.toModel() }
+        dao.observeProfile(LOCAL_USER_ID).map { it?.toModel(userId.ifBlank { LOCAL_USER_ID }) }
 
     override fun observeItems(userId: String): Flow<List<PlannerItem>> =
-        dao.observeItems().map { list -> list.map { it.toModel() } }
+        dao.observeItems().map { list ->
+            val uid = userId.ifBlank { LOCAL_USER_ID }
+            list.map { it.toModel(uid) }
+        }
 
     override fun observeSteps(userId: String): Flow<List<PlannerStep>> =
-        dao.observeSteps().map { list -> list.map { it.toModel() } }
+        dao.observeSteps().map { list ->
+            val uid = userId.ifBlank { LOCAL_USER_ID }
+            list.map { it.toModel(uid) }
+        }
 
     override fun observeReminders(userId: String): Flow<List<PlannerReminder>> =
-        dao.observeReminders().map { list -> list.map { it.toModel() } }
+        dao.observeReminders().map { list ->
+            val uid = userId.ifBlank { LOCAL_USER_ID }
+            list.map { it.toModel(uid) }
+        }
 
     override fun observeClassSchedules(userId: String): Flow<List<ClassScheduleItem>> =
-        dao.observeClassSchedules().map { list -> list.map { it.toModel() } }
+        dao.observeClassSchedules().map { list ->
+            val uid = userId.ifBlank { LOCAL_USER_ID }
+            list.map { it.toModel(uid) }
+        }
 
     // --- Profile & Dedication ---
 
@@ -195,6 +276,7 @@ class LocalPlannerRepository(
         } else {
             dao.updateDedication(LOCAL_USER_ID, cleaned, markSeen, now)
         }
+        enqueueUpsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now)
     }
 
     override suspend fun updateDefaultReminderTime(
@@ -203,12 +285,14 @@ class LocalPlannerRepository(
         minute: Int
     ): Result<Unit> = runCatching {
         ensureProfileExists(LOCAL_USER_ID)
+        val now = System.currentTimeMillis()
         dao.updateDefaultReminderTime(
             profileId = LOCAL_USER_ID,
             hour = hour.coerceIn(0, 23),
             minute = minute.coerceIn(0, 59),
-            now = System.currentTimeMillis()
+            now = now
         )
+        enqueueUpsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now)
     }
 
     // --- Items, Steps, and Reminders CRUD ---
@@ -252,7 +336,7 @@ class LocalPlannerRepository(
                 updatedAtMillis = now
             )
 
-            val draftItem = itemEntity.toModel()
+            val draftItem = itemEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
 
             val stepEntities = steps.filter { it.title.isNotBlank() }.take(50).mapIndexed { idx, step ->
                 LocalStepEntity(
@@ -294,6 +378,14 @@ class LocalPlannerRepository(
             }
 
             dao.insertItemBundle(itemEntity, stepEntities, remEntities)
+
+            val syncOps = buildList {
+                add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
+                stepEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, it.id, now)) }
+                remEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, it.id, now)) }
+            }
+            enqueueBatch(syncOps)
+
             Result.success(itemId)
         } catch (e: CancellationException) {
             throw e
@@ -326,7 +418,7 @@ class LocalPlannerRepository(
             val now = System.currentTimeMillis()
             val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
             val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK }
-            val oldCreated = dao.getAllItems().firstOrNull { it.id == itemId }?.createdAtMillis ?: now
+            val oldCreated = dao.getItemById(itemId)?.createdAtMillis ?: now
 
             val updatedEntity = LocalItemEntity(
                 id = itemId,
@@ -343,12 +435,21 @@ class LocalPlannerRepository(
                 createdAtMillis = oldCreated,
                 updatedAtMillis = now
             )
-            val updatedModel = updatedEntity.toModel()
+            val updatedModel = updatedEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
 
             dao.upsertItem(updatedEntity)
+            val syncOps = mutableListOf(
+                PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now)
+            )
 
             if (updatedReminderDrafts != null) {
+                val oldRemIds = (dao.getRemindersByItemId(itemId).map { it.id } +
+                    existingReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
                 dao.deleteRemindersByItemId(itemId)
+                oldRemIds.forEach { oldId ->
+                    syncOps.add(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, oldId, now))
+                }
+
                 val rebuilt = updatedReminderDrafts.take(10).map { rem ->
                     val safeOffset = rem.offsetMinutes.coerceIn(0, 525600)
                     val safeHour = rem.localHour.coerceIn(0, 23)
@@ -373,7 +474,12 @@ class LocalPlannerRepository(
                         updatedAtMillis = now
                     )
                 }
-                if (rebuilt.isNotEmpty()) dao.upsertReminders(rebuilt)
+                if (rebuilt.isNotEmpty()) {
+                    dao.upsertReminders(rebuilt)
+                    rebuilt.forEach { rem ->
+                        syncOps.add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, rem.id, now))
+                    }
+                }
             } else {
                 val rebuilt = existingReminders.filter { it.itemId == itemId }.map { oldRem ->
                     val newScheduledAt = PlannerDateUtils.computeScheduledAtUtcMillis(
@@ -400,9 +506,15 @@ class LocalPlannerRepository(
                         updatedAtMillis = now
                     )
                 }
-                if (rebuilt.isNotEmpty()) dao.upsertReminders(rebuilt)
+                if (rebuilt.isNotEmpty()) {
+                    dao.upsertReminders(rebuilt)
+                    rebuilt.forEach { rem ->
+                        syncOps.add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, rem.id, now))
+                    }
+                }
             }
 
+            enqueueBatch(syncOps)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -416,7 +528,9 @@ class LocalPlannerRepository(
         itemId: String,
         completed: Boolean
     ): Result<Unit> = runCatching {
-        dao.updateItemCompleted(itemId, completed, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        dao.updateItemCompleted(itemId, completed, now)
+        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
     }
 
     override suspend fun deleteItemCascade(
@@ -425,7 +539,20 @@ class LocalPlannerRepository(
         itemSteps: List<PlannerStep>,
         itemReminders: List<PlannerReminder>
     ): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        val stepIds = (dao.getStepsByItemId(itemId).map { it.id } +
+            itemSteps.filter { it.itemId == itemId }.map { it.id }).distinct()
+        val remIds = (dao.getRemindersByItemId(itemId).map { it.id } +
+            itemReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
+
         dao.deleteItemCascade(itemId)
+
+        val syncOps = buildList {
+            remIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, it, now)) }
+            stepIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.STEP, it, now)) }
+            add(PendingSyncOperationEntity.delete(SyncEntityType.ITEM, itemId, now))
+        }
+        enqueueBatch(syncOps)
     }
 
     override suspend fun addStep(
@@ -453,6 +580,7 @@ class LocalPlannerRepository(
                 updatedAtMillis = now
             )
         )
+        enqueueUpsert(SyncEntityType.STEP, id, now)
         id
     }
 
@@ -461,11 +589,15 @@ class LocalPlannerRepository(
         stepId: String,
         completed: Boolean
     ): Result<Unit> = runCatching {
-        dao.updateStepCompleted(stepId, completed, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        dao.updateStepCompleted(stepId, completed, now)
+        enqueueUpsert(SyncEntityType.STEP, stepId, now)
     }
 
     override suspend fun deleteStep(userId: String, stepId: String): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
         dao.deleteStepById(stepId)
+        enqueueDelete(SyncEntityType.STEP, stepId, now)
     }
 
     override suspend fun addReminder(
@@ -502,6 +634,7 @@ class LocalPlannerRepository(
                 updatedAtMillis = now
             )
         )
+        enqueueUpsert(SyncEntityType.REMINDER, id, now)
         id
     }
 
@@ -510,15 +643,21 @@ class LocalPlannerRepository(
         reminderId: String,
         snoozedUntilUtcMillis: Long
     ): Result<Unit> = runCatching {
-        dao.snoozeReminder(reminderId, snoozedUntilUtcMillis.coerceAtLeast(0L), System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        dao.snoozeReminder(reminderId, snoozedUntilUtcMillis.coerceAtLeast(0L), now)
+        enqueueUpsert(SyncEntityType.REMINDER, reminderId, now)
     }
 
     override suspend fun dismissReminder(userId: String, reminderId: String): Result<Unit> = runCatching {
-        dao.dismissReminder(reminderId, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        dao.dismissReminder(reminderId, now)
+        enqueueUpsert(SyncEntityType.REMINDER, reminderId, now)
     }
 
     override suspend fun deleteReminder(userId: String, reminderId: String): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
         dao.deleteReminderById(reminderId)
+        enqueueDelete(SyncEntityType.REMINDER, reminderId, now)
     }
 
     override suspend fun createClassSchedule(
@@ -563,6 +702,7 @@ class LocalPlannerRepository(
                     updatedAtMillis = now
                 )
             )
+            enqueueUpsert(SyncEntityType.CLASS_SCHEDULE, id, now)
             Result.success(id)
         } catch (e: CancellationException) {
             throw e
@@ -595,7 +735,7 @@ class LocalPlannerRepository(
             val cleanStart = CalendarDate.parse(semesterStartDate)?.toIsoString()
                 ?: CalendarDate.today().toIsoString()
             val now = System.currentTimeMillis()
-            val oldCreated = dao.getAllClassSchedules().firstOrNull { it.id == scheduleId }?.createdAtMillis ?: now
+            val oldCreated = dao.getClassScheduleById(scheduleId)?.createdAtMillis ?: now
             dao.upsertClassSchedule(
                 LocalClassScheduleEntity(
                     id = scheduleId,
@@ -615,6 +755,7 @@ class LocalPlannerRepository(
                     updatedAtMillis = now
                 )
             )
+            enqueueUpsert(SyncEntityType.CLASS_SCHEDULE, scheduleId, now)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -624,7 +765,9 @@ class LocalPlannerRepository(
     }
 
     override suspend fun deleteClassSchedule(userId: String, scheduleId: String): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
         dao.deleteClassScheduleById(scheduleId)
+        enqueueDelete(SyncEntityType.CLASS_SCHEDULE, scheduleId, now)
     }
 
     override suspend fun seedWeekendScrapbookSample(
@@ -635,7 +778,7 @@ class LocalPlannerRepository(
         val today = CalendarDate.today()
         val dueDate = today.plusDays(3)
         return createItemWithStepsAndReminders(
-            userId = LOCAL_USER_ID,
+            userId = userId.ifBlank { LOCAL_USER_ID },
             type = ItemType.PLAN,
             title = "Make a weekend scrapbook",
             notes = "Keep our favorite little snapshots and ticket stubs together.",

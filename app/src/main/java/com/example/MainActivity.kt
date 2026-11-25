@@ -2,10 +2,12 @@ package com.example
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -34,6 +36,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -50,7 +53,11 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.School
@@ -109,11 +116,11 @@ import com.example.data.AppUsageSummary
 import com.example.data.AppUsageTracker
 import com.example.data.CalendarDate
 import com.example.data.ClassScheduleItem
-import com.example.data.LocalPlannerDatabase
 import com.example.data.LocalPlannerRepository
-import com.example.data.PlannerDataSource
 import com.example.data.PlannerItem
-import com.example.data.PlannerRepository
+import com.example.data.RoomFirestoreSyncService
+import com.example.data.RoomSyncStatus
+import com.example.data.SyncPhase
 import com.example.data.onGoogleSignInClicked
 import com.example.data.signOut
 import com.example.notifications.ReminderScheduler
@@ -123,8 +130,12 @@ import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ForgetMeNotStationeryBackground
 import com.example.ui.components.HoppingBunnyLoadingScreen
 import com.example.ui.components.ItemEditorDialog
+import com.example.ui.components.PlannerSearchBar
+import com.example.ui.components.PlannerSearchResultsView
+import com.example.ui.components.QuickNoteModal
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.adaptiveDetailPaneWidth
+import com.example.ui.components.adaptiveHorizontalPadding
 import com.example.ui.components.rememberReducedMotion
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CalendarScreen
@@ -134,21 +145,25 @@ import com.example.ui.screens.ItemDetailScreen
 import com.example.ui.screens.NotificationsScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.TodayScreen
+import com.example.ui.theme.CalmSage
 import com.example.ui.theme.CloudWhite
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotTheme
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.OverdueTerracotta
+import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SkyCanvasTop
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 import com.example.viewmodel.PlannerViewModel
+import com.example.widgets.PlannerWidgetKind
+import com.example.widgets.WidgetIntents
+import com.example.widgets.WidgetUpdateManager
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -158,7 +173,16 @@ import androidx.activity.SystemBarStyle
 private const val MODE_PREFS_NAME = "bunny_memo_mode_prefs"
 private const val KEY_LOCAL_MODE_ENABLED = "local_mode_enabled"
 
+data class LaunchDirective(
+    val id: Long = System.nanoTime(),
+    val itemId: String? = null,
+    val tab: String? = null,
+    val action: String? = null
+)
+
 class MainActivity : ComponentActivity() {
+    private var latestDirective by mutableStateOf<LaunchDirective?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -171,12 +195,36 @@ class MainActivity : ComponentActivity() {
                 AndroidColor.TRANSPARENT
             )
         )
-        val initialDeepLinkItemId = intent?.getStringExtra(ReminderScheduler.EXTRA_ITEM_ID)
+        latestDirective = parseLaunchDirective(intent)
         setContent {
             ForgetMeNotTheme {
-                AppContent(initialDeepLinkItemId = initialDeepLinkItemId)
+                AppContent(
+                    launchDirective = latestDirective,
+                    onDirectiveConsumed = { consumedId ->
+                        if (latestDirective?.id == consumedId) {
+                            latestDirective = null
+                        }
+                    }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        parseLaunchDirective(intent)?.let { latestDirective = it }
+    }
+
+    private fun parseLaunchDirective(intent: Intent?): LaunchDirective? {
+        if (intent == null) return null
+        val itemId = intent.getStringExtra(ReminderScheduler.EXTRA_ITEM_ID)
+        val tab = intent.getStringExtra(WidgetIntents.EXTRA_OPEN_TAB)
+        val action = intent.getStringExtra(WidgetIntents.EXTRA_OPEN_ACTION)
+        if (itemId.isNullOrBlank() && tab.isNullOrBlank() && action.isNullOrBlank()) {
+            return null
+        }
+        return LaunchDirective(itemId = itemId, tab = tab, action = action)
     }
 }
 
@@ -191,11 +239,16 @@ private enum class PlannerTab(val labelRes: Int) {
 private enum class AppRootStage { SPLASH, AUTH, PLANNER }
 
 @Composable
-fun AppContent(initialDeepLinkItemId: String? = null) {
+fun AppContent(
+    launchDirective: LaunchDirective? = null,
+    onDirectiveConsumed: (Long) -> Unit = {}
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val usageTracker = remember(context) { AppUsageTracker.getInstance(context) }
     val usageSummary by usageTracker.usageSummary.collectAsStateWithLifecycle()
+    val syncService = remember(context) { RoomFirestoreSyncService.getInstance(context) }
+    val syncStatus by syncService.syncStatus.collectAsStateWithLifecycle()
 
     DisposableEffect(lifecycleOwner, usageTracker) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
@@ -223,13 +276,15 @@ fun AppContent(initialDeepLinkItemId: String? = null) {
     var useLocalMode by remember {
         mutableStateOf(modePrefs.getBoolean(KEY_LOCAL_MODE_ENABLED, false))
     }
-    var showLaunchSplash by rememberSaveable { mutableStateOf(true) }
+    var showLaunchSplash by rememberSaveable { mutableStateOf(launchDirective == null) }
     var migrationBanner by remember { mutableStateOf<String?>(null) }
     val reducedMotion = rememberReducedMotion()
 
     LaunchedEffect(Unit) {
-        delay(1250L)
-        showLaunchSplash = false
+        if (showLaunchSplash) {
+            delay(1250L)
+            showLaunchSplash = false
+        }
     }
 
     DisposableEffect(Unit) {
@@ -240,25 +295,20 @@ fun AppContent(initialDeepLinkItemId: String? = null) {
         onDispose { Firebase.auth.removeAuthStateListener(listener) }
     }
 
-    // Automatically migrate any local memos to Firestore when user signs in with Google
+    // Activate automatic Room-to-Firestore synchronization when signed in with Google
     LaunchedEffect(currentUser?.uid) {
-        val uid = currentUser?.uid ?: return@LaunchedEffect
-        val localRepo = LocalPlannerRepository(
-            LocalPlannerDatabase.getInstance(context).plannerDao()
-        )
-        val snapshot = localRepo.readMigrationSnapshot()
-        if (snapshot.hasUserContent) {
-            val dbId = context.getString(R.string.firestore_database_id)
-            val cloudRepo = PlannerRepository(FirebaseFirestore.getInstance(dbId))
-            cloudRepo.importLocalDataToCloud(uid, snapshot)
-                .onSuccess { importedCount ->
-                    localRepo.clearAllAfterMigration()
-                    migrationBanner = if (importedCount > 0) {
-                        "Signed in! Synced $importedCount local memo(s) to your private cloud."
-                    } else {
-                        "Signed in! Your private cloud sync is now active."
-                    }
-                }
+        val uid = currentUser?.uid
+        if (uid.isNullOrBlank()) {
+            syncService.stopCloudSync()
+        } else {
+            syncService.startCloudSyncForUser(uid)
+        }
+    }
+
+    // Surface connection-restored sync confirmations in the snackbar
+    LaunchedEffect(syncService) {
+        syncService.syncEvents.collect { msg ->
+            migrationBanner = msg
         }
     }
 
@@ -297,22 +347,26 @@ fun AppContent(initialDeepLinkItemId: String? = null) {
             AppRootStage.PLANNER -> {
                 val user = currentUser
                 val isLocalMode = user == null
-                val sessionKey = if (isLocalMode) LocalPlannerRepository.LOCAL_USER_ID else user!!.uid
+                val sessionKey = if (isLocalMode) LocalPlannerRepository.LOCAL_USER_ID else user.uid
 
-                // Key by sessionKey so transitioning between local Room storage and signed-in Firestore cleanly swaps ViewModel
+                // Key by sessionKey so transitioning between local guest mode and signed-in cloud sync refreshes ViewModel
                 key(sessionKey) {
                     PlannerWorkspaceShell(
                         isLocalMode = isLocalMode,
                         currentUserId = sessionKey,
                         userEmail = user?.email,
                         usageSummary = usageSummary,
-                        initialDeepLinkItemId = initialDeepLinkItemId,
+                        syncStatus = syncStatus,
+                        onRequestManualSync = { syncService.requestSync(restoredFromOffline = false) },
+                        launchDirective = launchDirective,
+                        onDirectiveConsumed = onDirectiveConsumed,
                         externalBannerMessage = migrationBanner,
                         onClearExternalBanner = { migrationBanner = null },
                         onSignedInFromLocal = {
                             currentUser = Firebase.auth.currentUser
                         },
                         onSwitchToLocalAfterSignOut = {
+                            syncService.stopCloudSync()
                             modePrefs.edit().putBoolean(KEY_LOCAL_MODE_ENABLED, true).apply()
                             useLocalMode = true
                         }
@@ -332,7 +386,10 @@ private fun PlannerWorkspaceShell(
     currentUserId: String,
     userEmail: String?,
     usageSummary: AppUsageSummary,
-    initialDeepLinkItemId: String?,
+    syncStatus: RoomSyncStatus,
+    onRequestManualSync: () -> Unit,
+    launchDirective: LaunchDirective?,
+    onDirectiveConsumed: (Long) -> Unit,
     externalBannerMessage: String?,
     onClearExternalBanner: () -> Unit,
     onSignedInFromLocal: () -> Unit,
@@ -350,12 +407,9 @@ private fun PlannerWorkspaceShell(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val dataSource: PlannerDataSource = if (isLocalMode) {
-                    LocalPlannerRepository(LocalPlannerDatabase.getInstance(app).plannerDao())
-                } else {
-                    val databaseId = app.getString(R.string.firestore_database_id)
-                    PlannerRepository(FirebaseFirestore.getInstance(databaseId))
-                }
+                // Offline-first Room repository wired to RoomFirestoreSyncService:
+                // all writes persist immediately to Room and push automatically to Firestore when online
+                val dataSource = RoomFirestoreSyncService.getInstance(app).createOfflineFirstDataSource()
                 PlannerViewModel(
                     repository = dataSource,
                     reminderScheduler = ReminderScheduler(app),
@@ -411,7 +465,7 @@ private fun PlannerWorkspaceShell(
     var activeTab by rememberSaveable { mutableStateOf(PlannerTab.TODAY) }
     var selectedDateIso by rememberSaveable { mutableStateOf(CalendarDate.today().toIsoString()) }
     val selectedDate = CalendarDate.parse(selectedDateIso) ?: CalendarDate.today()
-    var selectedItemId by rememberSaveable { mutableStateOf(initialDeepLinkItemId) }
+    var selectedItemId by rememberSaveable { mutableStateOf<String?>(null) }
 
     var showEditorDialog by remember { mutableStateOf(false) }
     var editorPrefillDate by remember { mutableStateOf(CalendarDate.today()) }
@@ -421,6 +475,41 @@ private fun PlannerWorkspaceShell(
     var classPrefillDayOfWeek by remember { mutableStateOf<Int?>(null) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var forceShowDedication by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var showQuickNoteModal by remember { mutableStateOf(false) }
+    var quickNotePrefillText by remember { mutableStateOf("") }
+
+    // Apply home screen widget & notification deep-link directives cleanly
+    LaunchedEffect(launchDirective?.id) {
+        val directive = launchDirective ?: return@LaunchedEffect
+        when (directive.tab) {
+            WidgetIntents.TAB_TODAY -> activeTab = PlannerTab.TODAY
+            WidgetIntents.TAB_CALENDAR -> activeTab = PlannerTab.CALENDAR
+            WidgetIntents.TAB_CLASSES -> activeTab = PlannerTab.CLASSES
+            WidgetIntents.TAB_NOTIFICATIONS -> activeTab = PlannerTab.NOTIFICATIONS
+            WidgetIntents.TAB_REPORTS -> activeTab = PlannerTab.REPORTS
+        }
+        if (!directive.itemId.isNullOrBlank()) {
+            selectedItemId = directive.itemId
+        }
+        when (directive.action) {
+            WidgetIntents.ACTION_OPEN_QUICK_NOTE -> {
+                quickNotePrefillText = ""
+                showQuickNoteModal = true
+            }
+            WidgetIntents.ACTION_OPEN_ADD_ITEM -> {
+                editingItem = null
+                editorPrefillDate = CalendarDate.today()
+                showEditorDialog = true
+            }
+            WidgetIntents.ACTION_OPEN_ADD_CLASS -> {
+                editingClassSchedule = null
+                classPrefillDayOfWeek = CalendarDate.today().dayOfWeekIndex()
+                showClassEditorModal = true
+            }
+        }
+        onDirectiveConsumed(directive.id)
+    }
 
     // Optional Google Sign-In modal state for local-mode users
     var showCloudSyncModal by remember { mutableStateOf(false) }
@@ -636,13 +725,36 @@ private fun PlannerWorkspaceShell(
                                                                 style = MaterialTheme.typography.titleLarge,
                                                                 color = MidnightNavy
                                                             )
-                                                            if (isLocalMode) {
-                                                                Text(
-                                                                    text = stringResource(R.string.local_mode_badge),
-                                                                    style = MaterialTheme.typography.labelSmall,
-                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            val statusText = when {
+                                                                isLocalMode -> stringResource(R.string.local_mode_badge)
+                                                                syncStatus.phase == SyncPhase.SYNCING -> stringResource(
+                                                                    R.string.sync_status_syncing,
+                                                                    syncStatus.pendingCount.coerceAtLeast(1)
                                                                 )
+                                                                syncStatus.phase == SyncPhase.OFFLINE_QUEUED -> stringResource(
+                                                                    R.string.sync_status_offline_pending,
+                                                                    syncStatus.pendingCount
+                                                                )
+                                                                syncStatus.phase == SyncPhase.OFFLINE_IDLE -> stringResource(
+                                                                    R.string.sync_status_offline_idle
+                                                                )
+                                                                syncStatus.phase == SyncPhase.ERROR -> stringResource(
+                                                                    R.string.sync_status_error,
+                                                                    syncStatus.pendingCount
+                                                                )
+                                                                else -> stringResource(R.string.sync_status_synced)
                                                             }
+                                                            val statusColor = when {
+                                                                !isLocalMode && (syncStatus.phase == SyncPhase.OFFLINE_QUEUED || syncStatus.phase == SyncPhase.ERROR) -> OverdueTerracotta
+                                                                !isLocalMode && syncStatus.phase == SyncPhase.SYNCING -> DeepBlue
+                                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                            }
+                                                            Text(
+                                                                text = statusText,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = statusColor,
+                                                                modifier = Modifier.testTag("top_bar_sync_status_text")
+                                                            )
                                                         }
                                                     }
                                                 },
@@ -659,6 +771,28 @@ private fun PlannerWorkspaceShell(
                                                                 imageVector = Icons.Outlined.CloudUpload,
                                                                 contentDescription = "Sign in with Google to back up memos",
                                                                 tint = DeepBlue
+                                                            )
+                                                        }
+                                                    } else {
+                                                        val syncIcon = when (syncStatus.phase) {
+                                                            SyncPhase.SYNCED -> Icons.Outlined.CloudDone
+                                                            SyncPhase.SYNCING -> Icons.Outlined.CloudSync
+                                                            SyncPhase.OFFLINE_QUEUED, SyncPhase.OFFLINE_IDLE -> Icons.Outlined.CloudOff
+                                                            else -> Icons.Outlined.CloudUpload
+                                                        }
+                                                        val syncTint = when (syncStatus.phase) {
+                                                            SyncPhase.SYNCED -> CalmSage
+                                                            SyncPhase.OFFLINE_QUEUED, SyncPhase.ERROR -> OverdueTerracotta
+                                                            else -> DeepBlue
+                                                        }
+                                                        IconButton(
+                                                            onClick = onRequestManualSync,
+                                                            modifier = Modifier.testTag("top_bar_sync_now_button")
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = syncIcon,
+                                                                contentDescription = "Sync pending Room changes to Firestore",
+                                                                tint = syncTint
                                                             )
                                                         }
                                                     }
@@ -706,7 +840,10 @@ private fun PlannerWorkspaceShell(
                                                         val selected = activeTab == tab
                                                         NavigationBarItem(
                                                             selected = selected,
-                                                            onClick = { activeTab = tab },
+                                                            onClick = {
+                                                                activeTab = tab
+                                                                if (searchQuery.isNotEmpty()) searchQuery = ""
+                                                            },
                                                             icon = {
                                                                 TabIcon(
                                                                     tab = tab,
@@ -730,34 +867,57 @@ private fun PlannerWorkspaceShell(
                                         }
                                     },
                                     floatingActionButton = {
-                                        ExtendedFloatingActionButton(
-                                            onClick = {
-                                                if (activeTab == PlannerTab.CLASSES) {
-                                                    editingClassSchedule = null
-                                                    classPrefillDayOfWeek = current.todayDate().dayOfWeekIndex()
-                                                    showClassEditorModal = true
-                                                } else {
-                                                    editingItem = null
-                                                    editorPrefillDate = if (activeTab == PlannerTab.CALENDAR) {
-                                                        selectedDate
+                                        Column(
+                                            horizontalAlignment = Alignment.End,
+                                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            ExtendedFloatingActionButton(
+                                                onClick = {
+                                                    quickNotePrefillText = ""
+                                                    showQuickNoteModal = true
+                                                },
+                                                containerColor = PollenSoft,
+                                                contentColor = MidnightNavy,
+                                                shape = RoundedCornerShape(100.dp),
+                                                icon = {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.EditNote,
+                                                        contentDescription = null,
+                                                        tint = DeepBlue
+                                                    )
+                                                },
+                                                text = { Text(stringResource(R.string.action_quick_note)) },
+                                                modifier = Modifier.testTag("fab_quick_note")
+                                            )
+                                            ExtendedFloatingActionButton(
+                                                onClick = {
+                                                    if (activeTab == PlannerTab.CLASSES) {
+                                                        editingClassSchedule = null
+                                                        classPrefillDayOfWeek = current.todayDate().dayOfWeekIndex()
+                                                        showClassEditorModal = true
                                                     } else {
-                                                        current.todayDate()
+                                                        editingItem = null
+                                                        editorPrefillDate = if (activeTab == PlannerTab.CALENDAR) {
+                                                            selectedDate
+                                                        } else {
+                                                            current.todayDate()
+                                                        }
+                                                        showEditorDialog = true
                                                     }
-                                                    showEditorDialog = true
-                                                }
-                                            },
-                                            containerColor = DeepBlue,
-                                            contentColor = PureWhite,
-                                            shape = RoundedCornerShape(100.dp),
-                                            icon = {
-                                                Icon(
-                                                    imageVector = Icons.Default.Add,
-                                                    contentDescription = null
-                                                )
-                                            },
-                                            text = { Text(if (activeTab == PlannerTab.CLASSES) "Class" else "Add") },
-                                            modifier = Modifier.testTag("fab_add_item")
-                                        )
+                                                },
+                                                containerColor = DeepBlue,
+                                                contentColor = PureWhite,
+                                                shape = RoundedCornerShape(100.dp),
+                                                icon = {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = null
+                                                    )
+                                                },
+                                                text = { Text(if (activeTab == PlannerTab.CLASSES) "Class" else "Add") },
+                                                modifier = Modifier.testTag("fab_add_item")
+                                            )
+                                        }
                                     }
                                 ) { innerPadding ->
                                     Row(
@@ -775,7 +935,10 @@ private fun PlannerWorkspaceShell(
                                                     val selected = activeTab == tab
                                                     NavigationRailItem(
                                                         selected = selected,
-                                                        onClick = { activeTab = tab },
+                                                        onClick = {
+                                                            activeTab = tab
+                                                            if (searchQuery.isNotEmpty()) searchQuery = ""
+                                                        },
                                                         icon = {
                                                             TabIcon(
                                                                 tab = tab,
@@ -798,31 +961,88 @@ private fun PlannerWorkspaceShell(
                                             VerticalDivider(color = SubtleBorder)
                                         }
 
-                                        // Primary pane with crisp, lag-free directional section transitions
-                                        Box(
+                                        // Primary pane with top Planner Search Bar and crisp tab transitions
+                                        BackHandler(enabled = searchQuery.isNotBlank()) {
+                                            searchQuery = ""
+                                        }
+                                        Column(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .fillMaxHeight()
                                         ) {
-                                            AnimatedContent(
-                                                targetState = activeTab,
-                                                transitionSpec = {
-                                                    if (reducedMotion) {
-                                                        fadeIn(tween(130)) togetherWith fadeOut(tween(100))
+                                            val searchHorizontalPad = adaptiveHorizontalPadding(this@BoxWithConstraints.maxWidth)
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(
+                                                        start = searchHorizontalPad,
+                                                        end = searchHorizontalPad,
+                                                        top = 12.dp,
+                                                        bottom = 6.dp
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                PlannerSearchBar(
+                                                    query = searchQuery,
+                                                    onQueryChange = { searchQuery = it },
+                                                    modifier = Modifier.widthIn(max = 760.dp)
+                                                )
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxWidth()
+                                            ) {
+                                                val isSearching = searchQuery.isNotBlank()
+                                                AnimatedContent(
+                                                    targetState = isSearching,
+                                                    transitionSpec = {
+                                                        fadeIn(tween(150, easing = FastOutSlowInEasing)) togetherWith
+                                                            fadeOut(tween(120, easing = FastOutSlowInEasing))
+                                                    },
+                                                    label = "planner_search_mode_transition"
+                                                ) { showingSearch ->
+                                                    if (showingSearch) {
+                                                        PlannerSearchResultsView(
+                                                            query = searchQuery,
+                                                            state = current,
+                                                            selectedItemId = selectedItemId,
+                                                            onSelectItem = { id -> selectedItemId = id },
+                                                            onToggleTask = { task, checked ->
+                                                                viewModel.toggleItemCompleted(task, checked)
+                                                            },
+                                                            onEditClass = { cls ->
+                                                                editingClassSchedule = cls
+                                                                classPrefillDayOfWeek = null
+                                                                showClassEditorModal = true
+                                                            },
+                                                            onClearSearch = { searchQuery = "" },
+                                                            onSaveQueryAsQuickNote = { prefill ->
+                                                                quickNotePrefillText = prefill
+                                                                showQuickNoteModal = true
+                                                            }
+                                                        )
                                                     } else {
-                                                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                                                        (slideInHorizontally(
-                                                            animationSpec = tween(210, easing = FastOutSlowInEasing)
-                                                        ) { width -> direction * (width / 24) } +
-                                                            fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
-                                                            (slideOutHorizontally(
-                                                                animationSpec = tween(160, easing = FastOutSlowInEasing)
-                                                            ) { width -> -direction * (width / 28) } +
-                                                                fadeOut(tween(140, easing = FastOutSlowInEasing)))
-                                                    }
-                                                },
-                                                label = "section_tab_transition"
-                                            ) { targetTab ->
+                                                        AnimatedContent(
+                                                            targetState = activeTab,
+                                                            transitionSpec = {
+                                                                if (reducedMotion) {
+                                                                    fadeIn(tween(130)) togetherWith fadeOut(tween(100))
+                                                                } else {
+                                                                    val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                                                    (slideInHorizontally(
+                                                                        animationSpec = tween(210, easing = FastOutSlowInEasing)
+                                                                    ) { width -> direction * (width / 24) } +
+                                                                        fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
+                                                                        (slideOutHorizontally(
+                                                                            animationSpec = tween(160, easing = FastOutSlowInEasing)
+                                                                        ) { width -> -direction * (width / 28) } +
+                                                                            fadeOut(tween(140, easing = FastOutSlowInEasing)))
+                                                                }
+                                                            },
+                                                            label = "section_tab_transition"
+                                                        ) { targetTab ->
                                                 when (targetTab) {
                                                     PlannerTab.TODAY -> TodayScreen(
                                                         state = current,
@@ -921,6 +1141,9 @@ private fun PlannerWorkspaceShell(
                                                         usageSummary = usageSummary,
                                                         onSelectItem = { id -> selectedItemId = id }
                                                     )
+                                                }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1059,6 +1282,7 @@ private fun PlannerWorkspaceShell(
                         dailyReminderConfig = current.dailyReminderConfig,
                         isLocalMode = isLocalMode,
                         userEmail = userEmail,
+                        syncStatus = syncStatus,
                         hasNotificationPermission = hasNotificationPermission,
                         isSaving = isSaving,
                         onDismiss = { showSettingsDialog = false },
@@ -1070,6 +1294,20 @@ private fun PlannerWorkspaceShell(
                             viewModel.seedSampleScrapbookPlan { newId -> selectedItemId = newId }
                         },
                         onRequestNotificationPermission = requestNotifPermission,
+                        onSyncNow = onRequestManualSync,
+                        onPinWidget = { kind ->
+                            val pinned = WidgetUpdateManager.requestPinWidget(context, kind)
+                            WidgetUpdateManager.refreshAllWidgets(context)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (pinned) {
+                                        "Follow your launcher prompt to place the widget on your home screen."
+                                    } else {
+                                        "Long-press your home screen and choose Widgets → Bunny Memo to add it."
+                                    }
+                                )
+                            }
+                        },
                         onSignInWithGoogle = {
                             cloudSignInError = null
                             showCloudSyncModal = true
@@ -1136,6 +1374,27 @@ private fun PlannerWorkspaceShell(
                             viewModel.deleteClassSchedule(toDelete) {
                                 showClassEditorModal = false
                                 editingClassSchedule = null
+                            }
+                        }
+                    )
+                }
+
+                if (showQuickNoteModal) {
+                    QuickNoteModal(
+                        todayDate = current.todayDate(),
+                        initialText = quickNotePrefillText,
+                        isSaving = isSaving,
+                        onDismiss = {
+                            showQuickNoteModal = false
+                            quickNotePrefillText = ""
+                        },
+                        onSaveNote = { rawText, dueIso ->
+                            viewModel.createQuickNote(
+                                rawText = rawText,
+                                dueDateIso = dueIso
+                            ) {
+                                showQuickNoteModal = false
+                                quickNotePrefillText = ""
                             }
                         }
                     )

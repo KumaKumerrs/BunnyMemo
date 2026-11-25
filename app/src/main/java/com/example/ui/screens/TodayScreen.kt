@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
@@ -80,6 +81,7 @@ import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.OverdueContainer
 import com.example.ui.theme.OverdueTerracotta
+import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
@@ -182,6 +184,20 @@ fun TodayScreen(
             )
     }
 
+    // 4. Spontaneous Quick Notes (unscheduled thoughts/ideas not tied to a due date or parent plan)
+    val quickNotes = remember(state.items) {
+        state.items
+            .filter { item ->
+                item.itemType() == ItemType.TASK &&
+                    item.dueDate.isNullOrBlank() &&
+                    item.parentPlanId.isNullOrBlank()
+            }
+            .sortedWith(
+                compareBy<PlannerItem> { it.completed }
+                    .thenByDescending { it.updatedAt?.seconds ?: it.createdAt?.seconds ?: 0L }
+            )
+    }
+
     val isQuietDay = todayClasses.isEmpty() && todayEvents.isEmpty() && todayTasks.isEmpty() && dueTodaySteps.isEmpty() && approachingPlans.isEmpty()
     val totalDueCount = todayTasks.size + dueTodaySteps.size
 
@@ -199,7 +215,7 @@ fun TodayScreen(
                 .fillMaxSize()
                 .widthIn(max = containerMaxWidth)
                 .testTag("today_screen_list"),
-            contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 16.dp, bottom = 108.dp),
+            contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 10.dp, bottom = 148.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Editorial borderless hero header directly on the 60% neutral canvas
@@ -481,6 +497,24 @@ fun TodayScreen(
             }
         }
 
+            // Spontaneous Quick Notes & Ideas captured via the Quick Note FAB
+            if (quickNotes.isNotEmpty()) {
+                item(key = "sec_quick_notes") {
+                    ModernSectionHeader(
+                        title = stringResource(R.string.quick_note_section_title),
+                        count = quickNotes.size
+                    )
+                }
+                item(key = "quick_notes_grouped_panel") {
+                    QuickNotesGroupedPanel(
+                        quickNotes = quickNotes,
+                        selectedItemId = selectedItemId,
+                        onToggleNote = onToggleTask,
+                        onSelectNote = onSelectItem
+                    )
+                }
+            }
+
             // Visual Habit Tracking Calendar — blooms a forget-me-not on every day a daily task is completed
             item(key = "today_habit_garden") {
                 ForgetMeNotHabitCalendarCard(
@@ -488,6 +522,92 @@ fun TodayScreen(
                     steps = state.steps,
                     today = today,
                     onAddTaskForDate = { d -> onAddClick(d) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickNotesGroupedPanel(
+    quickNotes: List<PlannerItem>,
+    selectedItemId: String?,
+    onToggleNote: (PlannerItem, Boolean) -> Unit,
+    onSelectNote: (String) -> Unit
+) {
+    ModernPanel(
+        shape = RoundedCornerShape(22.dp),
+        elevation = 3.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("today_quick_notes_panel")
+    ) {
+        quickNotes.forEachIndexed { idx, note ->
+            val isSelected = note.id == selectedItemId
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isSelected) SkyBlue.copy(alpha = 0.25f) else PureWhite)
+                    .clickable { onSelectNote(note.id) }
+                    .padding(horizontal = 10.dp, vertical = 10.dp)
+                    .testTag("today_quick_note_${note.id}"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = note.completed,
+                    onCheckedChange = { checked -> onToggleNote(note, checked) },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = DeepBlue,
+                        uncheckedColor = MutedNavy.copy(alpha = 0.55f),
+                        checkmarkColor = PureWhite
+                    ),
+                    modifier = Modifier.testTag("today_quick_note_checkbox_${note.id}")
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = note.title,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            textDecoration = if (note.completed) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (note.completed) MutedNavy else MidnightNavy,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!note.notes.isNullOrBlank()) {
+                        Text(
+                            text = note.notes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MutedNavy,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(PollenSoft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.EditNote,
+                        contentDescription = null,
+                        tint = DeepBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            if (idx < quickNotes.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    thickness = 0.75.dp,
+                    color = SubtleBorder.copy(alpha = 0.8f)
                 )
             }
         }

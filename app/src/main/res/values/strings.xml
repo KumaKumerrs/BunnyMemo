@@ -72,4 +72,48 @@
     <string name="habit_tracker_subtitle">Complete any daily task to bloom a flower on that date.</string>
     <string name="app_usage_title">Time in Bunny Memo</string>
     <string name="app_usage_subtitle">Recorded automatically while you plan your days.</string>
+
+    <!-- Room-to-Firestore Sync Service -->
+    <string name="sync_status_synced">Cloud synced</string>
+    <string name="sync_status_syncing">Syncing %1$d…</string>
+    <string name="sync_status_offline_pending">Offline · %1$d pending</string>
+    <string name="sync_status_offline_idle">Offline · Saved locally</string>
+    <string name="sync_status_error">Sync paused · %1$d pending</string>
+    <string name="sync_action_now">Sync now</string>
+    <string name="sync_restored_banner">Connection restored — synced %1$d local change(s) to cloud.</string>
+
+    <!-- Quick Note & Planner Search -->
+    <string name="action_quick_note">Quick Note</string>
+    <string name="quick_note_modal_title">Quick Note</string>
+    <string name="quick_note_modal_subtitle">Capture a spontaneous thought or idea</string>
+    <string name="quick_note_input_placeholder">Jot down a thought, idea, or quick reminder…</string>
+    <string name="quick_note_save_button">Save note</string>
+    <string name="quick_note_saving">Saving…</string>
+    <string name="quick_note_mode_idea">Quick note</string>
+    <string name="quick_note_mode_today">For today</string>
+    <string name="quick_note_section_title">Quick notes</string>
+    <string name="search_placeholder">Search tasks, events, plans, notes…</string>
+    <string name="search_clear_cd">Clear search</string>
+    <string name="search_icon_cd">Search planner</string>
+    <string name="search_no_results_title">No matches found</string>
+    <string name="search_no_results_subtitle">Try another keyword, or capture this thought as a quick note.</string>
+    <string name="search_save_as_quick_note">Save as Quick Note</string>
+    <string name="search_clear_action">Clear search</string>
+
+    <!-- Home Screen Widgets -->
+    <string name="widget_calendar_name">Calendar</string>
+    <string name="widget_calendar_desc">Glanceable Forget-Me-Not month calendar highlighting today, scheduled days, and blooming habits.</string>
+    <string name="widget_class_schedule_name">Class Schedule</string>
+    <string name="widget_class_schedule_desc">See today’s classes, rooms, times, and live NOW/NEXT badges right on your home screen.</string>
+    <string name="widget_tasks_name">Today’s Tasks</string>
+    <string name="widget_tasks_desc">View and check off today’s tasks and quick notes straight from your home screen.</string>
+    <string name="widget_quick_actions_name">Quick Memo &amp; Bloom</string>
+    <string name="widget_quick_actions_desc">7-day Forget-Me-Not habit bloom streak with one-tap Quick Note, Add Task, Calendar, and Classes shortcuts.</string>
+    <string name="widget_cd_add_event">Add event or plan</string>
+    <string name="widget_cd_add_class">Add class</string>
+    <string name="widget_cd_add_task">Add task</string>
+    <string name="widget_cd_toggle_task">Toggle task completion</string>
+    <string name="settings_widgets_title">Home screen widgets</string>
+    <string name="settings_widgets_subtitle">Pin Calendar, Class Schedule, Tasks, or Quick Memo right to your home screen.</string>
+    <string name="settings_widgets_add">Add</string>
 </resources>

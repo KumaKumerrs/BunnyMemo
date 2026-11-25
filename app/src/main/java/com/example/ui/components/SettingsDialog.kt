@@ -16,10 +16,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -44,8 +52,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.PlannerDateUtils
+import com.example.data.RoomSyncStatus
+import com.example.data.SyncPhase
 import com.example.data.UserProfile
 import com.example.notifications.DailyReminderConfig
+import com.example.widgets.PlannerWidgetKind
+import com.example.ui.theme.CalmSage
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.OverdueTerracotta
@@ -59,6 +71,7 @@ fun SettingsDialog(
     dailyReminderConfig: DailyReminderConfig,
     isLocalMode: Boolean,
     userEmail: String?,
+    syncStatus: RoomSyncStatus,
     hasNotificationPermission: Boolean,
     isSaving: Boolean,
     onDismiss: () -> Unit,
@@ -68,6 +81,8 @@ fun SettingsDialog(
     onUpdateDailyDigestTime: (Int, Int) -> Unit,
     onAddSamplePlan: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    onSyncNow: () -> Unit,
+    onPinWidget: (PlannerWidgetKind) -> Unit = {},
     onSignInWithGoogle: () -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -333,6 +348,91 @@ fun SettingsDialog(
                 }
             }
 
+            // Home Screen Widgets (1-tap pinning on supported launchers)
+            TonalInsetPanel(
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Widgets,
+                            contentDescription = null,
+                            tint = DeepBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.settings_widgets_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MidnightNavy
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.settings_widgets_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val widgetOptions = listOf(
+                        Triple(PlannerWidgetKind.CALENDAR, R.string.widget_calendar_name, Icons.Outlined.CalendarMonth),
+                        Triple(PlannerWidgetKind.CLASS_SCHEDULE, R.string.widget_class_schedule_name, Icons.Outlined.School),
+                        Triple(PlannerWidgetKind.TASKS, R.string.widget_tasks_name, Icons.Outlined.TaskAlt),
+                        Triple(PlannerWidgetKind.QUICK_ACTIONS, R.string.widget_quick_actions_name, Icons.Outlined.EditNote)
+                    )
+                    widgetOptions.forEach { (kind, labelRes, icon) ->
+                        Surface(
+                            color = PureWhite,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.75.dp, SubtleBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = DeepBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = stringResource(labelRes),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MidnightNavy
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onPinWidget(kind) },
+                                    border = BorderStroke(1.dp, SubtleBorder),
+                                    shape = RoundedCornerShape(100.dp),
+                                    modifier = Modifier.testTag("settings_pin_widget_${kind.name.lowercase()}")
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_widgets_add),
+                                        color = DeepBlue,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             HorizontalDivider(color = SubtleBorder)
 
             // Account & Sync Section (Local Mode vs Private Cloud Sync)
@@ -385,38 +485,114 @@ fun SettingsDialog(
                     }
                 }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                val syncIcon = when (syncStatus.phase) {
+                    SyncPhase.SYNCED -> Icons.Outlined.CloudDone
+                    SyncPhase.SYNCING -> Icons.Outlined.CloudSync
+                    SyncPhase.OFFLINE_QUEUED, SyncPhase.OFFLINE_IDLE -> Icons.Outlined.CloudOff
+                    else -> Icons.Outlined.CloudUpload
+                }
+                val syncTint = when (syncStatus.phase) {
+                    SyncPhase.SYNCED -> CalmSage
+                    SyncPhase.OFFLINE_QUEUED, SyncPhase.ERROR -> OverdueTerracotta
+                    else -> DeepBlue
+                }
+                val syncSubtitle = when (syncStatus.phase) {
+                    SyncPhase.SYNCED -> {
+                        val ts = syncStatus.lastSyncedAtMillis
+                        if (ts != null) {
+                            "All local Room changes synced · ${PlannerDateUtils.formatUtcMillisTime(ts)}"
+                        } else {
+                            "Online · Automatic Room-to-Firestore sync active"
+                        }
+                    }
+                    SyncPhase.SYNCING -> "Pushing ${syncStatus.pendingCount.coerceAtLeast(1)} local change(s) to Firestore…"
+                    SyncPhase.OFFLINE_QUEUED -> "Offline · ${syncStatus.pendingCount} local change(s) queued to push when connection returns"
+                    SyncPhase.OFFLINE_IDLE -> "Offline · Edits save to Room and sync automatically when back online"
+                    SyncPhase.ERROR -> "Retry queued · ${syncStatus.pendingCount} pending change(s)"
+                    SyncPhase.LOCAL_ONLY -> "Saved on this device"
+                }
+
+                TonalInsetPanel(
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = syncIcon,
+                                    contentDescription = null,
+                                    tint = syncTint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Room ↔ Firestore auto-sync",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MidnightNavy
+                                    )
+                                    Text(
+                                        text = userEmail ?: "Signed in with Google",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = onSyncNow,
+                                enabled = syncStatus.isOnline && syncStatus.phase != SyncPhase.SYNCING,
+                                border = BorderStroke(1.dp, SubtleBorder),
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier.testTag("settings_sync_now_button")
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.sync_action_now),
+                                    color = MidnightNavy,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+
                         Text(
-                            text = "Private cloud sync",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MidnightNavy
-                        )
-                        Text(
-                            text = userEmail ?: "Signed in with Google",
+                            text = syncSubtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    TextButton(
-                        onClick = {
-                            requestDismiss()
-                            onSignOut()
-                        },
-                        modifier = Modifier.testTag("sign_out_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.Logout,
-                            contentDescription = null,
-                            tint = OverdueTerracotta,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Sign out", color = OverdueTerracotta)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    requestDismiss()
+                                    onSignOut()
+                                },
+                                modifier = Modifier.testTag("sign_out_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.Logout,
+                                    contentDescription = null,
+                                    tint = OverdueTerracotta,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sign out", color = OverdueTerracotta)
+                            }
+                        }
                     }
                 }
             }

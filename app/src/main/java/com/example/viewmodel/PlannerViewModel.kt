@@ -275,6 +275,69 @@ class PlannerViewModel(
         }
     }
 
+    fun createQuickNote(
+        rawText: String,
+        dueDateIso: String? = null,
+        onCreated: (String) -> Unit = {}
+    ) {
+        val cleaned = rawText.trim()
+        if (cleaned.isEmpty()) return
+
+        val lines = cleaned.lines().map { it.trimEnd() }
+        val firstNonBlankIdx = lines.indexOfFirst { it.isNotBlank() }
+        if (firstNonBlankIdx < 0) return
+
+        val firstLine = lines[firstNonBlankIdx].trim()
+        val remainingLines = lines.drop(firstNonBlankIdx + 1)
+            .joinToString("\n")
+            .trim()
+
+        val title: String
+        val notes: String?
+        if (firstLine.length <= 200) {
+            title = firstLine
+            notes = remainingLines.take(1000).ifBlank { null }
+        } else {
+            title = firstLine.take(197).trimEnd() + "…"
+            val overflow = buildString {
+                append(firstLine)
+                if (remainingLines.isNotBlank()) {
+                    append("\n\n")
+                    append(remainingLines)
+                }
+            }.take(1000)
+            notes = overflow
+        }
+
+        viewModelScope.launch {
+            _isSaving.value = true
+            repository.createItemWithStepsAndReminders(
+                userId = currentUserId,
+                type = ItemType.TASK,
+                title = title,
+                notes = notes,
+                startDate = null,
+                dueDate = dueDateIso?.takeIf { it.isNotBlank() },
+                dueTimeMinutes = null,
+                startAtUtcMillis = null,
+                endAtUtcMillis = null,
+                parentPlanId = null,
+                steps = emptyList(),
+                reminders = emptyList()
+            ).onSuccess { newId ->
+                _feedbackMessage.value = if (dueDateIso.isNullOrBlank()) {
+                    "Quick note saved."
+                } else {
+                    "Quick note added for today."
+                }
+                onCreated(newId)
+            }.onFailure { e ->
+                _feedbackMessage.value = e.localizedMessage ?: "Could not save quick note."
+            }
+            _isSaving.value = false
+        }
+    }
+
     fun updateItem(
         item: PlannerItem,
         type: ItemType,
