@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private planner profile, editable dedication note, and default local reminder time for the owner.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "dedicationText": { "type": "string", "description": "Editable personal dedication shown on first open." },
+        "hasSeenDedication": { "type": "boolean", "description": "Whether the owner has already dismissed the initial dedication screen." },
+        "defaultReminderHour": { "type": "integer", "description": "Default local reminder hour (0-23) for date-only items." },
+        "defaultReminderMinute": { "type": "integer", "description": "Default local reminder minute (0-59) for date-only items." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "dedicationText", "hasSeenDedication", "defaultReminderHour", "defaultReminderMinute", "createdAt", "updatedAt"]
+    },
+    "PlannerItem": {
+      "title": "PlannerItem",
+      "description": "A Plan, Task, or timed Event belonging strictly to one user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "type": { "type": "string", "enum": ["PLAN", "TASK", "EVENT"], "description": "Item category." },
+        "title": { "type": "string", "description": "Display title of the item." },
+        "notes": { "type": "string", "description": "Optional freeform notes." },
+        "completed": { "type": "boolean", "description": "Completion state for standalone tasks or manual plan completion." },
+        "startDate": { "type": "string", "description": "Date-only calendar start date in YYYY-MM-DD format." },
+        "dueDate": { "type": "string", "description": "Date-only calendar due/deadline date in YYYY-MM-DD format." },
+        "dueTimeMinutes": { "type": "integer", "description": "Optional local time of day in minutes since midnight (0-1439)." },
+        "startAtUtcMillis": { "type": "integer", "description": "UTC epoch milliseconds for timed Event start." },
+        "endAtUtcMillis": { "type": "integer", "description": "UTC epoch milliseconds for timed Event end." },
+        "parentPlanId": { "type": "string", "description": "Optional Plan ID when a Task counts as one step in a Plan." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "type", "title", "completed", "createdAt", "updatedAt"]
+    },
+    "PlannerStep": {
+      "title": "PlannerStep",
+      "description": "A milestone belonging to a Plan or a preparation step belonging to an Event.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "itemId": { "type": "string", "description": "Parent PlannerItem document ID." },
+        "title": { "type": "string", "description": "Step description." },
+        "completed": { "type": "boolean", "description": "Whether this step is complete and its forget-me-not has bloomed." },
+        "dueDate": { "type": "string", "description": "Optional step due date in YYYY-MM-DD format." },
+        "dueTimeMinutes": { "type": "integer", "description": "Optional step due time in minutes since midnight (0-1439)." },
+        "sortOrder": { "type": "integer", "description": "Ordering index within the parent item." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "itemId", "title", "completed", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "PlannerReminder": {
+      "title": "PlannerReminder",
+      "description": "Scheduled ordinary reminder or progress check-in occurrence for an item.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "itemId": { "type": "string", "description": "Parent PlannerItem document ID." },
+        "kind": { "type": "string", "enum": ["ORDINARY", "PROGRESS_CHECKIN"], "description": "Reminder type." },
+        "offsetMinutes": { "type": "integer", "description": "Minutes before deadline or event start." },
+        "localHour": { "type": "integer", "description": "Preferred local hour (0-23) for date-only reminders." },
+        "localMinute": { "type": "integer", "description": "Preferred local minute (0-59) for date-only reminders." },
+        "scheduledAtUtcMillis": { "type": "integer", "description": "Computed trigger instant in UTC epoch milliseconds." },
+        "snoozedUntilUtcMillis": { "type": "integer", "description": "Optional snooze target in UTC epoch milliseconds for this occurrence only." },
+        "occurrenceKey": { "type": "string", "description": "Stable deduplication key for this reminder occurrence." },
+        "dismissed": { "type": "boolean", "description": "Whether the owner dismissed this inbox entry." },
+        "deliveredAtUtcMillis": { "type": "integer", "description": "Optional timestamp when local notification was delivered." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "itemId", "kind", "offsetMinutes", "localHour", "localMinute", "scheduledAtUtcMillis", "occurrenceKey", "dismissed", "createdAt", "updatedAt"]
+    },
+    "ClassSchedule": {
+      "title": "ClassSchedule",
+      "description": "A customizable recurring class schedule entry with semester duration in months and optional reminder lead time.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "subject": { "type": "string", "description": "Class subject name." },
+        "room": { "type": "string", "description": "Optional room, building, or instructor note." },
+        "repeatMode": { "type": "string", "enum": ["WEEKLY", "MONTHLY_DAY"], "description": "Whether class repeats on selected weekdays or a day of the month." },
+        "daysOfWeek": { "type": "array", "items": { "type": "integer" }, "description": "Weekday indices (0=Sun..6=Sat) when repeatMode is WEEKLY." },
+        "dayOfMonth": { "type": "integer", "description": "Day of month (1-31) when repeatMode is MONTHLY_DAY." },
+        "startTimeMinutes": { "type": "integer", "description": "Class start time in minutes since midnight (0-1439)." },
+        "endTimeMinutes": { "type": "integer", "description": "Class end time in minutes since midnight (0-1439)." },
+        "semesterStartDate": { "type": "string", "description": "Semester start date in YYYY-MM-DD format." },
+        "semesterMonths": { "type": "integer", "description": "Number of months in the semester (1-12)." },
+        "notifyEnabled": { "type": "boolean", "description": "Whether class reminders are enabled." },
+        "notifyOffsetMinutes": { "type": "integer", "description": "Minutes before class start to send notification (0-10080)." },
+        "colorKey": { "type": "string", "enum": ["SKY", "CORNFLOWER", "SAGE", "POLLEN"], "description": "Soft pastel tint key for the timetable cell." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "subject", "repeatMode", "daysOfWeek", "dayOfMonth", "startTimeMinutes", "endTimeMinutes", "semesterStartDate", "semesterMonths", "notifyEnabled", "notifyOffsetMinutes", "colorKey", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private owner profile and editable dedication."
+    },
+    "/users/{userId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/PlannerItem" },
+      "description": "Owner's private Plans, Tasks, and Events."
+    },
+    "/users/{userId}/steps/{stepId}": {
+      "schema": { "$ref": "#/entities/PlannerStep" },
+      "description": "Milestones and preparation checklist steps linked to parent items."
+    },
+    "/users/{userId}/reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/PlannerReminder" },
+      "description": "Ordinary reminders and progress check-ins linked to parent items."
+    },
+    "/users/{userId}/classSchedules/{scheduleId}": {
+      "schema": { "$ref": "#/entities/ClassSchedule" },
+      "description": "Owner's customizable semester class schedule entries."
+    }
+  }
+}

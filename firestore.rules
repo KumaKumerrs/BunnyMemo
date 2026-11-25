@@ -1,0 +1,300 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened reusable primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOptionalDateStr(data, field) {
+      return !(field in data) || data[field] == null ||
+        (data[field] is string && data[field].size() <= 20 &&
+         (data[field].size() == 0 || data[field].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+    }
+
+    function isOptionalMinutes(data, field) {
+      return !(field in data) || data[field] == null ||
+        (data[field] is int && data[field] >= 0 && data[field] <= 1439);
+    }
+
+    function isOptionalEpochMillis(data, field) {
+      return !(field in data) || data[field] == null ||
+        (data[field] is int && data[field] >= 0 && data[field] <= 8640000000000000);
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.dedicationText is string && data.dedicationText.size() >= 1 && data.dedicationText.size() <= 500 &&
+        data.hasSeenDedication is bool &&
+        data.defaultReminderHour is int && data.defaultReminderHour >= 0 && data.defaultReminderHour <= 23 &&
+        data.defaultReminderMinute is int && data.defaultReminderMinute >= 0 && data.defaultReminderMinute <= 59 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlannerItem(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.type is string && data.type in ['PLAN', 'TASK', 'EVENT'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 1000)) &&
+        data.completed is bool &&
+        isOptionalDateStr(data, 'startDate') &&
+        isOptionalDateStr(data, 'dueDate') &&
+        isOptionalMinutes(data, 'dueTimeMinutes') &&
+        isOptionalEpochMillis(data, 'startAtUtcMillis') &&
+        isOptionalEpochMillis(data, 'endAtUtcMillis') &&
+        (!('parentPlanId' in data) || data.parentPlanId == null || isValidId(data.parentPlanId)) &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlannerStep(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        isValidId(data.itemId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.completed is bool &&
+        isOptionalDateStr(data, 'dueDate') &&
+        isOptionalMinutes(data, 'dueTimeMinutes') &&
+        data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 1000 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlannerReminder(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        isValidId(data.itemId) &&
+        data.kind is string && data.kind in ['ORDINARY', 'PROGRESS_CHECKIN'] &&
+        data.offsetMinutes is int && data.offsetMinutes >= 0 && data.offsetMinutes <= 525600 &&
+        data.localHour is int && data.localHour >= 0 && data.localHour <= 23 &&
+        data.localMinute is int && data.localMinute >= 0 && data.localMinute <= 59 &&
+        data.scheduledAtUtcMillis is int && data.scheduledAtUtcMillis >= 0 && data.scheduledAtUtcMillis <= 8640000000000000 &&
+        isOptionalEpochMillis(data, 'snoozedUntilUtcMillis') &&
+        data.occurrenceKey is string && data.occurrenceKey.size() >= 1 && data.occurrenceKey.size() <= 128 &&
+        data.dismissed is bool &&
+        isOptionalEpochMillis(data, 'deliveredAtUtcMillis') &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidClassSchedule(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 160 &&
+        (!('room' in data) || data.room == null || (data.room is string && data.room.size() <= 160)) &&
+        data.repeatMode is string && data.repeatMode in ['WEEKLY', 'MONTHLY_DAY'] &&
+        data.daysOfWeek is list && data.daysOfWeek.size() <= 7 &&
+        data.dayOfMonth is int && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+        data.startTimeMinutes is int && data.startTimeMinutes >= 0 && data.startTimeMinutes <= 1439 &&
+        data.endTimeMinutes is int && data.endTimeMinutes >= 0 && data.endTimeMinutes <= 1439 &&
+        data.semesterStartDate is string && data.semesterStartDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        data.semesterMonths is int && data.semesterMonths >= 1 && data.semesterMonths <= 12 &&
+        data.notifyEnabled is bool &&
+        data.notifyOffsetMinutes is int && data.notifyOffsetMinutes >= 0 && data.notifyOffsetMinutes <= 10080 &&
+        data.colorKey is string && data.colorKey in ['SKY', 'CORNFLOWER', 'SAGE', 'POLLEN'] &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().keys().hasAll([
+          'userId', 'dedicationText', 'hasSeenDedication',
+          'defaultReminderHour', 'defaultReminderMinute', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'dedicationText', 'hasSeenDedication',
+          'defaultReminderHour', 'defaultReminderMinute', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'dedicationText', 'hasSeenDedication',
+          'defaultReminderHour', 'defaultReminderMinute', 'updatedAt'
+        ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /items/{itemId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(itemId) &&
+          incoming().keys().hasAll([
+            'userId', 'type', 'title', 'completed', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'type', 'title', 'notes', 'completed',
+            'startDate', 'dueDate', 'dueTimeMinutes',
+            'startAtUtcMillis', 'endAtUtcMillis', 'parentPlanId',
+            'createdAt', 'updatedAt'
+          ]) &&
+          isValidPlannerItem(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(itemId) &&
+          isValidPlannerItem(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          (
+            // Action: Toggle completion
+            incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
+            // Action: Edit / Reschedule item
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'type', 'title', 'notes', 'completed',
+              'startDate', 'dueDate', 'dueTimeMinutes',
+              'startAtUtcMillis', 'endAtUtcMillis', 'parentPlanId', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+      }
+
+      match /steps/{stepId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(stepId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(stepId) &&
+          incoming().keys().hasAll([
+            'userId', 'itemId', 'title', 'completed', 'sortOrder', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'itemId', 'title', 'completed',
+            'dueDate', 'dueTimeMinutes', 'sortOrder', 'createdAt', 'updatedAt'
+          ]) &&
+          isValidPlannerStep(incoming(), userId) &&
+          existsAfter(/databases/$(database)/documents/users/$(userId)/items/$(incoming().itemId));
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(stepId) &&
+          isValidPlannerStep(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().itemId == existing().itemId &&
+          incoming().createdAt == existing().createdAt &&
+          (
+            // Action: Toggle step completion
+            incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
+            // Action: Edit / Reorder / Reschedule step
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'completed', 'dueDate', 'dueTimeMinutes', 'sortOrder', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(stepId);
+      }
+
+      match /reminders/{reminderId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(reminderId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(reminderId) &&
+          incoming().keys().hasAll([
+            'userId', 'itemId', 'kind', 'offsetMinutes', 'localHour', 'localMinute',
+            'scheduledAtUtcMillis', 'occurrenceKey', 'dismissed', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'itemId', 'kind', 'offsetMinutes', 'localHour', 'localMinute',
+            'scheduledAtUtcMillis', 'snoozedUntilUtcMillis', 'occurrenceKey',
+            'dismissed', 'deliveredAtUtcMillis', 'createdAt', 'updatedAt'
+          ]) &&
+          isValidPlannerReminder(incoming(), userId) &&
+          existsAfter(/databases/$(database)/documents/users/$(userId)/items/$(incoming().itemId));
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(reminderId) &&
+          isValidPlannerReminder(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().itemId == existing().itemId &&
+          incoming().createdAt == existing().createdAt &&
+          (
+            // Action: Snooze or dismiss single occurrence
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'snoozedUntilUtcMillis', 'dismissed', 'deliveredAtUtcMillis', 'updatedAt'
+            ]) ||
+            // Action: Rebuild reminder schedule on reschedule
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'kind', 'offsetMinutes', 'localHour', 'localMinute',
+              'scheduledAtUtcMillis', 'snoozedUntilUtcMillis', 'occurrenceKey',
+              'dismissed', 'deliveredAtUtcMillis', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(reminderId);
+      }
+
+      match /classSchedules/{scheduleId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(scheduleId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(scheduleId) &&
+          incoming().keys().hasAll([
+            'userId', 'subject', 'repeatMode', 'daysOfWeek', 'dayOfMonth',
+            'startTimeMinutes', 'endTimeMinutes', 'semesterStartDate',
+            'semesterMonths', 'notifyEnabled', 'notifyOffsetMinutes',
+            'colorKey', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'subject', 'room', 'repeatMode', 'daysOfWeek', 'dayOfMonth',
+            'startTimeMinutes', 'endTimeMinutes', 'semesterStartDate',
+            'semesterMonths', 'notifyEnabled', 'notifyOffsetMinutes',
+            'colorKey', 'createdAt', 'updatedAt'
+          ]) &&
+          isValidClassSchedule(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(scheduleId) &&
+          isValidClassSchedule(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'subject', 'room', 'repeatMode', 'daysOfWeek', 'dayOfMonth',
+            'startTimeMinutes', 'endTimeMinutes', 'semesterStartDate',
+            'semesterMonths', 'notifyEnabled', 'notifyOffsetMinutes',
+            'colorKey', 'updatedAt'
+          ]);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(scheduleId);
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+<resources>
+    <string name="app_name">Bunny Memo</string>
+    <string name="dedication_default">For you, bb. I made this little planner so you have a place for all the things you look forward to. Love you.</string>
+    <string name="dedication_open_button">Open my planner</string>
+    <string name="dedication_edit_hint">Personalize your dedication note</string>
+    <string name="nav_today">Today</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_classes">Classes</string>
+    <string name="nav_notifications">Inbox</string>
+    <string name="nav_reports">Reports</string>
+    <string name="report_monthly_tab">Monthly Report</string>
+    <string name="report_year_end_tab">Year-End Grand</string>
+    <string name="action_add">+ Add</string>
+    <string name="quiet_day_message">Nothing scheduled for today.</string>
+    <string name="quiet_day_subtext">Take a quiet breath, or add something you look forward to.</string>
+    <string name="auth_title">Bunny Memo</string>
+    <string name="bunny_loading_caption">Opening your little planner…</string>
+    <string name="auth_subtitle">One calm, private place for what is coming up, what to do today, and enough time to finish.</string>
+    <string name="auth_privacy_note">Your calendar belongs only to you. Syncs privately across your devices.</string>
+    <string name="auth_sign_in_google">Sign in with Google</string>
+    <string name="sample_plan_button">Add sample plan</string>
+    <string name="notifications_empty">All caught up. Your envelope bunny is resting.</string>
+    <string name="notifications_permission_title">Enable device reminders</string>
+    <string name="notifications_permission_body">Allow notifications for closed-app alerts. Your in-app inbox always works either way.</string>
+    <string name="notifications_permission_allow">Allow alerts</string>
+    <string name="cd_bunny_greeting">Small white greeting bunny</string>
+    <string name="cd_bunny_resting">Small white resting bunny</string>
+    <string name="cd_bunny_envelope">Small white bunny carrying a reminder envelope</string>
+    <string name="cd_bunny_celebrating">Small white celebrating bunny</string>
+    <string name="cd_forget_me_not">Forget-me-not progress flower</string>
+
+    <!-- Localized Forget-Me-Not Notification & Daily Reminder Theme -->
+    <string name="notif_channel_reminders_name">Forget-Me-Not Reminders</string>
+    <string name="notif_channel_reminders_desc">Gentle reminders and progress check-ins for your plans, tasks, and events.</string>
+    <string name="notif_channel_daily_name">Daily Forget-Me-Not Digest</string>
+    <string name="notif_channel_daily_desc">A soft daily note highlighting today’s tasks and upcoming milestones.</string>
+    <string name="notif_subtext_theme">Forget-me-not note</string>
+    <string name="notif_item_title_prefix">Forget-me-not · %1$s</string>
+    <string name="notif_checkin_title_prefix">Gentle check-in · %1$s</string>
+    <string name="notif_class_title_prefix">Class reminder · %1$s</string>
+    <string name="notif_class_body_with_room">%1$s starts at %2$s (%3$s). Your Bunny Memo is ready.</string>
+    <string name="notif_class_body_plain">%1$s starts at %2$s. Your Bunny Memo is ready.</string>
+    <string name="notif_default_body">A little note from Bunny Memo is waiting for you.</string>
+
+    <string name="notif_daily_title_both">Your forget-me-not note for today</string>
+    <string name="notif_daily_body_both">You have %1$d task(s) today and %2$d upcoming milestone(s) blooming soon — starting with “%3$s”.</string>
+    <string name="notif_daily_title_tasks">Gentle tasks waiting today</string>
+    <string name="notif_daily_body_tasks">%1$d little task(s) on your desk today, starting with “%2$s”. One bloom at a time.</string>
+    <string name="notif_daily_title_milestones">Upcoming milestones to keep close</string>
+    <string name="notif_daily_body_milestones">%1$d milestone(s) coming up soon, including “%2$s”. Plenty of time to bloom.</string>
+    <string name="notif_daily_title_quiet">A quiet forget-me-not morning</string>
+    <string name="notif_daily_body_quiet">Nothing due right now — take a gentle breath, or plant a new little plan whenever you are ready.</string>
+
+    <string name="daily_reminder_card_title">Gentle daily forget-me-not</string>
+    <string name="daily_reminder_card_subtitle">Sends one soft daily note for today’s tasks and upcoming milestones.</string>
+    <string name="daily_reminder_time_label">Daily delivery at %1$s</string>
+    <string name="daily_reminder_preview_button">Send preview</string>
+    <string name="daily_reminder_change_time">Change time</string>
+    <string name="daily_reminder_preview_sent">Sent a forget-me-not preview notification.</string>
+    <string name="daily_reminder_paused">Paused — toggle on for a gentle daily check-in.</string>
+
+    <!-- Local Mode & Sign In Later -->
+    <string name="auth_sign_in_later">Sign in later · Save locally</string>
+    <string name="auth_local_hint">Start using Bunny Memo right away. Everything stays safely on this device until you choose to sign in for cloud sync.</string>
+    <string name="local_mode_badge">Saved on this device</string>
+    <string name="local_mode_backup_title">Back up with Google anytime</string>
+    <string name="local_mode_backup_subtitle">Your plans, tasks, and milestones are saved locally on this device. Sign in whenever you want private cloud sync — we will bring all your local memos along.</string>
+    <string name="local_mode_sign_in_cta">Sign in with Google</string>
+
+    <!-- Habit Tracker & App Usage -->
+    <string name="habit_tracker_title">Forget-me-not habit garden</string>
+    <string name="habit_tracker_subtitle">Complete any daily task to bloom a flower on that date.</string>
+    <string name="app_usage_title">Time in Bunny Memo</string>
+    <string name="app_usage_subtitle">Recorded automatically while you plan your days.</string>
+</resources>

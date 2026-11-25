@@ -1,0 +1,1147 @@
+package com.example.ui.screens
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.example.data.CalendarDate
+import com.example.data.ClassScheduleItem
+import com.example.data.ItemType
+import com.example.data.PlannerDateUtils
+import com.example.data.PlannerItem
+import com.example.ui.components.FlowerProgressRow
+import com.example.ui.components.ForgetMeNotFlower
+import com.example.ui.components.ModernPanel
+import com.example.ui.components.ModernPillBadge
+import com.example.ui.components.ModernSegmentedToggle
+import com.example.ui.components.adaptiveHorizontalPadding
+import com.example.ui.components.classColorPalette
+import com.example.ui.components.rememberReducedMotion
+import com.example.ui.components.selectedPanelBorder
+import com.example.ui.components.selectedPanelContainer
+import com.example.ui.theme.CalmSage
+import com.example.ui.theme.CalmSageContainer
+import com.example.ui.theme.DeepBlue
+import com.example.ui.theme.ForgetMeNotBlue
+import com.example.ui.theme.MidnightNavy
+import com.example.ui.theme.MutedNavy
+import com.example.ui.theme.OverdueContainer
+import com.example.ui.theme.OverdueTerracotta
+import com.example.ui.theme.PollenSoft
+import com.example.ui.theme.PollenYellow
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SkyBlue
+import com.example.ui.theme.SoftIceSurface
+import com.example.viewmodel.PlannerUiState
+
+private enum class CalendarMode { MONTH, WEEK }
+
+private data class CalendarDayBucket(
+    val items: List<PlannerItem>,
+    val classes: List<ClassScheduleItem>,
+    val hasEvent: Boolean,
+    val hasPlan: Boolean,
+    val hasTask: Boolean,
+    val hasCompletedDailyTask: Boolean,
+    val hasOverdue: Boolean,
+    val previewLabel: String?
+) {
+    val hasClass: Boolean get() = classes.isNotEmpty()
+    val hasAny: Boolean get() = items.isNotEmpty() || classes.isNotEmpty()
+}
+
+private fun buildDayBucket(
+    date: CalendarDate,
+    state: PlannerUiState.Ready,
+    overdueIds: Set<String>
+): CalendarDayBucket {
+    val itemsOnDay = state.items.filter { it.appearsOnDate(date) }
+    val classesOnDay = state.classesOnDate(date)
+    var hasEvent = false
+    var hasPlan = false
+    var hasTask = false
+    var hasCompletedDailyTask = false
+    var hasOverdue = false
+    for (item in itemsOnDay) {
+        when (item.itemType()) {
+            ItemType.EVENT -> hasEvent = true
+            ItemType.PLAN -> hasPlan = true
+            ItemType.TASK -> {
+                hasTask = true
+                if (item.completed) hasCompletedDailyTask = true
+            }
+        }
+        if (item.id in overdueIds) hasOverdue = true
+    }
+    if (!hasCompletedDailyTask) {
+        hasCompletedDailyTask = state.steps.any { step ->
+            step.completed && CalendarDate.parse(step.dueDate) == date
+        }
+    }
+    val previewLabel = itemsOnDay.firstOrNull()?.title ?: classesOnDay.firstOrNull()?.subject
+    return CalendarDayBucket(
+        items = itemsOnDay,
+        classes = classesOnDay,
+        hasEvent = hasEvent,
+        hasPlan = hasPlan,
+        hasTask = hasTask,
+        hasCompletedDailyTask = hasCompletedDailyTask,
+        hasOverdue = hasOverdue,
+        previewLabel = previewLabel
+    )
+}
+
+@Composable
+fun CalendarScreen(
+    state: PlannerUiState.Ready,
+    selectedDate: CalendarDate,
+    selectedItemId: String?,
+    onSelectDate: (CalendarDate) -> Unit,
+    onSelectItem: (String) -> Unit,
+    onAddForDate: (CalendarDate) -> Unit,
+    onEditClass: (ClassScheduleItem) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val today = state.todayDate()
+    val reducedMotion = rememberReducedMotion()
+    var mode by remember { mutableStateOf(CalendarMode.MONTH) }
+    var visibleMonth by remember(selectedDate.year, selectedDate.month) {
+        mutableStateOf(CalendarDate(selectedDate.year, selectedDate.month, 1))
+    }
+
+    // Precompute overdue IDs once per data/day snapshot instead of inside every calendar cell
+    val overdueItemIds = remember(state.items, state.steps, today) {
+        state.items.mapNotNull { item ->
+            if (state.progressFor(item).overdueCount > 0) item.id else null
+        }.toSet()
+    }
+
+    val dayItems = remember(state.items, selectedDate) {
+        state.items
+            .filter { it.appearsOnDate(selectedDate) }
+            .sortedWith(
+                compareBy<PlannerItem> {
+                    when (it.itemType()) {
+                        ItemType.EVENT -> 0
+                        ItemType.TASK -> 1
+                        ItemType.PLAN -> 2
+                    }
+                }.thenBy { it.startAtUtcMillis ?: (it.dueTimeMinutes?.toLong() ?: Long.MAX_VALUE) }
+            )
+    }
+
+    val dayClasses = remember(state.classSchedules, selectedDate) {
+        state.classesOnDate(selectedDate)
+    }
+    val totalDayEntries = dayItems.size + dayClasses.size
+
+    val weekTimingsDates = remember(selectedDate, mode) {
+        if (mode == CalendarMode.WEEK) PlannerDateUtils.buildWeekDates(selectedDate) else emptyList()
+    }
+    val weekTimingsBuckets = remember(weekTimingsDates, state.items, state.classSchedules, overdueItemIds) {
+        weekTimingsDates.associateWith { date ->
+            val itemsForDay = state.items
+                .filter { it.appearsOnDate(date) }
+                .sortedBy { it.startAtUtcMillis ?: (it.dueTimeMinutes?.toLong() ?: Long.MAX_VALUE) }
+            itemsForDay to state.classesOnDate(date)
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        val horizontalPad = adaptiveHorizontalPadding(maxWidth)
+        val useSideBySide = maxWidth >= 760.dp
+        val isRoomyCells = maxWidth >= 600.dp
+
+        if (useSideBySide) {
+            // Canonical Tablet Side-by-Side Layout: Persistent Calendar Panel (Left) + Scrollable Agenda (Right)
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 1220.dp)
+                    .padding(horizontal = horizontalPad),
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1.12f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = 14.dp, bottom = 100.dp)
+                ) {
+                    CalendarGridPanel(
+                        state = state,
+                        mode = mode,
+                        visibleMonth = visibleMonth,
+                        selectedDate = selectedDate,
+                        today = today,
+                        overdueItemIds = overdueItemIds,
+                        reducedMotion = reducedMotion,
+                        roomyCells = isRoomyCells,
+                        onModeChange = { mode = it },
+                        onVisibleMonthChange = { visibleMonth = it },
+                        onSelectDate = onSelectDate
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(0.88f)
+                        .fillMaxHeight()
+                        .testTag("calendar_screen_list"),
+                    contentPadding = PaddingValues(top = 14.dp, bottom = 108.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item(key = "selected_day_header") {
+                        SelectedDayHeaderRow(
+                            selectedDate = selectedDate,
+                            totalDayEntries = totalDayEntries,
+                            onAddForDate = { onAddForDate(selectedDate) }
+                        )
+                    }
+
+                    if (totalDayEntries == 0) {
+                        item(key = "empty_selected_day") {
+                            EmptyDayPanel(selectedDate = selectedDate)
+                        }
+                    } else {
+                        if (dayClasses.isNotEmpty()) {
+                            items(dayClasses, key = { "cal_cls_${it.id}" }) { cls ->
+                                CalendarClassAgendaCard(
+                                    schedule = cls,
+                                    onClick = { onEditClass(cls) }
+                                )
+                            }
+                        }
+                        items(dayItems, key = { "cal_item_${it.id}" }) { item ->
+                            CalendarAgendaCard(
+                                item = item,
+                                state = state,
+                                isSelected = item.id == selectedItemId,
+                                onClick = { onSelectItem(item.id) }
+                            )
+                        }
+                    }
+
+                    if (mode == CalendarMode.WEEK) {
+                        item(key = "week_timings_title") {
+                            Text(
+                                text = "Week timings",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MidnightNavy,
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                            )
+                        }
+                        items(weekTimingsDates, key = { "wk_day_${it.toIsoString()}" }) { date ->
+                            val (itemsForDay, classesForDay) = weekTimingsBuckets[date] ?: (emptyList<PlannerItem>() to emptyList<ClassScheduleItem>())
+                            WeekTimingsDayRow(
+                                date = date,
+                                isToday = date == today,
+                                items = itemsForDay,
+                                classes = classesForDay,
+                                onSelectDate = { onSelectDate(date) },
+                                onSelectItem = onSelectItem,
+                                onEditClass = onEditClass
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 680.dp)
+                    .testTag("calendar_screen_list"),
+                contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 14.dp, bottom = 108.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item(key = "calendar_controls") {
+                    CalendarGridPanel(
+                        state = state,
+                        mode = mode,
+                        visibleMonth = visibleMonth,
+                        selectedDate = selectedDate,
+                        today = today,
+                        overdueItemIds = overdueItemIds,
+                        reducedMotion = reducedMotion,
+                        roomyCells = isRoomyCells,
+                        onModeChange = { mode = it },
+                        onVisibleMonthChange = { visibleMonth = it },
+                        onSelectDate = onSelectDate
+                    )
+                }
+
+                item(key = "selected_day_header") {
+                    SelectedDayHeaderRow(
+                        selectedDate = selectedDate,
+                        totalDayEntries = totalDayEntries,
+                        onAddForDate = { onAddForDate(selectedDate) }
+                    )
+                }
+
+                if (totalDayEntries == 0) {
+                    item(key = "empty_selected_day") {
+                        EmptyDayPanel(selectedDate = selectedDate)
+                    }
+                } else {
+                    if (dayClasses.isNotEmpty()) {
+                        items(dayClasses, key = { "cal_cls_${it.id}" }) { cls ->
+                            CalendarClassAgendaCard(
+                                schedule = cls,
+                                onClick = { onEditClass(cls) }
+                            )
+                        }
+                    }
+                    items(dayItems, key = { "cal_item_${it.id}" }) { item ->
+                        CalendarAgendaCard(
+                            item = item,
+                            state = state,
+                            isSelected = item.id == selectedItemId,
+                            onClick = { onSelectItem(item.id) }
+                        )
+                    }
+                }
+
+                if (mode == CalendarMode.WEEK) {
+                    item(key = "week_timings_title") {
+                        Text(
+                            text = "Week timings",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MidnightNavy,
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                        )
+                    }
+                    items(weekTimingsDates, key = { "wk_day_${it.toIsoString()}" }) { date ->
+                        val (itemsForDay, classesForDay) = weekTimingsBuckets[date] ?: (emptyList<PlannerItem>() to emptyList<ClassScheduleItem>())
+                        WeekTimingsDayRow(
+                            date = date,
+                            isToday = date == today,
+                            items = itemsForDay,
+                            classes = classesForDay,
+                            onSelectDate = { onSelectDate(date) },
+                            onSelectItem = onSelectItem,
+                            onEditClass = onEditClass
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarGridPanel(
+    state: PlannerUiState.Ready,
+    mode: CalendarMode,
+    visibleMonth: CalendarDate,
+    selectedDate: CalendarDate,
+    today: CalendarDate,
+    overdueItemIds: Set<String>,
+    reducedMotion: Boolean,
+    roomyCells: Boolean,
+    onModeChange: (CalendarMode) -> Unit,
+    onVisibleMonthChange: (CalendarDate) -> Unit,
+    onSelectDate: (CalendarDate) -> Unit
+) {
+    ModernPanel(
+        shape = RoundedCornerShape(24.dp),
+        elevation = 3.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = PlannerDateUtils.formatMonthYear(
+                        if (mode == CalendarMode.MONTH) visibleMonth else selectedDate
+                    ),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MidnightNavy,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            if (mode == CalendarMode.MONTH) {
+                                onVisibleMonthChange(visibleMonth.plusMonths(-1))
+                            } else {
+                                onSelectDate(selectedDate.plusDays(-7))
+                            }
+                        },
+                        modifier = Modifier.testTag("calendar_prev_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = "Previous",
+                            tint = MidnightNavy
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (mode == CalendarMode.MONTH) {
+                                onVisibleMonthChange(visibleMonth.plusMonths(1))
+                            } else {
+                                onSelectDate(selectedDate.plusDays(7))
+                            }
+                        },
+                        modifier = Modifier.testTag("calendar_next_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Next",
+                            tint = MidnightNavy
+                        )
+                    }
+                }
+            }
+
+            ModernSegmentedToggle(
+                options = listOf(
+                    CalendarMode.MONTH to "Month",
+                    CalendarMode.WEEK to "Week"
+                ),
+                selected = mode,
+                onSelect = onModeChange,
+                tagPrefix = "calendar_mode"
+            )
+
+            // Weekday headers
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("S", "M", "T", "W", "T", "F", "S").forEach { dayName ->
+                    Text(
+                        text = dayName,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MutedNavy,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            AnimatedContent(
+                targetState = Pair(mode, if (mode == CalendarMode.MONTH) visibleMonth else selectedDate),
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(tween(130)) togetherWith fadeOut(tween(100))
+                    } else {
+                        val (prevMode, prevDate) = initialState
+                        val (nextMode, nextDate) = targetState
+                        if (prevMode != nextMode) {
+                            fadeIn(tween(190, easing = FastOutSlowInEasing)) togetherWith
+                                fadeOut(tween(140, easing = FastOutSlowInEasing))
+                        } else {
+                            val dir = if (nextDate >= prevDate) 1 else -1
+                            (slideInHorizontally(tween(210, easing = FastOutSlowInEasing)) { w -> dir * w / 10 } +
+                                fadeIn(tween(180))) togetherWith
+                                (slideOutHorizontally(tween(170, easing = FastOutSlowInEasing)) { w -> -dir * w / 12 } +
+                                    fadeOut(tween(140)))
+                        }
+                    }
+                },
+                label = "calendar_grid_transition"
+            ) { (activeMode, anchorDate) ->
+                if (activeMode == CalendarMode.MONTH) {
+                    val gridCells = remember(anchorDate) {
+                        PlannerDateUtils.buildMonthGrid(anchorDate)
+                    }
+                    // Precompute ALL day buckets for this month ONCE (eliminates 42xN per-frame scans!)
+                    val monthBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds) {
+                        gridCells.filterNotNull().associateWith { date ->
+                            buildDayBucket(date, state, overdueItemIds)
+                        }
+                    }
+                    val rows = remember(gridCells) { gridCells.chunked(7) }
+                    val cellHeight = if (roomyCells) 68.dp else 60.dp
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        rows.forEach { week ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                week.forEach { date ->
+                                    if (date == null) {
+                                        Spacer(modifier = Modifier.weight(1f).height(cellHeight))
+                                    } else {
+                                        val bucket = monthBuckets[date]
+                                        MonthDayCell(
+                                            date = date,
+                                            isToday = date == today,
+                                            isSelected = date == selectedDate,
+                                            bucket = bucket,
+                                            cellHeight = cellHeight,
+                                            onClick = { onSelectDate(date) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val weekDates = remember(anchorDate) {
+                        PlannerDateUtils.buildWeekDates(anchorDate)
+                    }
+                    val weekBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds) {
+                        weekDates.associateWith { date -> buildDayBucket(date, state, overdueItemIds) }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        weekDates.forEach { date ->
+                            val bucket = weekBuckets[date]
+                            WeekDayChip(
+                                date = date,
+                                isToday = date == today,
+                                isSelected = date == selectedDate,
+                                bucket = bucket,
+                                onClick = { onSelectDate(date) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Highlight color legend including forget-me-not bloom marker for completed daily tasks
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ForgetMeNotFlower(bloomed = true, size = 13.dp)
+                    Text(
+                        text = "Done",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MutedNavy
+                    )
+                }
+                CalendarLegendItem(color = DeepBlue, fill = SkyBlue.copy(alpha = 0.56f), label = "Event")
+                CalendarLegendItem(color = ForgetMeNotBlue, fill = SkyBlue.copy(alpha = 0.30f), label = "Plan")
+                CalendarLegendItem(color = PollenYellow, fill = PollenSoft, label = "Task")
+                CalendarLegendItem(color = CalmSage, fill = CalmSageContainer, label = "Class")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectedDayHeaderRow(
+    selectedDate: CalendarDate,
+    totalDayEntries: Int,
+    onAddForDate: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = PlannerDateUtils.formatFullDateHeader(selectedDate),
+                style = MaterialTheme.typography.titleMedium,
+                color = MidnightNavy
+            )
+            Text(
+                text = if (totalDayEntries == 0) "No items on this day"
+                else "$totalDayEntries ${if (totalDayEntries == 1) "entry" else "entries"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MutedNavy
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Button(
+            onClick = onAddForDate,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = DeepBlue,
+                contentColor = PureWhite
+            ),
+            shape = RoundedCornerShape(100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp),
+            modifier = Modifier.testTag("calendar_add_for_date_button")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text("Add here", style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun EmptyDayPanel(selectedDate: CalendarDate) {
+    ModernPanel(
+        shape = RoundedCornerShape(20.dp),
+        elevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "Clear day. Tap “Add here” to plan something for ${PlannerDateUtils.formatCompactDate(selectedDate)}.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MutedNavy,
+            modifier = Modifier.padding(18.dp)
+        )
+    }
+}
+
+/**
+ * Airy calendar cell with clear pastel date highlights whenever a date has an Event, Plan, Task, or Class.
+ * Uses precomputed CalendarDayBucket for O(1) rendering during month transitions.
+ */
+@Composable
+private fun MonthDayCell(
+    date: CalendarDate,
+    isToday: Boolean,
+    isSelected: Boolean,
+    bucket: CalendarDayBucket?,
+    cellHeight: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasEvent = bucket?.hasEvent == true
+    val hasPlan = bucket?.hasPlan == true
+    val hasTask = bucket?.hasTask == true
+    val hasClass = bucket?.hasClass == true
+    val hasCompletedDailyTask = bucket?.hasCompletedDailyTask == true
+    val hasOverdue = bucket?.hasOverdue == true
+    val hasAny = bucket?.hasAny == true || hasCompletedDailyTask
+
+    val cellShape = RoundedCornerShape(12.dp)
+    val highlightFill = when {
+        hasOverdue -> OverdueContainer
+        hasCompletedDailyTask -> SkyBlue.copy(alpha = 0.46f)
+        hasEvent -> SkyBlue.copy(alpha = 0.56f)
+        hasPlan -> SkyBlue.copy(alpha = 0.34f)
+        hasTask -> PollenSoft
+        hasClass -> CalmSageContainer
+        isSelected -> SoftIceSurface
+        else -> Color.Transparent
+    }
+    val highlightBorder = when {
+        isSelected -> DeepBlue
+        hasOverdue -> OverdueTerracotta.copy(alpha = 0.5f)
+        hasCompletedDailyTask -> ForgetMeNotBlue.copy(alpha = 0.7f)
+        hasEvent -> DeepBlue.copy(alpha = 0.40f)
+        hasPlan -> ForgetMeNotBlue.copy(alpha = 0.45f)
+        hasTask -> PollenYellow.copy(alpha = 0.75f)
+        hasClass -> CalmSage.copy(alpha = 0.42f)
+        else -> Color.Transparent
+    }
+
+    Box(
+        modifier = modifier
+            .height(cellHeight)
+            .clip(cellShape)
+            .background(highlightFill)
+            .then(
+                if (highlightBorder != Color.Transparent) {
+                    Modifier.border(
+                        width = if (isSelected) 1.6.dp else 0.9.dp,
+                        color = highlightBorder,
+                        shape = cellShape
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 4.dp)
+            .testTag("calendar_cell_${date.toIsoString()}")
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(25.dp)
+                    .clip(CircleShape)
+                    .background(if (isToday) DeepBlue else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = date.day.toString(),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = if (isToday || isSelected || hasAny) FontWeight.Bold else FontWeight.Medium
+                    ),
+                    color = if (isToday) PureWhite else MidnightNavy
+                )
+            }
+
+            if (hasCompletedDailyTask) {
+                ForgetMeNotFlower(
+                    bloomed = true,
+                    size = 15.dp,
+                    contentDesc = "Daily task completed"
+                )
+            } else if (hasAny && bucket?.previewLabel != null) {
+                Text(
+                    text = bucket.previewLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (hasOverdue) OverdueTerracotta else MidnightNavy.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (hasAny) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    if (hasEvent) CalendarDot(color = DeepBlue)
+                    if (hasPlan) CalendarDot(color = ForgetMeNotBlue)
+                    if (hasTask && !hasCompletedDailyTask) CalendarDot(color = PollenYellow)
+                    if (hasClass) CalendarDot(color = CalmSage)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDot(color: Color) {
+    Box(
+        modifier = Modifier
+            .size(5.dp)
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+@Composable
+private fun CalendarLegendItem(
+    color: Color,
+    fill: Color,
+    label: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(fill)
+                .border(1.dp, color.copy(alpha = 0.7f), RoundedCornerShape(4.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(4.5.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MutedNavy
+        )
+    }
+}
+
+@Composable
+private fun WeekDayChip(
+    date: CalendarDate,
+    isToday: Boolean,
+    isSelected: Boolean,
+    bucket: CalendarDayBucket?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasEvent = bucket?.hasEvent == true
+    val hasPlan = bucket?.hasPlan == true
+    val hasTask = bucket?.hasTask == true
+    val hasClass = bucket?.hasClass == true
+    val hasCompletedDailyTask = bucket?.hasCompletedDailyTask == true
+    val hasAny = bucket?.hasAny == true || hasCompletedDailyTask
+
+    val shape = RoundedCornerShape(14.dp)
+    val bgColor = when {
+        isToday -> DeepBlue
+        hasCompletedDailyTask -> SkyBlue.copy(alpha = 0.56f)
+        hasEvent -> SkyBlue.copy(alpha = 0.65f)
+        hasPlan -> SkyBlue.copy(alpha = 0.42f)
+        hasTask -> PollenSoft
+        hasClass -> CalmSageContainer
+        isSelected -> SkyBlue.copy(alpha = 0.5f)
+        else -> SoftIceSurface
+    }
+    Box(
+        modifier = modifier
+            .height(58.dp)
+            .clip(shape)
+            .background(bgColor)
+            .then(
+                if (isSelected && !isToday) Modifier.border(1.5.dp, DeepBlue, shape)
+                else if (hasAny && !isToday) Modifier.border(0.9.dp, ForgetMeNotBlue.copy(alpha = 0.5f), shape)
+                else Modifier
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = date.day.toString(),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = if (isToday || hasAny) FontWeight.Bold else FontWeight.Medium
+                ),
+                color = if (isToday) PureWhite else MidnightNavy
+            )
+            if (hasCompletedDailyTask) {
+                Spacer(modifier = Modifier.height(2.dp))
+                ForgetMeNotFlower(
+                    bloomed = true,
+                    size = 14.dp,
+                    contentDesc = "Daily task completed"
+                )
+            } else if (hasAny) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                    if (hasEvent) CalendarDot(if (isToday) PureWhite else DeepBlue)
+                    if (hasPlan) CalendarDot(if (isToday) PureWhite else ForgetMeNotBlue)
+                    if (hasTask) CalendarDot(if (isToday) PureWhite else PollenYellow)
+                    if (hasClass) CalendarDot(if (isToday) PureWhite else CalmSage)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarClassAgendaCard(
+    schedule: ClassScheduleItem,
+    onClick: () -> Unit
+) {
+    val (fill, accent) = classColorPalette(schedule.colorKeyEnum())
+    ModernPanel(
+        shape = RoundedCornerShape(20.dp),
+        borderColor = accent.copy(alpha = 0.35f),
+        elevation = 2.dp,
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("calendar_class_${schedule.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(fill),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.School,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = schedule.subject,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MidnightNavy
+                )
+                Text(
+                    text = buildString {
+                        append(schedule.formattedTimeRange())
+                        if (!schedule.room.isNullOrBlank()) {
+                            append(" · ")
+                            append(schedule.room)
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MutedNavy
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (schedule.notifyEnabled) {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = "Reminder active",
+                        tint = DeepBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                ModernPillBadge(
+                    text = "Class",
+                    containerColor = CalmSageContainer,
+                    contentColor = CalmSage
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarAgendaCard(
+    item: PlannerItem,
+    state: PlannerUiState.Ready,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val progress = state.progressFor(item)
+    val timingText = when (item.itemType()) {
+        ItemType.EVENT -> PlannerDateUtils.formatEventTimeRange(item.startAtUtcMillis, item.endAtUtcMillis)
+        ItemType.TASK -> item.dueTimeMinutes?.let { "Due ${PlannerDateUtils.formatTimeOfDay(it)}" } ?: "Task"
+        ItemType.PLAN -> {
+            val due = CalendarDate.parse(item.dueDate)
+            if (due != null) "Plan · Deadline ${PlannerDateUtils.formatCompactDate(due)}" else "Plan"
+        }
+    }
+
+    ModernPanel(
+        containerColor = selectedPanelContainer(isSelected),
+        borderColor = selectedPanelBorder(isSelected),
+        shape = RoundedCornerShape(20.dp),
+        elevation = 3.dp,
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("calendar_agenda_${item.id}")
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MidnightNavy
+                    )
+                    Text(
+                        text = timingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MutedNavy
+                    )
+                }
+                ModernPillBadge(
+                    text = item.itemType().label,
+                    containerColor = SoftIceSurface,
+                    contentColor = MutedNavy
+                )
+            }
+            if (progress.totalCount > 0) {
+                FlowerProgressRow(
+                    completed = progress.completedCount,
+                    total = progress.totalCount,
+                    summaryText = progress.summaryLabel(item.itemType()),
+                    flowerSize = 18.dp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeekTimingsDayRow(
+    date: CalendarDate,
+    isToday: Boolean,
+    items: List<PlannerItem>,
+    classes: List<ClassScheduleItem>,
+    onSelectDate: () -> Unit,
+    onSelectItem: (String) -> Unit,
+    onEditClass: (ClassScheduleItem) -> Unit
+) {
+    ModernPanel(
+        shape = RoundedCornerShape(18.dp),
+        borderColor = if (isToday) DeepBlue.copy(alpha = 0.45f) else selectedPanelBorder(false),
+        elevation = 2.dp,
+        onClick = onSelectDate,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = PlannerDateUtils.formatShortDate(date),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MidnightNavy
+                )
+                if (isToday) {
+                    ModernPillBadge(
+                        text = "Today",
+                        containerColor = SkyBlue.copy(alpha = 0.65f),
+                        contentColor = DeepBlue
+                    )
+                }
+            }
+            if (items.isEmpty() && classes.isEmpty()) {
+                Text(
+                    text = "Open day",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MutedNavy
+                )
+            } else {
+                classes.forEach { cls ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CalmSageContainer)
+                            .clickable { onEditClass(cls) }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = cls.subject,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MidnightNavy,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = cls.formattedTimeRange(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CalmSage
+                        )
+                    }
+                }
+                items.forEach { item ->
+                    val timeLabel = when (item.itemType()) {
+                        ItemType.EVENT -> PlannerDateUtils.formatEventTimeRange(item.startAtUtcMillis, item.endAtUtcMillis)
+                        ItemType.TASK -> item.dueTimeMinutes?.let { PlannerDateUtils.formatTimeOfDay(it) } ?: "All day"
+                        ItemType.PLAN -> "Plan"
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SoftIceSurface)
+                            .clickable { onSelectItem(item.id) }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MidnightNavy,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = timeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MutedNavy
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
