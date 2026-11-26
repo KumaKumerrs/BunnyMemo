@@ -116,4 +116,158 @@
     <string name="settings_widgets_title">Home screen widgets</string>
     <string name="settings_widgets_subtitle">Pin Calendar, Class Schedule, Tasks, or Quick Memo right to your home screen.</string>
     <string name="settings_widgets_add">Add</string>
+
+    <!-- Haptics, Sound Effects & Subtle BGM -->
+    <string name="settings_sensory_title">Haptics, sounds &amp; cozy BGM</string>
+    <string name="settings_sensory_subtitle">Gentle tactile feedback, cozy chimes, and subtle looping background music.</string>
+    <string name="settings_haptics_label">Haptic feedback</string>
+    <string name="settings_haptics_desc">Subtle taps for completing tasks, dismissing reminders, and switching views.</string>
+    <string name="settings_sfx_label">Cute sound effects</string>
+    <string name="settings_sfx_desc">Soft 8-bit chimes for blooming tasks, quick notes, and alerts.</string>
+    <string name="settings_bgm_label">Background music (BGM)</string>
+    <string name="settings_bgm_desc">Subtle cozy morning BGM while Bunny Memo is open.</string>
+    <string name="settings_bgm_volume_label">BGM volume</string>
+    <string name="settings_bgm_track_label">BGM track</string>
+    <string name="settings_bgm_track_paper_morning">Paper Morning</string>
+    <string name="settings_bgm_track_meadow">8-Bit Meadow</string>
+    <string name="settings_bgm_track_custom">Custom Audio</string>
+    <string name="settings_bgm_import_button">Import audio file</string>
+    <string name="settings_bgm_open_youtube_button">Open YouTube</string>
+    <string name="settings_bgm_clear_custom_cd">Remove custom BGM audio</string>
+    <string name="settings_bgm_youtube_caption">Now playing Paper Morning (Royalty-Free BGM) by @CassetteToast as the built-in default BGM. You can also import your own MP3, WAV, or M4A track anytime.</string>
+    <string name="settings_test_chime_button">Test chime &amp; haptic</string>
+    <string name="cd_toggle_bgm_on">Mute background music</string>
+    <string name="cd_toggle_bgm_off">Play background music</string>
+
+    <!-- Current Week Widget -->
+    <string name="widget_weekly_calendar_name">This Week</string>
+    <string name="widget_weekly_calendar_desc">Compact current-week calendar strip showing only this week’s 7 days, scheduled tasks, and blooming forget-me-nots.</string>
+    <string name="widget_weekly_name">This Week</string>
+    <string name="widget_weekly_desc">Compact current-week calendar strip showing only this week’s 7 days, scheduled tasks, and blooming forget-me-nots.</string>
+
+    <!-- Dark Mode & Appearance -->
+    <string name="settings_appearance_title">Appearance</string>
+    <string name="settings_appearance_subtitle">Choose morning sky light mode, moonlit dark mode, or match your device.</string>
+    <string name="cd_toggle_dark_mode">Switch to dark mode</string>
+    <string name="cd_toggle_light_mode">Switch to light mode</string>
+
+    <!-- Picture Attachments -->
+    <string name="photos_section_title">Pictures</string>
+    <string name="photos_add_button">Add picture</string>
+    <string name="photos_importing">Adding…</string>
+    <string name="photos_empty_hint">Attach inspiration, notes, tickets, or reference photos (up to 4).</string>
+    <string name="photos_remove_cd">Remove picture</string>
+    <string name="photos_remove_desc">Remove picture</string>
+    <string name="photos_view_cd">Attached picture</string>
+    <string name="photos_attached_desc">Attached picture</string>
+    <string name="close_button">Close</string>
+
+    <!-- Anti-Doomscroll Bunny Focus Guard -->
+    <string name="focus_guard_title">Bunny Focus Guard</string>
+    <string name="focus_guard_subtitle">The longer you doomscroll a chosen app, the bigger the bunny grows until it fills the screen!</string>
+    <string name="focus_guard_cd">Open Bunny Focus Guard</string>
+    <string name="focus_guard_channel_name">Bunny Focus Guard</string>
+    <string name="focus_guard_channel_desc">Monitors chosen social media apps so your growing bunny can gently nudge you back to productivity.</string>
+    <string name="focus_guard_active_badge">Guarding %1$d app(s)</string>
+    <string name="focus_guard_paused_badge">Off</string>
+    <string name="focus_guard_status_active">Active</string>
+    <string name="focus_guard_status_needs_setup">Setup needed</string>
+    <string name="focus_guard_status_off">Off</string>
+    <string name="focus_guard_stop_action">Stop guard</string>
+
+    <!-- Daily Habit Tracker & Bunny Growth -->
+    <string name="daily_habits_title">Daily habits &amp; bunny growth</string>
+    <string name="daily_habits_subtitle_empty">Check off small daily goals to watch your bunny grow</string>
+    <string name="daily_habits_add_button">Goal</string>
+    <string name="daily_habits_modal_title">New daily habit</string>
+    <string name="daily_habits_modal_subtitle">Small consistent steps help your bunny grow every day</string>
+
+    <!-- Pomodoro Focus Session -->
+    <string name="focus_session_title">Focus Session</string>
+    <string name="focus_session_subtitle">Pomodoro timer that blocks distracting apps while you focus</string>
+    <string name="focus_session_cd">Open Pomodoro Focus Session timer</string>
+
+    <!-- Task Priority Tags & Filtering -->
+    <string name="priority_label">Priority</string>
+    <string name="priority_filter_all">All</string>
+    <string name="priority_high">High</string>
+    <string name="priority_medium">Medium</string>
+    <string name="priority_low">Low</string>
+    <string name="cd_task_priority_badge">%1$s priority</string>
+    <string name="priority_empty_filter_title">No %1$s priority tasks</string>
+    <string name="priority_empty_filter_subtitle">Tap All to view every task, or change a task’s priority tag.</string>
+
+    <!-- Monthly Bunny Breeds -->
+    <string name="bunny_almanac_title">12 Months of Bunny Breeds</string>
+    <string name="bunny_almanac_subtitle">A new bunny breed hops alongside you every month of the year.</string>
+    <string name="cd_monthly_bunny_badge">%1$s bunny: %2$s. Tap to view all 12 monthly breeds.</string>
+    <string name="cd_bunny_almanac_card">%1$s: %2$s — %3$s</string>
+    <string name="bunny_almanac_current_badge">This month</string>
+    <string name="bunny_almanac_close">Done</string>
+
+    <!-- Task Category Labels & Filtering -->
+    <string name="category_label">Category</string>
+    <string name="cd_task_category_badge">%1$s category</string>
+
+    <!-- Profile & Transferred Stats -->
+    <string name="nav_profile">Profile</string>
+    <string name="profile_title">Profile</string>
+    <string name="profile_subtitle">Your Bunny Memo identity, activity stats &amp; shared schedule hub.</string>
+    <string name="profile_local_guest_name">Bunny Memo Guest</string>
+    <string name="profile_local_guest_subtitle">Sign in with Google to sync memos and invite friends to your calendar.</string>
+    <string name="profile_invite_friend_cta">Invite friend to calendar</string>
+    <string name="profile_edit_dedication_cta">Edit dedication</string>
+    <string name="profile_open_settings_cta">Settings &amp; Audio</string>
+    <string name="profile_sign_in_cta">Sign in with Google</string>
+    <string name="profile_sign_out_cta">Sign out</string>
+    <string name="profile_sync_now_cta">Sync now</string>
+    <string name="profile_habits_focus_title">Focus &amp; Consistency</string>
+
+    <!-- Monthly Productivity Report Charts -->
+    <string name="report_completed_tasks_chart_title">Completed tasks &amp; category mix</string>
+    <string name="report_category_breakdown_title">Tasks completed by category</string>
+    <string name="report_milestone_time_chart_title">Time spent on milestones</string>
+    <string name="report_milestone_time_empty_hint">Log time spent on Plan or Event milestones to track effort here.</string>
+    <string name="report_top_timed_milestones_title">Top timed milestones</string>
+
+    <!-- Invite Friends to Calendar & Schedule Replies -->
+    <string name="cd_friend_profile_icon">Open %1$s\'s shared schedule</string>
+    <string name="invite_friend_title">Invite friend to calendar</string>
+    <string name="invite_friend_subtitle">Share this planned date via email so friends can reply right in Bunny Memo.</string>
+    <string name="invite_sign_in_required">Sign in with Google in Profile or Settings to send and receive shared calendar invites.</string>
+    <string name="invite_email_label">Friend\'s email address</string>
+    <string name="invite_schedule_title_label">Planned event or schedule title</string>
+    <string name="invite_send_button">Send Invite</string>
+    <string name="invite_replies_section_title">Replies on this date (%1$d)</string>
+    <string name="invite_no_replies_yet">No replies yet. Be the first to confirm or suggest an update!</string>
+    <string name="invite_reply_composer_label">Your RSVP &amp; reply on this date</string>
+    <string name="invite_reply_placeholder">Write a note about timing, place, or confirmation…</string>
+    <string name="invite_send_reply_button">Post Reply &amp; Notify</string>
+
+    <!-- Bottom-Left Interactive Month Bunny Companion -->
+    <string name="cd_month_bunny_hide_bubble">Minimize bunny speech bubble</string>
+    <string name="month_bunny_view_task">View task</string>
+    <string name="month_bunny_pat_chip">Pat</string>
+    <string name="month_bunny_pinch_chip">Pinch cheeks</string>
+    <string name="month_bunny_gesture_hint">Pat head · Pinch cheeks · Tap to talk</string>
+    <string name="month_bunny_listening_badge">Listening…</string>
+
+    <!-- Task Voice Memos -->
+    <string name="audio_memo_section_title">Voice memo</string>
+    <string name="audio_memo_subtitle">Record a quick voice note — your bunny mascot listens and cheers you on.</string>
+    <string name="audio_memo_record_button">Record</string>
+    <string name="audio_memo_re_record_button">Re-record</string>
+    <string name="audio_memo_stop_button">Stop</string>
+    <string name="audio_memo_play_button">Play</string>
+    <string name="audio_memo_delete_cd">Delete voice memo</string>
+    <string name="audio_memo_bunny_listening">Bunny is listening closely…</string>
+    <string name="audio_memo_permission_denied">Microphone permission is needed to record voice memos.</string>
+
+    <!-- Resizable Interactive Bunny Family Home Screen Widget -->
+    <string name="widget_bunny_family_name">Interactive Bunny Family</string>
+    <string name="widget_bunny_family_desc">Resizable big monthly bunny mascot with exclusive cute baby bunnies behind him! Pat head, pinch cheeks, and hear 8-bit sounds right on your home screen.</string>
+    <string name="widget_bunny_pat_btn">Pat Head</string>
+    <string name="widget_bunny_pinch_btn">Pinch Cheeks</string>
+    <string name="widget_bunny_talk_btn">8-Bit Talk</string>
+    <string name="widget_bunny_default_greeting">Pat my head or pinch my cheeks! Little baby bunnies are hopping behind me~</string>
 </resources>

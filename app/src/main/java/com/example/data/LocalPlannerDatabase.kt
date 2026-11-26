@@ -92,7 +92,12 @@ data class LocalItemEntity(
     val endAtUtcMillis: Long?,
     val parentPlanId: String?,
     val createdAtMillis: Long,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val imagePathsCsv: String? = null,
+    val priority: String = TaskPriority.MEDIUM.name,
+    val category: String = TaskCategory.PERSONAL.name,
+    val audioMemoPath: String? = null,
+    val audioMemoDurationSeconds: Int = 0
 )
 
 @Entity(tableName = "local_steps")
@@ -105,7 +110,8 @@ data class LocalStepEntity(
     val dueTimeMinutes: Int?,
     val sortOrder: Int,
     val createdAtMillis: Long,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val timeSpentMinutes: Int = 0
 )
 
 @Entity(tableName = "local_reminders")
@@ -144,6 +150,25 @@ data class LocalClassScheduleEntity(
     val updatedAtMillis: Long
 )
 
+@Entity(tableName = "local_daily_habits")
+data class LocalDailyHabitEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val iconKey: String,
+    val colorKey: String,
+    val sortOrder: Int,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long
+)
+
+@Entity(tableName = "local_habit_checkins")
+data class LocalHabitCheckInEntity(
+    @PrimaryKey val checkInKey: String, // "$habitId|$dateIso"
+    val habitId: String,
+    val dateIso: String,
+    val completedAtMillis: Long
+)
+
 @Dao
 interface LocalPlannerDao {
 
@@ -168,6 +193,37 @@ interface LocalPlannerDao {
 
     @Query("SELECT * FROM pending_sync_ops ORDER BY queuedAtMillis ASC")
     fun observePendingSyncOps(): Flow<List<PendingSyncOperationEntity>>
+
+    // Daily habits & check-ins reactive flows
+    @Query("SELECT * FROM local_daily_habits ORDER BY sortOrder ASC, createdAtMillis ASC")
+    fun observeDailyHabits(): Flow<List<LocalDailyHabitEntity>>
+
+    @Query("SELECT * FROM local_habit_checkins ORDER BY dateIso DESC, completedAtMillis DESC")
+    fun observeHabitCheckIns(): Flow<List<LocalHabitCheckInEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDailyHabit(habit: LocalDailyHabitEntity)
+
+    @Query("DELETE FROM local_daily_habits WHERE id = :habitId")
+    suspend fun deleteDailyHabitById(habitId: String)
+
+    @Query("DELETE FROM local_habit_checkins WHERE habitId = :habitId")
+    suspend fun deleteCheckInsByHabitId(habitId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHabitCheckIn(checkIn: LocalHabitCheckInEntity)
+
+    @Query("DELETE FROM local_habit_checkins WHERE checkInKey = :checkInKey")
+    suspend fun deleteHabitCheckInByKey(checkInKey: String)
+
+    @Query("SELECT * FROM local_habit_checkins WHERE checkInKey = :checkInKey LIMIT 1")
+    suspend fun getHabitCheckIn(checkInKey: String): LocalHabitCheckInEntity?
+
+    @Transaction
+    suspend fun deleteDailyHabitCascade(habitId: String) {
+        deleteCheckInsByHabitId(habitId)
+        deleteDailyHabitById(habitId)
+    }
 
     // One-shot reads for sync engine, migration & checks
     @Query("SELECT * FROM local_profile WHERE id = :profileId LIMIT 1")
@@ -242,6 +298,18 @@ interface LocalPlannerDao {
     @Query("UPDATE local_items SET completed = :completed, updatedAtMillis = :now WHERE id = :itemId")
     suspend fun updateItemCompleted(itemId: String, completed: Boolean, now: Long)
 
+    @Query("UPDATE local_items SET priority = :priority, updatedAtMillis = :now WHERE id = :itemId")
+    suspend fun updateItemPriority(itemId: String, priority: String, now: Long)
+
+    @Query("UPDATE local_items SET category = :category, updatedAtMillis = :now WHERE id = :itemId")
+    suspend fun updateItemCategory(itemId: String, category: String, now: Long)
+
+    @Query("UPDATE local_items SET imagePathsCsv = :imagePathsCsv, updatedAtMillis = :now WHERE id = :itemId")
+    suspend fun updateItemImages(itemId: String, imagePathsCsv: String?, now: Long)
+
+    @Query("UPDATE local_items SET audioMemoPath = :audioMemoPath, audioMemoDurationSeconds = :durationSeconds, updatedAtMillis = :now WHERE id = :itemId")
+    suspend fun updateItemAudioMemo(itemId: String, audioMemoPath: String?, durationSeconds: Int, now: Long)
+
     @Query("DELETE FROM local_items WHERE id = :itemId")
     suspend fun deleteItemById(itemId: String)
 
@@ -254,6 +322,9 @@ interface LocalPlannerDao {
 
     @Query("UPDATE local_steps SET completed = :completed, updatedAtMillis = :now WHERE id = :stepId")
     suspend fun updateStepCompleted(stepId: String, completed: Boolean, now: Long)
+
+    @Query("UPDATE local_steps SET timeSpentMinutes = :minutes, updatedAtMillis = :now WHERE id = :stepId")
+    suspend fun updateStepTimeSpent(stepId: String, minutes: Int, now: Long)
 
     @Query("DELETE FROM local_steps WHERE id = :stepId")
     suspend fun deleteStepById(stepId: String)
@@ -319,11 +390,23 @@ interface LocalPlannerDao {
             .filter { it.entityType == SyncEntityType.ITEM }
             .map { it.entityId }
             .toSet()
+        val existingById = getAllItems().associateBy { it.id }
         val remoteIds = remoteItems.map { it.id }.toSet()
-        val toUpsert = remoteItems.filter { it.id !in pendingIds }
+        val toUpsert = remoteItems
+            .filter { it.id !in pendingIds }
+            .map { remote ->
+                val existing = existingById[remote.id]
+                val preservedPhotos = existing?.imagePathsCsv
+                val preservedAudioPath = existing?.audioMemoPath
+                val preservedAudioDuration = existing?.audioMemoDurationSeconds ?: 0
+                remote.copy(
+                    imagePathsCsv = if (!preservedPhotos.isNullOrBlank() && remote.imagePathsCsv.isNullOrBlank()) preservedPhotos else remote.imagePathsCsv,
+                    audioMemoPath = if (!preservedAudioPath.isNullOrBlank() && remote.audioMemoPath.isNullOrBlank()) preservedAudioPath else remote.audioMemoPath,
+                    audioMemoDurationSeconds = if (preservedAudioDuration > 0 && remote.audioMemoDurationSeconds == 0) preservedAudioDuration else remote.audioMemoDurationSeconds
+                )
+            }
         if (toUpsert.isNotEmpty()) upsertItems(toUpsert)
-        val localItems = getAllItems()
-        for (local in localItems) {
+        for (local in existingById.values) {
             if (local.id !in remoteIds && local.id !in pendingIds) {
                 deleteItemById(local.id)
             }
@@ -393,12 +476,20 @@ interface LocalPlannerDao {
     @Transaction
     suspend fun clearAllLocalPlannerData() {
         clearAllPendingSyncOps()
+        clearHabitCheckIns()
+        clearDailyHabits()
         clearClassSchedules()
         clearReminders()
         clearSteps()
         clearItems()
         clearProfiles()
     }
+
+    @Query("DELETE FROM local_habit_checkins")
+    suspend fun clearHabitCheckIns()
+
+    @Query("DELETE FROM local_daily_habits")
+    suspend fun clearDailyHabits()
 
     @Query("DELETE FROM local_class_schedules")
     suspend fun clearClassSchedules()
@@ -423,9 +514,11 @@ interface LocalPlannerDao {
         LocalStepEntity::class,
         LocalReminderEntity::class,
         LocalClassScheduleEntity::class,
-        PendingSyncOperationEntity::class
+        PendingSyncOperationEntity::class,
+        LocalDailyHabitEntity::class,
+        LocalHabitCheckInEntity::class
     ],
-    version = 3,
+    version = 8,
     exportSchema = false
 )
 abstract class LocalPlannerDatabase : RoomDatabase() {
@@ -479,6 +572,83 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
             }
         }
 
+        private fun hasColumn(db: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+            db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex).equals(columnName, ignoreCase = true)) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        private fun addColumnIfMissing(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String,
+            columnDefinition: String
+        ) {
+            if (!hasColumn(db, tableName, columnName)) {
+                db.execSQL("ALTER TABLE `$tableName` ADD COLUMN `$columnName` $columnDefinition")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "local_items", "imagePathsCsv", "TEXT")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_daily_habits (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        iconKey TEXT NOT NULL,
+                        colorKey TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL,
+                        createdAtMillis INTEGER NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_habit_checkins (
+                        checkInKey TEXT NOT NULL PRIMARY KEY,
+                        habitId TEXT NOT NULL,
+                        dateIso TEXT NOT NULL,
+                        completedAtMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "local_items", "priority", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "local_items", "category", "TEXT NOT NULL DEFAULT 'PERSONAL'")
+                addColumnIfMissing(db, "local_steps", "timeSpentMinutes", "INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "local_items", "audioMemoPath", "TEXT")
+                addColumnIfMissing(db, "local_items", "audioMemoDurationSeconds", "INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): LocalPlannerDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -486,7 +656,17 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
                     LocalPlannerDatabase::class.java,
                     "bunny_memo_local.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
+                    )
+                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }

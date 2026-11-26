@@ -15,6 +15,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,10 +72,16 @@ class RoomFirestoreSyncService private constructor(
     )
     private val auth: FirebaseAuth = Firebase.auth
     private val cloudRepository: PlannerRepository = PlannerRepository(firestore, auth)
-    private val connectivityManager: ConnectivityManager =
-        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val connectivityManager: ConnectivityManager? = runCatching {
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    }.getOrNull()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable !is CancellationException) {
+            Log.w(TAG, "Sync service background warning: ${throwable.message}")
+        }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val syncMutex = Mutex()
 
     @Volatile
@@ -205,20 +212,22 @@ class RoomFirestoreSyncService private constructor(
     }
 
     private fun registerNetworkMonitor() {
+        val cm = connectivityManager ?: return
         try {
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build()
-            connectivityManager.registerNetworkCallback(request, networkCallback)
+            cm.registerNetworkCallback(request, networkCallback)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to register NetworkCallback: ${e.message}")
         }
     }
 
     private fun checkCurrentConnectivity(): Boolean {
+        val cm = connectivityManager ?: return false
         return try {
-            val active = connectivityManager.activeNetwork ?: return false
-            val caps = connectivityManager.getNetworkCapabilities(active) ?: return false
+            val active = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(active) ?: return false
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                 caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         } catch (_: Exception) {
@@ -239,9 +248,15 @@ class RoomFirestoreSyncService private constructor(
 
     private fun observePendingQueueCount() {
         scope.launch {
-            dao.observePendingSyncCount().collectLatest { count ->
-                refreshStatus(overridePendingCount = count)
-            }
+            dao.observePendingSyncCount()
+                .catch { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "observePendingSyncCount failed: ${e.message}")
+                    emit(0)
+                }
+                .collectLatest { count ->
+                    refreshStatus(overridePendingCount = count)
+                }
         }
     }
 
@@ -301,7 +316,9 @@ class RoomFirestoreSyncService private constructor(
                                     endAtUtcMillis = item.endAtUtcMillis,
                                     parentPlanId = item.parentPlanId,
                                     createdAtMillis = item.createdAt?.toDate()?.time ?: now,
-                                    updatedAtMillis = item.updatedAt?.toDate()?.time ?: now
+                                    updatedAtMillis = item.updatedAt?.toDate()?.time ?: now,
+                                    priority = TaskPriority.fromRaw(item.priority).name,
+                                    category = TaskCategory.fromRaw(item.category).name
                                 )
                             }
                         )
@@ -330,7 +347,8 @@ class RoomFirestoreSyncService private constructor(
                                     dueTimeMinutes = step.dueTimeMinutes,
                                     sortOrder = step.sortOrder,
                                     createdAtMillis = step.createdAt?.toDate()?.time ?: now,
-                                    updatedAtMillis = step.updatedAt?.toDate()?.time ?: now
+                                    updatedAtMillis = step.updatedAt?.toDate()?.time ?: now,
+                                    timeSpentMinutes = step.timeSpentMinutes.coerceIn(0, 100_000)
                                 )
                             }
                         )
@@ -618,6 +636,8 @@ class RoomFirestoreSyncService private constructor(
                     local.startAtUtcMillis?.let { put("startAtUtcMillis", it.coerceAtLeast(0L)) }
                     local.endAtUtcMillis?.let { put("endAtUtcMillis", it.coerceAtLeast(0L)) }
                     if (cleanParent != null) put("parentPlanId", cleanParent)
+                    put("priority", TaskPriority.fromRaw(local.priority).name)
+                    put("category", TaskCategory.fromRaw(local.category).name)
                     put("createdAt", FieldValue.serverTimestamp())
                     put("updatedAt", FieldValue.serverTimestamp())
                 }
@@ -634,6 +654,8 @@ class RoomFirestoreSyncService private constructor(
                     "startAtUtcMillis" to (local.startAtUtcMillis?.coerceAtLeast(0L) ?: FieldValue.delete()),
                     "endAtUtcMillis" to (local.endAtUtcMillis?.coerceAtLeast(0L) ?: FieldValue.delete()),
                     "parentPlanId" to (cleanParent ?: FieldValue.delete()),
+                    "priority" to TaskPriority.fromRaw(local.priority).name,
+                    "category" to TaskCategory.fromRaw(local.category).name,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 docRef.update(updateMap).await()
@@ -674,6 +696,7 @@ class RoomFirestoreSyncService private constructor(
                     if (cleanDue != null) put("dueDate", cleanDue)
                     local.dueTimeMinutes?.let { put("dueTimeMinutes", it.coerceIn(0, 1439)) }
                     put("sortOrder", local.sortOrder.coerceIn(0, 1000))
+                    put("timeSpentMinutes", local.timeSpentMinutes.coerceIn(0, 100_000))
                     put("createdAt", FieldValue.serverTimestamp())
                     put("updatedAt", FieldValue.serverTimestamp())
                 }
@@ -685,6 +708,7 @@ class RoomFirestoreSyncService private constructor(
                     "dueDate" to (cleanDue ?: FieldValue.delete()),
                     "dueTimeMinutes" to (local.dueTimeMinutes?.coerceIn(0, 1439) ?: FieldValue.delete()),
                     "sortOrder" to local.sortOrder.coerceIn(0, 1000),
+                    "timeSpentMinutes" to local.timeSpentMinutes.coerceIn(0, 100_000),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 docRef.update(updateMap).await()

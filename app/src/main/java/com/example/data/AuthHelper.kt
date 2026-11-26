@@ -19,14 +19,17 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     val listener = FirebaseAuth.AuthStateListener { auth ->
@@ -47,21 +50,31 @@ private fun Context.findActivity(): Activity? {
 
 /**
  * Silent Auto-Sign-In on startup using GetGoogleIdOption (one credential option per request).
+ * Bounded by short timeouts so an offline device or emulator without Google Play Services never stalls launch.
  */
 fun attemptAutoSignIn(
     context: Context,
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     onAuthSuccess: () -> Unit,
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    if (Firebase.auth.currentUser != null) {
+    val currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
+    if (currentUser != null) {
         onAuthSuccess()
+        return
+    }
+    if (credentialManager == null) {
+        onUnauthenticated()
         return
     }
     val clientId = try {
         context.getString(R.string.default_web_client_id)
     } catch (_: Exception) {
+        onUnauthenticated()
+        return
+    }
+    if (clientId.isBlank()) {
         onUnauthenticated()
         return
     }
@@ -79,14 +92,23 @@ fun attemptAutoSignIn(
                 onUnauthenticated()
                 return@launch
             }
-            val cred = credentialManager.getCredential(activity, request).credential
+            val cred = withTimeout(2500L) {
+                credentialManager.getCredential(activity, request).credential
+            }
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
-                Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
+                withTimeout(5000L) {
+                    Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
+                }
                 onAuthSuccess()
             } else {
                 onUnauthenticated()
             }
+        } catch (_: TimeoutCancellationException) {
+            Log.w("Auth", "Silent auto-sign-in timed out; continuing to sign-in screen.")
+            onUnauthenticated()
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (_: Exception) {
             onUnauthenticated()
         }
@@ -98,12 +120,16 @@ fun attemptAutoSignIn(
  */
 fun onGoogleSignInClicked(
     context: Context,
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
+    if (credentialManager == null) {
+        onAuthError("Google Sign-In is unavailable on this device. You can continue locally anytime.")
+        return
+    }
     val clientId = try {
         context.getString(R.string.default_web_client_id)
     } catch (_: Exception) {
@@ -143,18 +169,18 @@ fun onGoogleSignInClicked(
  * Clean sign-out clearing Credential Manager state inside NonCancellable before Firebase signOut.
  */
 fun signOut(
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     scope: CoroutineScope,
     onSignOutComplete: () -> Unit = {}
 ) {
     scope.launch {
         withContext(NonCancellable) {
             try {
-                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+                credentialManager?.clearCredentialState(ClearCredentialStateRequest())
             } catch (e: Exception) {
                 Log.w("Auth", "Failed to clear credential state: ${e.message}")
             } finally {
-                Firebase.auth.signOut()
+                runCatching { Firebase.auth.signOut() }
                 onSignOutComplete()
             }
         }

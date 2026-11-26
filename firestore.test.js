@@ -166,7 +166,7 @@ test("Owner can create, list, edit, toggle, and delete Plans, Tasks, and Events"
     })
   );
 
-  // Create linked Task
+  // Create linked Task with priority tag
   await assertSucceeds(
     itemsRef.doc("task_card").set({
       userId: ALICE_UID,
@@ -175,6 +175,7 @@ test("Owner can create, list, edit, toggle, and delete Plans, Tasks, and Events"
       completed: false,
       dueDate: "2026-11-26",
       parentPlanId: "plan_scrapbook",
+      priority: "HIGH",
       createdAt: created,
       updatedAt: created,
     })
@@ -199,6 +200,22 @@ test("Owner can create, list, edit, toggle, and delete Plans, Tasks, and Events"
     itemsRef.doc("task_card").update({
       completed: true,
       updatedAt: pastDate(1000),
+    })
+  );
+
+  // Quick priority tag partial update
+  await assertSucceeds(
+    itemsRef.doc("task_card").update({
+      priority: "LOW",
+      updatedAt: pastDate(750),
+    })
+  );
+
+  // Reject invalid priority enum on update
+  await assertFails(
+    itemsRef.doc("task_card").update({
+      priority: "URGENT",
+      updatedAt: pastDate(600),
     })
   );
 
@@ -230,6 +247,19 @@ test("Owner can create, list, edit, toggle, and delete Plans, Tasks, and Events"
       type: "NOTE",
       title: "Invalid type",
       completed: false,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Reject invalid priority enum on create
+  await assertFails(
+    itemsRef.doc("bad_priority").set({
+      userId: ALICE_UID,
+      type: "TASK",
+      title: "Invalid priority",
+      completed: false,
+      priority: "CRITICAL",
       createdAt: created,
       updatedAt: created,
     })
@@ -462,3 +492,228 @@ test("Owner can create, list, update, and delete semester class schedules; inval
   // Owner delete succeeds
   await assertSucceeds(schedulesRef.doc("cls_lab").delete());
 });
+
+// --- 6. Task categories, milestone effort minutes, and shared friend calendar invites ---
+
+test("Items support category labels and steps support timeSpentMinutes", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const userDoc = aliceDb.collection("users").doc(ALICE_UID);
+  const created = pastDate(10000);
+
+  await assertSucceeds(
+    userDoc.collection("items").doc("plan_cat").set({
+      userId: ALICE_UID,
+      type: "PLAN",
+      title: "Health reset week",
+      completed: false,
+      priority: "HIGH",
+      category: "HEALTH",
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Partial category update succeeds
+  await assertSucceeds(
+    userDoc.collection("items").doc("plan_cat").update({
+      category: "WORK",
+      updatedAt: pastDate(2000),
+    })
+  );
+
+  // Invalid category enum denied
+  await assertFails(
+    userDoc.collection("items").doc("plan_cat").update({
+      category: "FINANCE",
+      updatedAt: pastDate(1500),
+    })
+  );
+
+  // Step with timeSpentMinutes succeeds
+  await assertSucceeds(
+    userDoc.collection("steps").doc("step_effort").set({
+      userId: ALICE_UID,
+      itemId: "plan_cat",
+      title: "Outline milestones",
+      completed: false,
+      sortOrder: 0,
+      timeSpentMinutes: 30,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Partial effort logging succeeds
+  await assertSucceeds(
+    userDoc.collection("steps").doc("step_effort").update({
+      timeSpentMinutes: 60,
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Negative effort minutes denied
+  await assertFails(
+    userDoc.collection("steps").doc("step_effort").update({
+      timeSpentMinutes: -10,
+      updatedAt: pastDate(500),
+    })
+  );
+});
+
+test("Shared calendar invites and replies enforce creator/verified-invitee isolation and valid RSVP updates", async () => {
+  const aliceDb = testEnv
+    .authenticatedContext(ALICE_UID, {
+      email: "alice@example.com",
+      email_verified: true,
+    })
+    .firestore();
+  const bobDb = testEnv
+    .authenticatedContext(BOB_UID, {
+      email: "bob@example.com",
+      email_verified: true,
+    })
+    .firestore();
+  const unverifiedBobDb = testEnv
+    .authenticatedContext(BOB_UID, {
+      email: "bob@example.com",
+      email_verified: false,
+    })
+    .firestore();
+  const carolDb = testEnv
+    .authenticatedContext("carol_789", {
+      email: "carol@example.com",
+      email_verified: true,
+    })
+    .firestore();
+
+  const created = pastDate(10000);
+  const inviteId = "inv_coffee";
+
+  // Owner creates invite for bob@example.com
+  await assertSucceeds(
+    aliceDb.collection("calendarInvites").doc(inviteId).set({
+      ownerUid: ALICE_UID,
+      ownerName: "Alice",
+      ownerEmail: "alice@example.com",
+      inviteeEmail: "bob@example.com",
+      plannedDate: "2026-11-28",
+      scheduleTimeLabel: "3:00 PM",
+      title: "Matcha study session",
+      notes: "Corner cafe table",
+      itemType: "EVENT",
+      category: "STUDY",
+      rsvpStatus: "PENDING",
+      replyCount: 0,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Owner can list own invites; verified invitee Bob can list invites addressed to bob@example.com
+  await assertSucceeds(
+    aliceDb
+      .collection("calendarInvites")
+      .where("ownerUid", "==", ALICE_UID)
+      .get()
+  );
+  await assertSucceeds(
+    bobDb
+      .collection("calendarInvites")
+      .where("inviteeEmail", "==", "bob@example.com")
+      .get()
+  );
+
+  // Unverified email Bob and unrelated Carol cannot read or list Alice->Bob invite
+  await assertFails(
+    unverifiedBobDb.collection("calendarInvites").doc(inviteId).get()
+  );
+  await assertFails(
+    unverifiedBobDb
+      .collection("calendarInvites")
+      .where("inviteeEmail", "==", "bob@example.com")
+      .get()
+  );
+  await assertFails(carolDb.collection("calendarInvites").doc(inviteId).get());
+
+  // Verified invitee Bob batches a reply + RSVP status update on planned date
+  const bobInviteRef = bobDb.collection("calendarInvites").doc(inviteId);
+  const bobReplyRef = bobInviteRef.collection("replies").doc("rep_bob_1");
+  const bobBatch = bobDb.batch();
+  bobBatch.set(bobReplyRef, {
+    inviteId,
+    ownerUid: ALICE_UID,
+    inviteeEmail: "bob@example.com",
+    authorUid: BOB_UID,
+    authorName: "Bob",
+    authorEmail: "bob@example.com",
+    plannedDate: "2026-11-28",
+    rsvpStatus: "GOING",
+    message: "See you at 3 PM!",
+    createdAt: pastDate(2000),
+    updatedAt: pastDate(2000),
+  });
+  bobBatch.update(bobInviteRef, {
+    inviteeUid: BOB_UID,
+    rsvpStatus: "GOING",
+    replyCount: 1,
+    lastReplyText: "See you at 3 PM!",
+    lastReplyAuthorName: "Bob",
+    lastReplyAtMillis: Date.now() - 2000,
+    updatedAt: pastDate(2000),
+  });
+  await assertSucceeds(bobBatch.commit());
+
+  // Both Alice and Bob can list replies on the planned date; Carol cannot
+  await assertSucceeds(
+    aliceDb.collection("calendarInvites").doc(inviteId).collection("replies").get()
+  );
+  await assertSucceeds(
+    bobDb.collection("calendarInvites").doc(inviteId).collection("replies").get()
+  );
+  await assertFails(
+    carolDb.collection("calendarInvites").doc(inviteId).collection("replies").get()
+  );
+
+  // Invitee cannot tamper with immutable inviteeEmail or ownerUid
+  await assertFails(
+    bobInviteRef.update({
+      ownerUid: BOB_UID,
+      updatedAt: pastDate(500),
+    })
+  );
+
+  // Owner can reply back without changing invitee RSVP
+  const aliceInviteRef = aliceDb.collection("calendarInvites").doc(inviteId);
+  const aliceReplyRef = aliceInviteRef.collection("replies").doc("rep_alice_2");
+  const aliceBatch = aliceDb.batch();
+  aliceBatch.set(aliceReplyRef, {
+    inviteId,
+    ownerUid: ALICE_UID,
+    inviteeEmail: "bob@example.com",
+    authorUid: ALICE_UID,
+    authorName: "Alice",
+    authorEmail: "alice@example.com",
+    plannedDate: "2026-11-28",
+    rsvpStatus: "GOING",
+    message: "Yay, bringing stickers too!",
+    createdAt: pastDate(1000),
+    updatedAt: pastDate(1000),
+  });
+  aliceBatch.update(aliceInviteRef, {
+    replyCount: 2,
+    lastReplyText: "Yay, bringing stickers too!",
+    lastReplyAuthorName: "Alice",
+    lastReplyAtMillis: Date.now() - 1000,
+    updatedAt: pastDate(1000),
+  });
+  await assertSucceeds(aliceBatch.commit());
+
+  // Invitee cannot delete invite; owner can batch-delete replies + invite
+  await assertFails(bobInviteRef.delete());
+  const delBatch = aliceDb.batch();
+  delBatch.delete(aliceReplyRef);
+  delBatch.delete(aliceInviteRef.collection("replies").doc("rep_bob_1"));
+  delBatch.delete(aliceInviteRef);
+  await assertSucceeds(delBatch.commit());
+});
+

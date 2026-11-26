@@ -18,6 +18,8 @@ import com.example.data.PlannerStep
 import com.example.data.ReminderDraft
 import com.example.data.ReminderKind
 import com.example.data.StepDraft
+import com.example.data.TaskCategory
+import com.example.data.TaskPriority
 import com.example.data.UnifiedStep
 import com.example.data.UserProfile
 import com.example.notifications.DailyDigestSummary
@@ -248,6 +250,9 @@ class PlannerViewModel(
         parentPlanId: String?,
         steps: List<StepDraft>,
         reminders: List<ReminderDraft>,
+        imagePaths: List<String> = emptyList(),
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        category: TaskCategory = TaskCategory.PERSONAL,
         onCreated: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -264,7 +269,10 @@ class PlannerViewModel(
                 endAtUtcMillis = endAtUtcMillis,
                 parentPlanId = parentPlanId,
                 steps = steps,
-                reminders = reminders
+                reminders = reminders,
+                imagePaths = imagePaths,
+                priority = priority,
+                category = category
             ).onSuccess { newId ->
                 _feedbackMessage.value = "${type.label} added."
                 onCreated(newId)
@@ -278,6 +286,8 @@ class PlannerViewModel(
     fun createQuickNote(
         rawText: String,
         dueDateIso: String? = null,
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        category: TaskCategory = TaskCategory.PERSONAL,
         onCreated: (String) -> Unit = {}
     ) {
         val cleaned = rawText.trim()
@@ -323,7 +333,9 @@ class PlannerViewModel(
                 endAtUtcMillis = null,
                 parentPlanId = null,
                 steps = emptyList(),
-                reminders = emptyList()
+                reminders = emptyList(),
+                priority = priority,
+                category = category
             ).onSuccess { newId ->
                 _feedbackMessage.value = if (dueDateIso.isNullOrBlank()) {
                     "Quick note saved."
@@ -350,6 +362,9 @@ class PlannerViewModel(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         updatedReminders: List<ReminderDraft>? = null,
+        imagePaths: List<String>? = null,
+        priority: TaskPriority? = null,
+        category: TaskCategory? = null,
         onUpdated: () -> Unit = {}
     ) {
         val currentState = uiState.value as? PlannerUiState.Ready
@@ -371,7 +386,10 @@ class PlannerViewModel(
                 endAtUtcMillis = endAtUtcMillis,
                 parentPlanId = parentPlanId,
                 existingReminders = existingReminders,
-                updatedReminderDrafts = updatedReminders
+                updatedReminderDrafts = updatedReminders,
+                imagePaths = imagePaths,
+                priority = priority,
+                category = category
             ).onSuccess {
                 _feedbackMessage.value = "Changes saved and reminders updated."
                 onUpdated()
@@ -379,6 +397,70 @@ class PlannerViewModel(
                 _feedbackMessage.value = e.localizedMessage ?: "Could not update item."
             }
             _isSaving.value = false
+        }
+    }
+
+    fun updateItemPriority(item: PlannerItem, priority: TaskPriority) {
+        viewModelScope.launch {
+            repository.updateItemPriority(currentUserId, item.id, priority)
+                .onSuccess {
+                    _feedbackMessage.value = "Priority set to ${priority.label}."
+                }
+                .onFailure { e ->
+                    _feedbackMessage.value = e.localizedMessage ?: "Could not update priority."
+                }
+        }
+    }
+
+    fun updateItemCategory(item: PlannerItem, category: TaskCategory) {
+        viewModelScope.launch {
+            repository.updateItemCategory(currentUserId, item.id, category)
+                .onSuccess {
+                    _feedbackMessage.value = "Category set to ${category.label}."
+                }
+                .onFailure { e ->
+                    _feedbackMessage.value = e.localizedMessage ?: "Could not update category."
+                }
+        }
+    }
+
+    fun updateItemPhotos(item: PlannerItem, newPaths: List<String>) {
+        val removed = item.imagePaths.filter { it !in newPaths }
+        viewModelScope.launch {
+            repository.updateItemImages(currentUserId, item.id, newPaths)
+                .onSuccess {
+                    if (removed.isNotEmpty()) {
+                        com.example.data.PhotoAttachmentStore.deletePhotoFiles(removed)
+                    }
+                    _feedbackMessage.value = if (newPaths.size > item.imagePaths.size) {
+                        "Picture added to ${item.title}."
+                    } else {
+                        "Pictures updated."
+                    }
+                }
+                .onFailure { e ->
+                    _feedbackMessage.value = e.localizedMessage ?: "Could not update pictures."
+                }
+        }
+    }
+
+    fun updateItemAudioMemo(item: PlannerItem, audioMemoPath: String?, durationSeconds: Int) {
+        val oldPath = item.audioMemoPath
+        viewModelScope.launch {
+            repository.updateItemAudioMemo(currentUserId, item.id, audioMemoPath, durationSeconds)
+                .onSuccess {
+                    if (!oldPath.isNullOrBlank() && oldPath != audioMemoPath) {
+                        com.example.audio.TaskAudioMemoManager.deleteMemoFile(oldPath)
+                    }
+                    _feedbackMessage.value = if (!audioMemoPath.isNullOrBlank()) {
+                        "Voice memo saved (${com.example.audio.TaskAudioMemoManager.formatSeconds(durationSeconds)})."
+                    } else {
+                        "Voice memo removed."
+                    }
+                }
+                .onFailure { e ->
+                    _feedbackMessage.value = e.localizedMessage ?: "Could not update voice memo."
+                }
         }
     }
 
@@ -418,6 +500,7 @@ class PlannerViewModel(
             _isSaving.value = true
             repository.deleteItemCascade(currentUserId, item.id, itemSteps, itemReminders)
                 .onSuccess {
+                    com.example.audio.TaskAudioMemoManager.deleteMemoFile(item.audioMemoPath)
                     _feedbackMessage.value = "${item.itemType().label} deleted."
                     onDeleted()
                 }
@@ -460,6 +543,19 @@ class PlannerViewModel(
             result.onFailure { e ->
                 _feedbackMessage.value = e.localizedMessage ?: "Could not update step."
             }
+        }
+    }
+
+    fun logStepTimeSpent(step: UnifiedStep, addedMinutes: Int) {
+        if (step.isLinkedTask || addedMinutes <= 0) return
+        viewModelScope.launch {
+            repository.addStepTimeSpent(currentUserId, step.id, addedMinutes)
+                .onSuccess {
+                    _feedbackMessage.value = "Logged +${addedMinutes}m on “${step.title}”."
+                }
+                .onFailure { e ->
+                    _feedbackMessage.value = e.localizedMessage ?: "Could not log milestone time."
+                }
         }
     }
 
@@ -527,24 +623,6 @@ class PlannerViewModel(
                 .onFailure { e ->
                     _feedbackMessage.value = e.localizedMessage ?: "Could not delete reminder."
                 }
-        }
-    }
-
-    fun seedSampleScrapbookPlan(onCreated: (String) -> Unit = {}) {
-        val ready = uiState.value as? PlannerUiState.Ready
-        val hour = ready?.profile?.defaultReminderHour ?: 9
-        val minute = ready?.profile?.defaultReminderMinute ?: 0
-        viewModelScope.launch {
-            _isSaving.value = true
-            repository.seedWeekendScrapbookSample(currentUserId, hour, minute)
-                .onSuccess { id ->
-                    _feedbackMessage.value = "Added sample plan: Make a weekend scrapbook."
-                    onCreated(id)
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not add sample plan."
-                }
-            _isSaving.value = false
         }
     }
 

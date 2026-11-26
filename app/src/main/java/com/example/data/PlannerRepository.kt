@@ -264,7 +264,10 @@ class PlannerRepository(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         steps: List<StepDraft>,
-        reminders: List<ReminderDraft>
+        reminders: List<ReminderDraft>,
+        imagePaths: List<String>,
+        priority: TaskPriority,
+        category: TaskCategory
     ): Result<String> {
         var path = "users/$userId/items"
         return try {
@@ -291,6 +294,8 @@ class PlannerRepository(
                 if (startAtUtcMillis != null) put("startAtUtcMillis", startAtUtcMillis.coerceAtLeast(0L))
                 if (endAtUtcMillis != null) put("endAtUtcMillis", endAtUtcMillis.coerceAtLeast(0L))
                 if (cleanParent != null) put("parentPlanId", cleanParent)
+                put("priority", priority.name)
+                put("category", category.name)
                 put("createdAt", FieldValue.serverTimestamp())
                 put("updatedAt", FieldValue.serverTimestamp())
             }
@@ -307,7 +312,9 @@ class PlannerRepository(
                 dueTimeMinutes = dueTimeMinutes,
                 startAtUtcMillis = startAtUtcMillis,
                 endAtUtcMillis = endAtUtcMillis,
-                parentPlanId = cleanParent
+                parentPlanId = cleanParent,
+                priority = priority.name,
+                category = category.name
             )
 
             val batch = db.batch()
@@ -325,6 +332,7 @@ class PlannerRepository(
                         put("dueTimeMinutes", step.dueTimeMinutes.coerceIn(0, 1439))
                     }
                     put("sortOrder", idx)
+                    put("timeSpentMinutes", 0)
                     put("createdAt", FieldValue.serverTimestamp())
                     put("updatedAt", FieldValue.serverTimestamp())
                 }
@@ -383,7 +391,10 @@ class PlannerRepository(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         existingReminders: List<PlannerReminder>,
-        updatedReminderDrafts: List<ReminderDraft>?
+        updatedReminderDrafts: List<ReminderDraft>?,
+        imagePaths: List<String>?,
+        priority: TaskPriority?,
+        category: TaskCategory?
     ): Result<Unit> {
         val path = "users/$userId/items/$itemId"
         return try {
@@ -408,6 +419,12 @@ class PlannerRepository(
                 "parentPlanId" to (cleanParent ?: FieldValue.delete()),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
+            if (priority != null) {
+                updateMap["priority"] = priority.name
+            }
+            if (category != null) {
+                updateMap["category"] = category.name
+            }
 
             val updatedItem = PlannerItem(
                 id = itemId,
@@ -421,7 +438,9 @@ class PlannerRepository(
                 dueTimeMinutes = dueTimeMinutes,
                 startAtUtcMillis = startAtUtcMillis,
                 endAtUtcMillis = endAtUtcMillis,
-                parentPlanId = cleanParent
+                parentPlanId = cleanParent,
+                priority = (priority ?: TaskPriority.MEDIUM).name,
+                category = (category ?: TaskCategory.PERSONAL).name
             )
 
             val batch = db.batch()
@@ -483,6 +502,65 @@ class PlannerRepository(
             }
 
             batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateItemImages(
+        userId: String,
+        itemId: String,
+        imagePaths: List<String>
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun updateItemAudioMemo(
+        userId: String,
+        itemId: String,
+        audioMemoPath: String?,
+        durationSeconds: Int
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun updateItemPriority(
+        userId: String,
+        itemId: String,
+        priority: TaskPriority
+    ): Result<Unit> {
+        val path = "users/$userId/items/$itemId"
+        return try {
+            val uid = requireUserId(userId)
+            itemsCol(uid).document(itemId).update(
+                mapOf(
+                    "priority" to priority.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateItemCategory(
+        userId: String,
+        itemId: String,
+        category: TaskCategory
+    ): Result<Unit> {
+        val path = "users/$userId/items/$itemId"
+        return try {
+            val uid = requireUserId(userId)
+            itemsCol(uid).document(itemId).update(
+                mapOf(
+                    "category" to category.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -567,6 +645,7 @@ class PlannerRepository(
                 if (!dueDate.isNullOrBlank()) put("dueDate", dueDate)
                 if (dueTimeMinutes != null) put("dueTimeMinutes", dueTimeMinutes.coerceIn(0, 1439))
                 put("sortOrder", sortOrder.coerceIn(0, 1000))
+                put("timeSpentMinutes", 0)
                 put("createdAt", FieldValue.serverTimestamp())
                 put("updatedAt", FieldValue.serverTimestamp())
             }
@@ -591,6 +670,33 @@ class PlannerRepository(
             stepsCol(uid).document(stepId).update(
                 mapOf(
                     "completed" to completed,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun addStepTimeSpent(
+        userId: String,
+        stepId: String,
+        addedMinutes: Int
+    ): Result<Unit> {
+        val path = "users/$userId/steps/$stepId"
+        return try {
+            val uid = requireUserId(userId)
+            val docRef = stepsCol(uid).document(stepId)
+            val snap = docRef.get().await()
+            val current = snap.getLong("timeSpentMinutes")?.toInt() ?: 0
+            val updated = (current + addedMinutes.coerceIn(1, 1440)).coerceIn(0, 100_000)
+            docRef.update(
+                mapOf(
+                    "timeSpentMinutes" to updated,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -843,51 +949,6 @@ class PlannerRepository(
     }
 
     /**
-     * Optional walkthrough sample from Page 5 of the brief:
-     * "Make a weekend scrapbook" with "Choose photos", "Print photos", and "Write a note",
-     * plus a progress check-in reminder naming remaining steps.
-     */
-    override suspend fun seedWeekendScrapbookSample(
-        userId: String,
-        defaultHour: Int,
-        defaultMinute: Int
-    ): Result<String> {
-        val today = CalendarDate.today()
-        val dueDate = today.plusDays(3)
-        return createItemWithStepsAndReminders(
-            userId = userId,
-            type = ItemType.PLAN,
-            title = "Make a weekend scrapbook",
-            notes = "Keep our favorite little snapshots and ticket stubs together.",
-            startDate = today.toIsoString(),
-            dueDate = dueDate.toIsoString(),
-            dueTimeMinutes = 17 * 60, // 5:00 PM
-            startAtUtcMillis = null,
-            endAtUtcMillis = null,
-            parentPlanId = null,
-            steps = listOf(
-                StepDraft(title = "Choose photos", dueDate = today.toIsoString()),
-                StepDraft(title = "Print photos", dueDate = today.plusDays(1).toIsoString()),
-                StepDraft(title = "Write a note", dueDate = today.plusDays(2).toIsoString())
-            ),
-            reminders = listOf(
-                ReminderDraft(
-                    kind = ReminderKind.PROGRESS_CHECKIN,
-                    offsetMinutes = 1440, // 1 day before at 5 PM
-                    localHour = defaultHour,
-                    localMinute = defaultMinute
-                ),
-                ReminderDraft(
-                    kind = ReminderKind.ORDINARY,
-                    offsetMinutes = 60,
-                    localHour = defaultHour,
-                    localMinute = defaultMinute
-                )
-            )
-        )
-    }
-
-    /**
      * Imports any memos created in local guest mode into the newly signed-in user's private
      * Firestore account, preserving parent-plan links, milestones, reminders, and dedication note.
      */
@@ -940,6 +1001,8 @@ class PlannerRepository(
                         item.endAtUtcMillis?.let { put("endAtUtcMillis", it.coerceAtLeast(0L)) }
                         item.parentPlanId?.takeIf { it.isNotBlank() && item.type == ItemType.TASK.name }
                             ?.let { put("parentPlanId", it) }
+                        put("priority", TaskPriority.fromRaw(item.priority).name)
+                        put("category", TaskCategory.fromRaw(item.category).name)
                         put("createdAt", FieldValue.serverTimestamp())
                         put("updatedAt", FieldValue.serverTimestamp())
                     }
@@ -964,6 +1027,7 @@ class PlannerRepository(
                             step.dueDate?.takeIf { it.isNotBlank() }?.let { put("dueDate", it) }
                             step.dueTimeMinutes?.let { put("dueTimeMinutes", it.coerceIn(0, 1439)) }
                             put("sortOrder", step.sortOrder.coerceIn(0, 1000))
+                            put("timeSpentMinutes", step.timeSpentMinutes.coerceIn(0, 100_000))
                             put("createdAt", FieldValue.serverTimestamp())
                             put("updatedAt", FieldValue.serverTimestamp())
                         }

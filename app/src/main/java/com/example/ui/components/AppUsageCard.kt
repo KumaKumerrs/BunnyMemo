@@ -22,17 +22,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.AppUsageSummary
 import com.example.data.AppUsageTracker
@@ -45,6 +49,42 @@ import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
+
+/**
+ * Isolated leaf wrapper for [CompactAppUsageStrip] so periodic timer updates only
+ * recompose this strip and never trigger root or list recompositions.
+ */
+@Composable
+fun LiveCompactAppUsageStrip(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val tracker = remember(context) { AppUsageTracker.getInstance(context) }
+    val usage by tracker.usageSummary.collectAsStateWithLifecycle()
+    CompactAppUsageStrip(
+        usage = usage,
+        onClick = onClick,
+        modifier = modifier
+    )
+}
+
+/**
+ * Isolated leaf wrapper for [AppUsageSummaryCard] so periodic timer updates only
+ * recompose the usage analytics card.
+ */
+@Composable
+fun LiveAppUsageSummaryCard(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val tracker = remember(context) { AppUsageTracker.getInstance(context) }
+    val usage by tracker.usageSummary.collectAsStateWithLifecycle()
+    AppUsageSummaryCard(
+        usage = usage,
+        modifier = modifier
+    )
+}
 
 /**
  * Compact live usage strip shown on TodayScreen so the user can always see

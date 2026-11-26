@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -49,30 +51,44 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.audio.BunnyFeedbackManager
+import com.example.audio.TaskAudioMemoManager
 import com.example.data.AppUsageSummary
 import com.example.data.CalendarDate
+import com.example.data.CalendarInvite
 import com.example.data.ClassScheduleItem
 import com.example.data.ItemProgress
 import com.example.data.ItemType
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
+import com.example.data.TaskCategory
 import com.example.data.UnifiedStep
+import com.example.ui.components.BunnyBreed
 import com.example.ui.components.BunnyPose
 import com.example.ui.components.CompactAppUsageStrip
+import com.example.ui.components.DailyHabitGrowthCard
 import com.example.ui.components.FlowerProgressRow
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ForgetMeNotHabitCalendarCard
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
 import com.example.ui.components.ModernSectionHeader
+import com.example.ui.components.MonthlyBunnyAlmanacModal
+import com.example.ui.components.SharedScheduleCard
 import com.example.ui.components.SmallBunnyIllustration
+import com.example.ui.components.TaskCategoryBadge
+import com.example.ui.components.TaskCategoryFilter
+import com.example.ui.components.TaskCategoryFilterBar
 import com.example.ui.components.adaptiveHorizontalPadding
 import com.example.ui.components.classColorPalette
 import com.example.ui.components.selectedPanelBorder
@@ -81,6 +97,7 @@ import com.example.ui.theme.CalmSage
 import com.example.ui.theme.CalmSageContainer
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotBlue
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.OverdueContainer
@@ -88,6 +105,7 @@ import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
+import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 
@@ -100,28 +118,34 @@ fun TodayScreen(
     onToggleTask: (PlannerItem, Boolean) -> Unit,
     onToggleStep: (UnifiedStep, Boolean) -> Unit,
     onAddClick: (CalendarDate) -> Unit,
-    onAddSamplePlan: () -> Unit,
     onEditClass: (ClassScheduleItem) -> Unit = {},
     onOpenReports: () -> Unit = {},
+    calendarInvites: List<CalendarInvite> = emptyList(),
+    currentUserId: String? = null,
+    onInviteFriendClick: () -> Unit = {},
+    onOpenSharedInvite: (CalendarInvite) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val today = state.todayDate()
+    val monthBreed = remember(today.month) { BunnyBreed.forMonth(today.month) }
     var showActivity by rememberSaveable { mutableStateOf(false) }
+    var showBunnyAlmanac by rememberSaveable { mutableStateOf(false) }
+    var categoryFilter by rememberSaveable { mutableStateOf(TaskCategoryFilter.ALL) }
     val nowMillis = state.nowMillis
 
     val todayClasses = remember(state.classSchedules, today) {
         state.classesOnDate(today)
     }
 
-    // 1. Events scheduled for today (chronological time order)
-    val todayEvents = remember(state.items, today) {
+    val allTodayEvents = remember(state.items, today) {
         state.items
             .filter { it.itemType() == ItemType.EVENT && it.appearsOnDate(today) }
             .sortedBy { it.startAtUtcMillis ?: Long.MAX_VALUE }
     }
 
-    // 2. Tasks due today (or overdue unfinished tasks)
-    val todayTasks = remember(state.items, today) {
+    val allTodayTasks = remember(state.items, today) {
         state.items
             .filter { item ->
                 if (item.itemType() != ItemType.TASK) return@filter false
@@ -135,12 +159,14 @@ fun TodayScreen(
             )
     }
 
-    // 2b. Plan milestones or Event prep steps due today (or overdue)
     val itemTitleById = remember(state.items) {
         state.items.associate { it.id to it.title }
     }
+    val itemCategoryById = remember(state.items) {
+        state.items.associate { it.id to it.taskCategory() }
+    }
 
-    val dueTodaySteps = remember(state.items, state.steps, today) {
+    val allDueTodaySteps = remember(state.items, state.steps, today) {
         val itemMap = state.items.associateBy { it.id }
         state.steps
             .filter { step ->
@@ -161,7 +187,8 @@ fun TodayScreen(
                         dueDate = step.dueDate,
                         dueTimeMinutes = step.dueTimeMinutes,
                         isLinkedTask = false,
-                        sortOrder = step.sortOrder
+                        sortOrder = step.sortOrder,
+                        timeSpentMinutes = step.timeSpentMinutes
                     ),
                     parent,
                     step.dueDate != null && (CalendarDate.parse(step.dueDate) ?: today) < today && !step.completed
@@ -169,8 +196,7 @@ fun TodayScreen(
             }
     }
 
-    // 3. Approaching plans (keyed on today instead of raw millis so 60s ticks don't recalculate everything)
-    val approachingPlans = remember(state.items, state.steps, today) {
+    val allApproachingPlans = remember(state.items, state.steps, today) {
         state.items
             .filter { item ->
                 if (item.itemType() != ItemType.PLAN) return@filter false
@@ -188,8 +214,7 @@ fun TodayScreen(
             )
     }
 
-    // 4. Spontaneous Quick Notes (unscheduled thoughts/ideas not tied to a due date or parent plan)
-    val quickNotes = remember(state.items) {
+    val allQuickNotes = remember(state.items) {
         state.items
             .filter { item ->
                 item.itemType() == ItemType.TASK &&
@@ -202,7 +227,40 @@ fun TodayScreen(
             )
     }
 
-    val isQuietDay = todayClasses.isEmpty() && todayEvents.isEmpty() && todayTasks.isEmpty() && dueTodaySteps.isEmpty() && approachingPlans.isEmpty()
+    val todayIso = remember(today) { today.toIsoString() }
+    val todaySharedInvites = remember(calendarInvites, todayIso) {
+        calendarInvites.filter { it.plannedDate == todayIso }
+    }
+
+    val selectedCat = categoryFilter.category
+    val categoryCounts = remember(allTodayEvents, allTodayTasks, allApproachingPlans, allQuickNotes) {
+        val relevant = allTodayEvents + allTodayTasks + allApproachingPlans + allQuickNotes
+        buildMap {
+            put(TaskCategoryFilter.ALL, relevant.size)
+            TaskCategory.entries.forEach { cat ->
+                TaskCategoryFilter.entries.firstOrNull { it.category == cat }?.let { key ->
+                    put(key, relevant.count { it.taskCategory() == cat })
+                }
+            }
+        }
+    }
+    val todayEvents = remember(allTodayEvents, selectedCat) {
+        if (selectedCat == null) allTodayEvents else allTodayEvents.filter { it.taskCategory() == selectedCat }
+    }
+    val todayTasks = remember(allTodayTasks, selectedCat) {
+        if (selectedCat == null) allTodayTasks else allTodayTasks.filter { it.taskCategory() == selectedCat }
+    }
+    val dueTodaySteps = remember(allDueTodaySteps, selectedCat, itemCategoryById) {
+        if (selectedCat == null) allDueTodaySteps else allDueTodaySteps.filter { (_, parent, _) -> itemCategoryById[parent.id] == selectedCat }
+    }
+    val approachingPlans = remember(allApproachingPlans, selectedCat) {
+        if (selectedCat == null) allApproachingPlans else allApproachingPlans.filter { it.taskCategory() == selectedCat }
+    }
+    val quickNotes = remember(allQuickNotes, selectedCat) {
+        if (selectedCat == null) allQuickNotes else allQuickNotes.filter { it.taskCategory() == selectedCat }
+    }
+
+    val isQuietDay = todayClasses.isEmpty() && allTodayEvents.isEmpty() && allTodayTasks.isEmpty() && allDueTodaySteps.isEmpty() && allApproachingPlans.isEmpty() && todaySharedInvites.isEmpty()
     val totalDueCount = todayTasks.size + dueTodaySteps.size
 
     BoxWithConstraints(
@@ -257,20 +315,87 @@ fun TodayScreen(
                         }
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Surface(
-                        color = PureWhite,
-                        shape = CircleShape,
-                        shadowElevation = 2.dp,
-                        modifier = Modifier.size(60.dp)
+                    val badgeDesc = stringResource(
+                        R.string.cd_monthly_bunny_badge,
+                        monthBreed.monthName,
+                        monthBreed.breedName
+                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            SmallBunnyIllustration(
-                                pose = BunnyPose.GREETING,
-                                size = 48.dp,
-                                contentDesc = stringResource(R.string.cd_bunny_greeting)
-                            )
+                        Surface(
+                            color = if (LocalIsDarkTheme.current) SoftIceSurface else PureWhite,
+                            shape = CircleShape,
+                            shadowElevation = 2.dp,
+                            border = BorderStroke(1.dp, SubtleBorder),
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .semantics { contentDescription = badgeDesc }
+                                .clickable { showBunnyAlmanac = true }
+                                .testTag("today_monthly_bunny_badge")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                SmallBunnyIllustration(
+                                    pose = BunnyPose.GREETING,
+                                    breed = monthBreed,
+                                    size = 48.dp
+                                )
+                            }
                         }
+                        Text(
+                            text = "${monthBreed.shortMonthName} · ${monthBreed.breedName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DeepBlue,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .clickable {
+                                    feedback.onPopOpen()
+                                    showBunnyAlmanac = true
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
+                }
+            }
+
+            if (allTodayEvents.isNotEmpty() || allTodayTasks.isNotEmpty() || allApproachingPlans.isNotEmpty() || allQuickNotes.isNotEmpty()) {
+                item(key = "today_category_filter_bar") {
+                    TaskCategoryFilterBar(
+                        selectedFilter = categoryFilter,
+                        counts = categoryCounts,
+                        onSelectFilter = {
+                            feedback.onLightTick()
+                            categoryFilter = it
+                        },
+                        tagPrefix = "today_category_filter"
+                    )
+                }
+            }
+
+            if (todaySharedInvites.isNotEmpty()) {
+                item(key = "today_shared_invites_header") {
+                    ModernSectionHeader(
+                        title = "Shared schedules today",
+                        count = todaySharedInvites.size
+                    )
+                }
+                items(todaySharedInvites, key = { "today_invite_${it.id}" }) { invite ->
+                    SharedScheduleCard(
+                        invite = invite,
+                        currentUserId = currentUserId,
+                        onProfileIconClick = {
+                            feedback.onPopOpen()
+                            onOpenSharedInvite(invite)
+                        },
+                        onCardClick = {
+                            feedback.onPopOpen()
+                            onOpenSharedInvite(invite)
+                        }
+                    )
                 }
             }
 
@@ -293,6 +418,7 @@ fun TodayScreen(
                     ) {
                         SmallBunnyIllustration(
                             pose = BunnyPose.RESTING,
+                            breed = monthBreed,
                             size = 104.dp,
                             contentDesc = stringResource(R.string.cd_bunny_resting)
                         )
@@ -326,15 +452,6 @@ fun TodayScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.action_add))
-                        }
-                        if (state.items.isEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(
-                                onClick = onAddSamplePlan,
-                                modifier = Modifier.testTag("quiet_day_sample_button")
-                            ) {
-                                Text("Try optional sample: Make a weekend scrapbook")
-                            }
                         }
                     }
                 }
@@ -487,6 +604,10 @@ fun TodayScreen(
                 }
             }
 
+            item(key = "daily_habit_growth_card") {
+                DailyHabitGrowthCard(modifier = Modifier.fillMaxWidth())
+            }
+
             item(key = "activity_toggle") {
                 TextButton(onClick = { showActivity = !showActivity }) {
                     Text(if (showActivity) "Hide activity & habit garden" else "Show activity & habit garden")
@@ -507,6 +628,13 @@ fun TodayScreen(
             }
         }
     }
+
+    if (showBunnyAlmanac) {
+        MonthlyBunnyAlmanacModal(
+            highlightedMonth = today.month,
+            onDismiss = { showBunnyAlmanac = false }
+        )
+    }
 }
 
 @Composable
@@ -516,6 +644,8 @@ private fun QuickNotesGroupedPanel(
     onToggleNote: (PlannerItem, Boolean) -> Unit,
     onSelectNote: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     ModernPanel(
         shape = RoundedCornerShape(22.dp),
         elevation = 3.dp,
@@ -536,7 +666,10 @@ private fun QuickNotesGroupedPanel(
             ) {
                 Checkbox(
                     checked = note.completed,
-                    onCheckedChange = { checked -> onToggleNote(note, checked) },
+                    onCheckedChange = { checked ->
+                        feedback.onTaskToggled(checked)
+                        onToggleNote(note, checked)
+                    },
                     colors = CheckboxDefaults.colors(
                         checkedColor = DeepBlue,
                         uncheckedColor = MutedNavy.copy(alpha = 0.55f),
@@ -546,7 +679,7 @@ private fun QuickNotesGroupedPanel(
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Text(
                         text = note.title,
@@ -566,6 +699,7 @@ private fun QuickNotesGroupedPanel(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    TaskCategoryBadge(category = note.taskCategory(), compact = true)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Box(
@@ -802,19 +936,25 @@ private fun EventTodayCard(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
                         contentDescription = null,
                         tint = MutedNavy,
                         modifier = Modifier.size(14.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = PlannerDateUtils.formatEventTimeRange(event.startAtUtcMillis, event.endAtUtcMillis),
                         style = MaterialTheme.typography.bodySmall,
                         color = MutedNavy
                     )
+                    TaskCategoryBadge(category = event.taskCategory(), compact = true)
+                    if (event.hasAudioMemo()) {
+                        AudioMemoMiniTag(durationSeconds = event.audioMemoDurationSeconds)
+                    }
                 }
 
                 if (progress.totalCount > 0) {
@@ -830,6 +970,32 @@ private fun EventTodayCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AudioMemoMiniTag(durationSeconds: Int) {
+    Surface(
+        shape = CircleShape,
+        color = SkyBlue.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Mic,
+                contentDescription = stringResource(R.string.audio_memo_section_title),
+                tint = DeepBlue,
+                modifier = Modifier.size(11.dp)
+            )
+            Text(
+                text = TaskAudioMemoManager.formatSeconds(durationSeconds),
+                style = MaterialTheme.typography.labelSmall,
+                color = DeepBlue
+            )
         }
     }
 }
@@ -873,32 +1039,34 @@ private fun TaskRowItem(
                 ),
                 color = if (task.completed) MutedNavy else MidnightNavy
             )
-            if (parentPlanTitle != null || task.dueTimeMinutes != null || isOverdue) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (parentPlanTitle != null) {
-                        Text(
-                            text = parentPlanTitle,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = DeepBlue
-                        )
-                    }
-                    if (task.dueTimeMinutes != null) {
-                        Text(
-                            text = PlannerDateUtils.formatTimeOfDay(task.dueTimeMinutes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MutedNavy
-                        )
-                    }
-                    if (isOverdue) {
-                        Text(
-                            text = "Overdue",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = OverdueTerracotta
-                        )
-                    }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TaskCategoryBadge(category = task.taskCategory(), compact = true)
+                if (parentPlanTitle != null) {
+                    Text(
+                        text = parentPlanTitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DeepBlue
+                    )
+                }
+                if (task.dueTimeMinutes != null) {
+                    Text(
+                        text = PlannerDateUtils.formatTimeOfDay(task.dueTimeMinutes),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MutedNavy
+                    )
+                }
+                if (task.hasAudioMemo()) {
+                    AudioMemoMiniTag(durationSeconds = task.audioMemoDurationSeconds)
+                }
+                if (isOverdue) {
+                    Text(
+                        text = "Overdue",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OverdueTerracotta
+                    )
                 }
             }
         }
@@ -1023,12 +1191,21 @@ private fun PlanTodayCard(
                             style = MaterialTheme.typography.titleMedium,
                             color = MidnightNavy
                         )
-                        if (dueDate != null) {
-                            Text(
-                                text = "Deadline ${PlannerDateUtils.formatRelativeDateLabel(dueDate, today)} · ${PlannerDateUtils.formatCompactDate(dueDate)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MutedNavy
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            TaskCategoryBadge(category = plan.taskCategory(), compact = true)
+                            if (dueDate != null) {
+                                Text(
+                                    text = "Deadline ${PlannerDateUtils.formatRelativeDateLabel(dueDate, today)} · ${PlannerDateUtils.formatCompactDate(dueDate)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MutedNavy
+                                )
+                            }
+                            if (plan.hasAudioMemo()) {
+                                AudioMemoMiniTag(durationSeconds = plan.audioMemoDurationSeconds)
+                            }
                         }
                     }
                     if (progress.overdueCount > 0) {

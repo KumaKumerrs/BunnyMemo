@@ -39,11 +39,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.CloudWhite
+import com.example.ui.theme.BunnyFlowerCrown
 import com.example.ui.theme.ForgetMeNotBlue
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.PollenYellow
-import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import kotlin.math.PI
 import kotlin.math.cos
@@ -80,26 +80,29 @@ fun ForgetMeNotFlower(
     animatePop: Boolean = false,
     contentDesc: String? = null
 ) {
-    val reducedMotion = rememberReducedMotion()
-    val scaleAnim = remember { Animatable(if (bloomed) 1f else 0.92f) }
+    val scaleValue: Float = if (animatePop) {
+        val reducedMotion = rememberReducedMotion()
+        val scaleAnim = remember { Animatable(if (bloomed) 1f else 0.92f) }
 
-    LaunchedEffect(bloomed, animatePop, reducedMotion) {
-        if (reducedMotion) {
-            scaleAnim.snapTo(1f)
-        } else if (bloomed && animatePop) {
-            scaleAnim.snapTo(0.65f)
-            scaleAnim.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+        LaunchedEffect(bloomed, animatePop, reducedMotion) {
+            if (reducedMotion) {
+                scaleAnim.snapTo(1f)
+            } else if (bloomed) {
+                scaleAnim.snapTo(0.65f)
+                scaleAnim.animateTo(
+                    targetValue = 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
                 )
-            )
-        } else if (bloomed) {
-            scaleAnim.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
-        } else {
-            scaleAnim.animateTo(0.92f, tween(180))
+            } else {
+                scaleAnim.animateTo(0.92f, tween(180))
+            }
         }
+        scaleAnim.value
+    } else {
+        if (bloomed) 1f else 0.92f
     }
 
     Canvas(
@@ -114,11 +117,19 @@ fun ForgetMeNotFlower(
         val cy = this.size.height / 2f
         val r = this.size.minDimension / 2f
 
-        scale(scaleAnim.value, pivot = Offset(cx, cy)) {
+        if (scaleValue == 1f) {
             if (bloomed) {
                 drawBloomedForgetMeNot(Offset(cx, cy), r)
             } else {
                 drawClosedForgetMeNotBud(Offset(cx, cy), r)
+            }
+        } else {
+            scale(scaleValue, pivot = Offset(cx, cy)) {
+                if (bloomed) {
+                    drawBloomedForgetMeNot(Offset(cx, cy), r)
+                } else {
+                    drawClosedForgetMeNotBud(Offset(cx, cy), r)
+                }
             }
         }
     }
@@ -141,7 +152,7 @@ private fun DrawScope.drawBloomedForgetMeNot(center: Offset, radius: Float) {
 
     // Tiny cloud-white crown ring
     drawCircle(
-        color = CloudWhite,
+        color = BunnyFlowerCrown,
         radius = radius * 0.30f,
         center = center
     )
@@ -168,7 +179,7 @@ private fun DrawScope.drawClosedForgetMeNotBud(center: Offset, radius: Float) {
         style = Stroke(width = strokeW)
     )
     drawCircle(
-        color = PureWhite,
+        color = BunnyFlowerCrown,
         radius = radius * 0.14f,
         center = center
     )
@@ -227,15 +238,18 @@ enum class BunnyPose {
 }
 
 /**
- * Small white bunny drawn in a simple Midnight Navy (#20364D) outline per Page 3 of the brief.
+ * Monthly breed bunny illustration drawn with crisp Midnight Navy outline and breed-specific markings.
+ * Defaults automatically to the current month's breed unless an explicit [breed] is passed.
  */
 @Composable
 fun SmallBunnyIllustration(
     pose: BunnyPose,
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
+    breed: BunnyBreed = BunnyBreed.forCurrentMonth(),
     contentDesc: String? = null
 ) {
+    val isDarkTheme = LocalIsDarkTheme.current
     Canvas(
         modifier = modifier
             .size(size)
@@ -248,176 +262,15 @@ fun SmallBunnyIllustration(
         val h = this.size.height
         val strokeW = (w * 0.042f).coerceIn(1.8f, 3.6f)
         val stroke = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
-
-        when (pose) {
-            BunnyPose.GREETING -> drawGreetingBunny(w, h, stroke)
-            BunnyPose.RESTING -> drawRestingBunny(w, h, stroke)
-            BunnyPose.ENVELOPE -> drawEnvelopeBunny(w, h, stroke)
-            BunnyPose.CELEBRATING -> drawCelebratingBunny(w, h, stroke)
-        }
+        drawBreedBunnyPose(
+            pose = pose,
+            breed = breed,
+            isDarkTheme = isDarkTheme,
+            w = w,
+            h = h,
+            stroke = stroke
+        )
     }
-}
-
-private fun DrawScope.drawGreetingBunny(w: Float, h: Float, stroke: Stroke) {
-    // Ears anchored symmetrically onto the top crown of the head (head center x=0.50w, top y=0.30h)
-    rotate(-10f, pivot = Offset(w * 0.395f, h * 0.34f)) {
-        drawOval(PureWhite, Offset(w * 0.33f, h * 0.06f), Size(w * 0.13f, h * 0.32f))
-        drawOval(MidnightNavy, Offset(w * 0.33f, h * 0.06f), Size(w * 0.13f, h * 0.32f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.365f, h * 0.12f), Size(w * 0.06f, h * 0.19f))
-    }
-    rotate(10f, pivot = Offset(w * 0.605f, h * 0.34f)) {
-        drawOval(PureWhite, Offset(w * 0.54f, h * 0.06f), Size(w * 0.13f, h * 0.32f))
-        drawOval(MidnightNavy, Offset(w * 0.54f, h * 0.06f), Size(w * 0.13f, h * 0.32f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.575f, h * 0.12f), Size(w * 0.06f, h * 0.19f))
-    }
-
-    // Little fluffy tail
-    drawCircle(PureWhite, radius = w * 0.08f, center = Offset(w * 0.25f, h * 0.78f))
-    drawCircle(MidnightNavy, radius = w * 0.08f, center = Offset(w * 0.25f, h * 0.78f), style = stroke)
-
-    // Body
-    drawOval(PureWhite, Offset(w * 0.28f, h * 0.54f), Size(w * 0.44f, h * 0.36f))
-    drawOval(MidnightNavy, Offset(w * 0.28f, h * 0.54f), Size(w * 0.44f, h * 0.36f), style = stroke)
-
-    // Head
-    drawOval(PureWhite, Offset(w * 0.27f, h * 0.30f), Size(w * 0.46f, h * 0.35f))
-    drawOval(MidnightNavy, Offset(w * 0.27f, h * 0.30f), Size(w * 0.46f, h * 0.35f), style = stroke)
-
-    // Gentle eyes & blush
-    drawCircle(MidnightNavy, radius = w * 0.028f, center = Offset(w * 0.42f, h * 0.45f))
-    drawCircle(MidnightNavy, radius = w * 0.028f, center = Offset(w * 0.58f, h * 0.45f))
-    drawCircle(SkyBlue, radius = w * 0.042f, center = Offset(w * 0.35f, h * 0.51f))
-    drawCircle(SkyBlue, radius = w * 0.042f, center = Offset(w * 0.65f, h * 0.51f))
-
-    // Tiny smile / nose
-    drawCircle(MidnightNavy, radius = w * 0.018f, center = Offset(w * 0.50f, h * 0.50f))
-    val smile = Path().apply {
-        moveTo(w * 0.46f, h * 0.535f)
-        quadraticTo(w * 0.50f, h * 0.565f, w * 0.54f, h * 0.535f)
-    }
-    drawPath(smile, MidnightNavy, style = stroke)
-
-    // Little front paws
-    drawOval(PureWhite, Offset(w * 0.34f, h * 0.82f), Size(w * 0.12f, h * 0.09f))
-    drawOval(MidnightNavy, Offset(w * 0.34f, h * 0.82f), Size(w * 0.12f, h * 0.09f), style = stroke)
-    drawOval(PureWhite, Offset(w * 0.54f, h * 0.82f), Size(w * 0.12f, h * 0.09f))
-    drawOval(MidnightNavy, Offset(w * 0.54f, h * 0.82f), Size(w * 0.12f, h * 0.09f), style = stroke)
-}
-
-private fun DrawScope.drawRestingBunny(w: Float, h: Float, stroke: Stroke) {
-    // Soft resting ground shadow
-    drawOval(SkyBlue.copy(alpha = 0.45f), Offset(w * 0.12f, h * 0.78f), Size(w * 0.76f, h * 0.14f))
-
-    // Fluffy round tail
-    drawCircle(PureWhite, radius = w * 0.09f, center = Offset(w * 0.20f, h * 0.68f))
-    drawCircle(MidnightNavy, radius = w * 0.09f, center = Offset(w * 0.20f, h * 0.68f), style = stroke)
-
-    // Curled resting loaf body
-    drawOval(PureWhite, Offset(w * 0.20f, h * 0.46f), Size(w * 0.58f, h * 0.38f))
-    drawOval(MidnightNavy, Offset(w * 0.20f, h * 0.46f), Size(w * 0.58f, h * 0.38f), style = stroke)
-
-    // Folded ears anchored directly to the upper crown of the resting head (head x=0.46..0.84, top y=0.38)
-    rotate(-46f, pivot = Offset(w * 0.57f, h * 0.42f)) {
-        drawOval(PureWhite, Offset(w * 0.51f, h * 0.16f), Size(w * 0.12f, h * 0.30f))
-        drawOval(MidnightNavy, Offset(w * 0.51f, h * 0.16f), Size(w * 0.12f, h * 0.30f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.54f, h * 0.21f), Size(w * 0.06f, h * 0.18f))
-    }
-    rotate(-28f, pivot = Offset(w * 0.64f, h * 0.41f)) {
-        drawOval(PureWhite, Offset(w * 0.58f, h * 0.15f), Size(w * 0.12f, h * 0.30f))
-        drawOval(MidnightNavy, Offset(w * 0.58f, h * 0.15f), Size(w * 0.12f, h * 0.30f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.61f, h * 0.20f), Size(w * 0.06f, h * 0.18f))
-    }
-
-    // Head nestled forward (drawn over ear bases so ears join seamlessly into the crown)
-    drawOval(PureWhite, Offset(w * 0.46f, h * 0.38f), Size(w * 0.38f, h * 0.34f))
-    drawOval(MidnightNavy, Offset(w * 0.46f, h * 0.38f), Size(w * 0.38f, h * 0.34f), style = stroke)
-
-    // Peaceful closed resting eye
-    val closedEye = Path().apply {
-        moveTo(w * 0.62f, h * 0.53f)
-        quadraticTo(w * 0.67f, h * 0.57f, w * 0.72f, h * 0.53f)
-    }
-    drawPath(closedEye, MidnightNavy, style = stroke)
-    drawCircle(SkyBlue, radius = w * 0.04f, center = Offset(w * 0.60f, h * 0.58f))
-    drawCircle(MidnightNavy, radius = w * 0.018f, center = Offset(w * 0.78f, h * 0.56f))
-
-    // Tiny forget-me-not resting beside bunny
-    drawBloomedForgetMeNot(Offset(w * 0.84f, h * 0.76f), w * 0.11f)
-}
-
-private fun DrawScope.drawEnvelopeBunny(w: Float, h: Float, stroke: Stroke) {
-    // Ears aligned symmetrically onto head crown (head center x=0.40w, top y=0.27h)
-    rotate(-9f, pivot = Offset(w * 0.315f, h * 0.31f)) {
-        drawOval(PureWhite, Offset(w * 0.255f, h * 0.05f), Size(w * 0.12f, h * 0.29f))
-        drawOval(MidnightNavy, Offset(w * 0.255f, h * 0.05f), Size(w * 0.12f, h * 0.29f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.287f, h * 0.11f), Size(w * 0.056f, h * 0.17f))
-    }
-    rotate(9f, pivot = Offset(w * 0.485f, h * 0.31f)) {
-        drawOval(PureWhite, Offset(w * 0.425f, h * 0.05f), Size(w * 0.12f, h * 0.29f))
-        drawOval(MidnightNavy, Offset(w * 0.425f, h * 0.05f), Size(w * 0.12f, h * 0.29f), style = stroke)
-        drawOval(SkyBlue.copy(alpha = 0.68f), Offset(w * 0.457f, h * 0.11f), Size(w * 0.056f, h * 0.17f))
-    }
-
-    // Body & head
-    drawOval(PureWhite, Offset(w * 0.18f, h * 0.52f), Size(w * 0.42f, h * 0.36f))
-    drawOval(MidnightNavy, Offset(w * 0.18f, h * 0.52f), Size(w * 0.42f, h * 0.36f), style = stroke)
-
-    drawOval(PureWhite, Offset(w * 0.19f, h * 0.27f), Size(w * 0.42f, h * 0.34f))
-    drawOval(MidnightNavy, Offset(w * 0.19f, h * 0.27f), Size(w * 0.42f, h * 0.34f), style = stroke)
-
-    drawCircle(MidnightNavy, radius = w * 0.025f, center = Offset(w * 0.34f, h * 0.42f))
-    drawCircle(MidnightNavy, radius = w * 0.025f, center = Offset(w * 0.48f, h * 0.42f))
-    drawCircle(SkyBlue, radius = w * 0.036f, center = Offset(w * 0.28f, h * 0.47f))
-
-    // Envelope carried in front paws
-    val envLeft = w * 0.46f
-    val envTop = h * 0.50f
-    val envW = w * 0.42f
-    val envH = h * 0.30f
-    drawRoundRect(
-        color = PureWhite,
-        topLeft = Offset(envLeft, envTop),
-        size = Size(envW, envH),
-        cornerRadius = CornerRadius(w * 0.04f, w * 0.04f)
-    )
-    drawRoundRect(
-        color = MidnightNavy,
-        topLeft = Offset(envLeft, envTop),
-        size = Size(envW, envH),
-        cornerRadius = CornerRadius(w * 0.04f, w * 0.04f),
-        style = stroke
-    )
-    // Envelope flap
-    val flap = Path().apply {
-        moveTo(envLeft + w * 0.02f, envTop + h * 0.02f)
-        lineTo(envLeft + envW / 2f, envTop + envH * 0.56f)
-        lineTo(envLeft + envW - w * 0.02f, envTop + h * 0.02f)
-    }
-    drawPath(flap, MidnightNavy, style = stroke)
-
-    // Pollen yellow wax seal on envelope
-    drawCircle(
-        color = PollenYellow,
-        radius = w * 0.055f,
-        center = Offset(envLeft + envW / 2f, envTop + envH * 0.58f)
-    )
-    drawCircle(
-        color = ForgetMeNotBlue,
-        radius = w * 0.025f,
-        center = Offset(envLeft + envW / 2f, envTop + envH * 0.58f)
-    )
-}
-
-private fun DrawScope.drawCelebratingBunny(w: Float, h: Float, stroke: Stroke) {
-    // Joyful bunny with blooming forget-me-not right beside it
-    drawGreetingBunny(w * 0.84f, h, stroke)
-
-    // Happy sparkle accents in pollen yellow
-    drawCircle(PollenYellow, radius = w * 0.035f, center = Offset(w * 0.80f, h * 0.22f))
-    drawCircle(SkyBlue, radius = w * 0.028f, center = Offset(w * 0.90f, h * 0.34f))
-
-    // Opened forget-me-not bloom beside the bunny
-    drawBloomedForgetMeNot(Offset(w * 0.80f, h * 0.62f), w * 0.17f)
 }
 
 @Composable
@@ -425,6 +278,7 @@ fun BunnyHeadingRow(
     title: String,
     subtitle: String? = null,
     pose: BunnyPose = BunnyPose.GREETING,
+    breed: BunnyBreed = BunnyBreed.forCurrentMonth(),
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -434,7 +288,8 @@ fun BunnyHeadingRow(
         SmallBunnyIllustration(
             pose = pose,
             size = 48.dp,
-            contentDesc = "Forget-Me-Not bunny"
+            breed = breed,
+            contentDesc = "${breed.breedName} bunny"
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column {

@@ -77,12 +77,14 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.AccomplishmentHighlight
 import com.example.data.AccomplishmentReportEngine
-import com.example.data.AppUsageSummary
 import com.example.data.CalendarDate
 import com.example.data.MonthlyAccomplishmentReport
 import com.example.data.YearEndAccomplishmentReport
 import androidx.compose.foundation.shape.CircleShape
-import com.example.ui.components.AppUsageSummaryCard
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.DailyHabitRepository
+import com.example.ui.components.BouquetKeepsakeShelf
+import com.example.ui.components.BunnyBreed
 import com.example.ui.components.BunnyPose
 import com.example.ui.components.FlowerProgressRow
 import com.example.ui.components.ForgetMeNotFlower
@@ -90,10 +92,15 @@ import com.example.ui.components.ForgetMeNotHabitCalendarCard
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
 import com.example.ui.components.ModernSegmentedToggle
+import com.example.ui.components.MonthlyBunnyAlmanacModal
+import com.example.ui.components.MonthlyCompletedTasksChartCard
+import com.example.ui.components.MonthlyMilestoneTimeChartCard
 import com.example.ui.components.ResponsiveCardGrid
 import com.example.ui.components.SmallBunnyIllustration
 import com.example.ui.components.TonalInsetPanel
+import com.example.ui.components.YearBouquetCard
 import com.example.ui.components.adaptiveHorizontalPadding
+import com.example.ui.components.computeYearBouquetFlowerCount
 import com.example.ui.theme.CalmSage
 import com.example.ui.theme.CalmSageContainer
 import com.example.ui.theme.CloudWhite
@@ -114,7 +121,6 @@ private enum class ReportScope { MONTHLY, YEAR_END }
 @Composable
 fun ReportsScreen(
     state: PlannerUiState.Ready,
-    usageSummary: AppUsageSummary,
     onSelectItem: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -123,6 +129,7 @@ fun ReportsScreen(
     var scope by rememberSaveable { mutableStateOf(ReportScope.MONTHLY) }
     var selectedYear by rememberSaveable { mutableIntStateOf(today.year) }
     var selectedMonth by rememberSaveable { mutableIntStateOf(today.month) }
+    var showBunnyAlmanac by rememberSaveable { mutableStateOf(false) }
 
     // Key on CalendarDate (today) instead of raw nowMillis so 60s ticks never re-run the report engine
     val monthlyReport = remember(selectedYear, selectedMonth, state.items, state.steps, today) {
@@ -140,6 +147,18 @@ fun ReportsScreen(
             year = selectedYear,
             allItems = state.items,
             allSteps = state.steps,
+            nowMillis = state.nowMillis
+        )
+    }
+
+    val habitRepo = remember(context) { DailyHabitRepository.getInstance(context) }
+    val habitSnapshot by habitRepo.snapshot.collectAsStateWithLifecycle()
+    val yearBouquetCount = remember(selectedYear, state.items, state.steps, habitSnapshot.checkInCountByDate) {
+        computeYearBouquetFlowerCount(
+            year = selectedYear,
+            items = state.items,
+            steps = state.steps,
+            habitCheckInCountByDate = habitSnapshot.checkInCountByDate,
             nowMillis = state.nowMillis
         )
     }
@@ -320,6 +339,7 @@ fun ReportsScreen(
             item(key = "monthly_hero") {
                 MonthlyHeroCard(
                     report = monthlyReport,
+                    onOpenAlmanac = { showBunnyAlmanac = true },
                     onShare = {
                         shareText(
                             subject = "${monthlyReport.monthName} ${monthlyReport.year} Accomplishment Report",
@@ -350,37 +370,39 @@ fun ReportsScreen(
                 )
             }
 
-            // App usage time tracker + Forget-Me-Not daily habit calendar (side-by-side on wide tablets)
-            item(key = "monthly_usage_and_habits") {
+            // Native Compose Canvas productivity charts (completed tasks & milestone effort)
+            item(key = "monthly_productivity_charts") {
                 if (useWideMetricsRow) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        ForgetMeNotHabitCalendarCard(
-                            items = state.items,
-                            steps = state.steps,
-                            today = today,
-                            initialMonth = CalendarDate(selectedYear, selectedMonth, 1),
+                        MonthlyCompletedTasksChartCard(
+                            report = monthlyReport,
                             modifier = Modifier.weight(1f)
                         )
-                        AppUsageSummaryCard(
-                            usage = usageSummary,
+                        MonthlyMilestoneTimeChartCard(
+                            report = monthlyReport,
                             modifier = Modifier.weight(1f)
                         )
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        ForgetMeNotHabitCalendarCard(
-                            items = state.items,
-                            steps = state.steps,
-                            today = today,
-                            initialMonth = CalendarDate(selectedYear, selectedMonth, 1)
-                        )
-                        AppUsageSummaryCard(usage = usageSummary)
+                        MonthlyCompletedTasksChartCard(report = monthlyReport)
+                        MonthlyMilestoneTimeChartCard(report = monthlyReport)
                     }
                 }
+            }
+
+            // Forget-Me-Not daily habit calendar (app usage tracker moved to Profile)
+            item(key = "monthly_habits_calendar") {
+                ForgetMeNotHabitCalendarCard(
+                    items = state.items,
+                    steps = state.steps,
+                    today = today,
+                    initialMonth = CalendarDate(selectedYear, selectedMonth, 1)
+                )
             }
 
             item(key = "monthly_highlights_header") {
@@ -429,12 +451,29 @@ fun ReportsScreen(
                         selectedMonth = m
                         scope = ReportScope.MONTHLY
                     },
+                    onOpenAlmanac = { showBunnyAlmanac = true },
                     onShare = {
                         shareText(
                             subject = "${yearEndReport.year} Grand Year-End Accomplishment Report",
                             body = AccomplishmentReportEngine.formatYearEndShareText(yearEndReport)
                         )
                     }
+                )
+            }
+
+            // Annual Forget-Me-Not Bouquet filled with every bloomed task & handed out each year
+            item(key = "year_end_bouquet_card") {
+                YearBouquetCard(
+                    year = selectedYear,
+                    flowerCount = yearBouquetCount,
+                    today = today,
+                    dedicationText = state.profile.dedicationText
+                )
+            }
+
+            item(key = "year_end_bouquet_shelf") {
+                BouquetKeepsakeShelf(
+                    dedicationText = state.profile.dedicationText
                 )
             }
 
@@ -458,10 +497,6 @@ fun ReportsScreen(
 
             item(key = "year_end_12_month_chart") {
                 YearBloomTimelineCard(report = yearEndReport)
-            }
-
-            item(key = "year_end_app_usage") {
-                AppUsageSummaryCard(usage = usageSummary)
             }
 
             item(key = "year_end_rollup_header") {
@@ -512,14 +547,27 @@ fun ReportsScreen(
             }
         }
     }
+
+    if (showBunnyAlmanac) {
+        MonthlyBunnyAlmanacModal(
+            highlightedMonth = if (scope == ReportScope.MONTHLY) selectedMonth else today.month,
+            onDismiss = { showBunnyAlmanac = false },
+            onSelectMonth = { pickedMonth ->
+                selectedMonth = pickedMonth
+                scope = ReportScope.MONTHLY
+            }
+        )
+    }
     }
 }
 
 @Composable
 private fun MonthlyHeroCard(
     report: MonthlyAccomplishmentReport,
+    onOpenAlmanac: () -> Unit,
     onShare: () -> Unit
 ) {
+    val monthBreed = remember(report.month) { BunnyBreed.forMonth(report.month) }
     ModernPanel(
         shape = RoundedCornerShape(26.dp),
         elevation = 4.dp,
@@ -549,14 +597,22 @@ private fun MonthlyHeroCard(
                 Surface(
                     color = SoftIceSurface,
                     shape = CircleShape,
-                    modifier = Modifier.size(76.dp)
+                    border = BorderStroke(1.dp, SubtleBorder),
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onOpenAlmanac)
+                        .testTag("report_monthly_bunny_badge")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         SmallBunnyIllustration(
                             pose = if (report.totalBlooms > 0) BunnyPose.CELEBRATING else BunnyPose.RESTING,
+                            breed = monthBreed,
                             size = 64.dp,
                             contentDesc = stringResource(
-                                if (report.totalBlooms > 0) R.string.cd_bunny_celebrating else R.string.cd_bunny_resting
+                                R.string.cd_monthly_bunny_badge,
+                                monthBreed.monthName,
+                                monthBreed.breedName
                             )
                         )
                     }
@@ -573,13 +629,35 @@ private fun MonthlyHeroCard(
                         style = MaterialTheme.typography.titleSmall,
                         color = MutedNavy
                     )
-                    if (report.completionPercent > 0) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        ModernPillBadge(
-                            text = "${report.completionPercent}% monthly completion",
-                            containerColor = CalmSageContainer,
-                            contentColor = CalmSage
-                        )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = SoftIceSurface,
+                            shape = CircleShape,
+                            border = BorderStroke(0.75.dp, SubtleBorder),
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenAlmanac)
+                        ) {
+                            Text(
+                                text = "${report.shortMonthName} · ${monthBreed.breedName}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = DeepBlue,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                        if (report.completionPercent > 0) {
+                            ModernPillBadge(
+                                text = "${report.completionPercent}% done",
+                                containerColor = CalmSageContainer,
+                                contentColor = CalmSage
+                            )
+                        }
                     }
                 }
             }
@@ -625,6 +703,7 @@ private fun MonthlyHeroCard(
 private fun GrandYearEndHeroCard(
     report: YearEndAccomplishmentReport,
     onJumpToMonth: (Int) -> Unit,
+    onOpenAlmanac: () -> Unit,
     onShare: () -> Unit
 ) {
     ModernPanel(
@@ -677,7 +756,10 @@ private fun GrandYearEndHeroCard(
             SmallBunnyIllustration(
                 pose = if (report.totalBlooms > 0) BunnyPose.CELEBRATING else BunnyPose.GREETING,
                 size = 92.dp,
-                contentDesc = stringResource(R.string.cd_bunny_celebrating)
+                contentDesc = stringResource(R.string.cd_bunny_celebrating),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onOpenAlmanac)
             )
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {

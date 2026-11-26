@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -143,7 +144,8 @@ fun BunnyMemoModalContainer(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding(),
+                .systemBarsPadding()
+                .imePadding(),
             contentAlignment = Alignment.Center
         ) {
             val resolvedMaxWidth = if (this@BoxWithConstraints.maxWidth >= 840.dp) {

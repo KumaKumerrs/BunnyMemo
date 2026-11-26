@@ -67,7 +67,9 @@ fun AuthScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
 
     var isLoading by remember { mutableStateOf(false) }
     var isAutoChecking by remember { mutableStateOf(true) }
@@ -87,6 +89,14 @@ fun AuthScreen(
             },
             scope = scope
         )
+    }
+
+    // Fail-safe guard so AuthScreen never remains stuck on the loading screen
+    LaunchedEffect(isAutoChecking) {
+        if (isAutoChecking) {
+            kotlinx.coroutines.delay(4000L)
+            isAutoChecking = false
+        }
     }
 
     if (isAutoChecking) {

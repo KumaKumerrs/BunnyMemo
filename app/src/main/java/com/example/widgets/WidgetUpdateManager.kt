@@ -11,6 +11,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 enum class PlannerWidgetKind(val providerClass: Class<*>) {
+    INTERACTIVE_BUNNY(InteractiveBunnyAppWidgetProvider::class.java),
+    WEEKLY_CALENDAR(WeeklyCalendarAppWidgetProvider::class.java),
     CALENDAR(CalendarAppWidgetProvider::class.java),
     CLASS_SCHEDULE(ClassScheduleAppWidgetProvider::class.java),
     TASKS(TasksAppWidgetProvider::class.java),
@@ -29,16 +31,24 @@ object WidgetUpdateManager {
         scope.launch {
             try {
                 val manager = AppWidgetManager.getInstance(appContext)
+                val bunnyIds = manager.getAppWidgetIds(ComponentName(appContext, InteractiveBunnyAppWidgetProvider::class.java))
+                val weekIds = manager.getAppWidgetIds(ComponentName(appContext, WeeklyCalendarAppWidgetProvider::class.java))
                 val calIds = manager.getAppWidgetIds(ComponentName(appContext, CalendarAppWidgetProvider::class.java))
                 val clsIds = manager.getAppWidgetIds(ComponentName(appContext, ClassScheduleAppWidgetProvider::class.java))
                 val taskIds = manager.getAppWidgetIds(ComponentName(appContext, TasksAppWidgetProvider::class.java))
                 val quickIds = manager.getAppWidgetIds(ComponentName(appContext, QuickActionsAppWidgetProvider::class.java))
 
-                if (calIds.isEmpty() && clsIds.isEmpty() && taskIds.isEmpty() && quickIds.isEmpty()) {
+                if (bunnyIds.isEmpty() && weekIds.isEmpty() && calIds.isEmpty() && clsIds.isEmpty() && taskIds.isEmpty() && quickIds.isEmpty()) {
                     return@launch
                 }
 
                 val snapshot = WidgetDataLoader.load(appContext)
+                if (bunnyIds.isNotEmpty()) {
+                    InteractiveBunnyAppWidgetProvider.updateWidgets(appContext, manager, bunnyIds, snapshot)
+                }
+                if (weekIds.isNotEmpty()) {
+                    WeeklyCalendarAppWidgetProvider.updateWidgets(appContext, manager, weekIds, snapshot)
+                }
                 if (calIds.isNotEmpty()) {
                     CalendarAppWidgetProvider.updateWidgets(appContext, manager, calIds, snapshot)
                 }

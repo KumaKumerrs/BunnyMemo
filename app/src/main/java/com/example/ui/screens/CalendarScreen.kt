@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,37 +38,58 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.R
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.CalendarDate
+import com.example.data.CalendarInvite
 import com.example.data.ClassScheduleItem
 import com.example.data.ItemType
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
+import com.example.data.TaskCategory
+import com.example.ui.components.BunnyBreed
+import com.example.ui.components.BunnyPose
 import com.example.ui.components.FlowerProgressRow
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
 import com.example.ui.components.ModernSegmentedToggle
+import com.example.ui.components.MonthlyBunnyAlmanacModal
+import com.example.ui.components.SharedScheduleCard
+import com.example.ui.components.SmallBunnyIllustration
+import com.example.ui.components.TaskCategoryBadge
+import com.example.ui.components.TaskCategoryFilter
+import com.example.ui.components.TaskCategoryFilterBar
+import com.example.ui.components.TaskPriorityBadge
 import com.example.ui.components.adaptiveHorizontalPadding
 import com.example.ui.components.classColorPalette
 import com.example.ui.components.rememberReducedMotion
@@ -86,6 +108,7 @@ import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
+import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 
 private enum class CalendarMode { MONTH, WEEK }
@@ -93,6 +116,7 @@ private enum class CalendarMode { MONTH, WEEK }
 private data class CalendarDayBucket(
     val items: List<PlannerItem>,
     val classes: List<ClassScheduleItem>,
+    val invites: List<CalendarInvite>,
     val hasEvent: Boolean,
     val hasPlan: Boolean,
     val hasTask: Boolean,
@@ -101,16 +125,19 @@ private data class CalendarDayBucket(
     val previewLabel: String?
 ) {
     val hasClass: Boolean get() = classes.isNotEmpty()
-    val hasAny: Boolean get() = items.isNotEmpty() || classes.isNotEmpty()
+    val hasSharedInvite: Boolean get() = invites.isNotEmpty()
+    val hasAny: Boolean get() = items.isNotEmpty() || classes.isNotEmpty() || invites.isNotEmpty()
 }
 
 private fun buildDayBucket(
     date: CalendarDate,
     state: PlannerUiState.Ready,
-    overdueIds: Set<String>
+    overdueIds: Set<String>,
+    invitesByDateIso: Map<String, List<CalendarInvite>>
 ): CalendarDayBucket {
     val itemsOnDay = state.items.filter { it.appearsOnDate(date) }
     val classesOnDay = state.classesOnDate(date)
+    val invitesOnDay = invitesByDateIso[date.toIsoString()].orEmpty()
     var hasEvent = false
     var hasPlan = false
     var hasTask = false
@@ -132,10 +159,13 @@ private fun buildDayBucket(
             step.completed && CalendarDate.parse(step.dueDate) == date
         }
     }
-    val previewLabel = itemsOnDay.firstOrNull()?.title ?: classesOnDay.firstOrNull()?.subject
+    val previewLabel = itemsOnDay.firstOrNull()?.title
+        ?: classesOnDay.firstOrNull()?.subject
+        ?: invitesOnDay.firstOrNull()?.title
     return CalendarDayBucket(
         items = itemsOnDay,
         classes = classesOnDay,
+        invites = invitesOnDay,
         hasEvent = hasEvent,
         hasPlan = hasPlan,
         hasTask = hasTask,
@@ -154,13 +184,25 @@ fun CalendarScreen(
     onSelectItem: (String) -> Unit,
     onAddForDate: (CalendarDate) -> Unit,
     onEditClass: (ClassScheduleItem) -> Unit = {},
+    calendarInvites: List<CalendarInvite> = emptyList(),
+    currentUserId: String? = null,
+    onInviteFriendClick: (CalendarDate) -> Unit = {},
+    onOpenSharedInvite: (CalendarInvite) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val today = state.todayDate()
     val reducedMotion = rememberReducedMotion()
     var mode by remember { mutableStateOf(CalendarMode.MONTH) }
     var visibleMonth by remember(selectedDate.year, selectedDate.month) {
         mutableStateOf(CalendarDate(selectedDate.year, selectedDate.month, 1))
+    }
+    var showBunnyAlmanac by rememberSaveable { mutableStateOf(false) }
+    var categoryFilter by rememberSaveable { mutableStateOf(TaskCategoryFilter.ALL) }
+
+    val invitesByDateIso = remember(calendarInvites) {
+        calendarInvites.groupBy { it.plannedDate }
     }
 
     // Precompute overdue IDs once per data/day snapshot instead of inside every calendar cell
@@ -170,7 +212,7 @@ fun CalendarScreen(
         }.toSet()
     }
 
-    val dayItems = remember(state.items, selectedDate) {
+    val allDayItems = remember(state.items, selectedDate) {
         state.items
             .filter { it.appearsOnDate(selectedDate) }
             .sortedWith(
@@ -180,14 +222,35 @@ fun CalendarScreen(
                         ItemType.TASK -> 1
                         ItemType.PLAN -> 2
                     }
+                }.thenBy {
+                    if (it.itemType() == ItemType.TASK) it.taskPriority().sortRank else 0
                 }.thenBy { it.startAtUtcMillis ?: (it.dueTimeMinutes?.toLong() ?: Long.MAX_VALUE) }
             )
+    }
+
+    val categoryCounts = remember(allDayItems) {
+        buildMap {
+            put(TaskCategoryFilter.ALL, allDayItems.size)
+            TaskCategory.entries.forEach { cat ->
+                TaskCategoryFilter.entries.firstOrNull { it.category == cat }?.let { key ->
+                    put(key, allDayItems.count { it.taskCategory() == cat })
+                }
+            }
+        }
+    }
+
+    val selectedCat = categoryFilter.category
+    val dayItems = remember(allDayItems, selectedCat) {
+        if (selectedCat == null) allDayItems else allDayItems.filter { it.taskCategory() == selectedCat }
     }
 
     val dayClasses = remember(state.classSchedules, selectedDate) {
         state.classesOnDate(selectedDate)
     }
-    val totalDayEntries = dayItems.size + dayClasses.size
+    val dayInvites = remember(invitesByDateIso, selectedDate) {
+        invitesByDateIso[selectedDate.toIsoString()].orEmpty()
+    }
+    val totalDayEntries = allDayItems.size + dayClasses.size + dayInvites.size
 
     val weekTimingsDates = remember(selectedDate, mode) {
         if (mode == CalendarMode.WEEK) PlannerDateUtils.buildWeekDates(selectedDate) else emptyList()
@@ -232,11 +295,25 @@ fun CalendarScreen(
                         selectedDate = selectedDate,
                         today = today,
                         overdueItemIds = overdueItemIds,
+                        invitesByDateIso = invitesByDateIso,
                         reducedMotion = reducedMotion,
                         roomyCells = isRoomyCells,
-                        onModeChange = { mode = it },
-                        onVisibleMonthChange = { visibleMonth = it },
-                        onSelectDate = onSelectDate
+                        onModeChange = {
+                            feedback.onLightTick()
+                            mode = it
+                        },
+                        onVisibleMonthChange = {
+                            feedback.onLightTick()
+                            visibleMonth = it
+                        },
+                        onSelectDate = {
+                            feedback.onLightTick()
+                            onSelectDate(it)
+                        },
+                        onOpenAlmanac = {
+                            feedback.onPopOpen()
+                            showBunnyAlmanac = true
+                        }
                     )
                 }
 
@@ -252,8 +329,29 @@ fun CalendarScreen(
                         SelectedDayHeaderRow(
                             selectedDate = selectedDate,
                             totalDayEntries = totalDayEntries,
-                            onAddForDate = { onAddForDate(selectedDate) }
+                            onInviteFriend = {
+                                feedback.onPopOpen()
+                                onInviteFriendClick(selectedDate)
+                            },
+                            onAddForDate = {
+                                feedback.onPopOpen()
+                                onAddForDate(selectedDate)
+                            }
                         )
+                    }
+
+                    if (allDayItems.isNotEmpty()) {
+                        item(key = "calendar_category_filter_wide") {
+                            TaskCategoryFilterBar(
+                                selectedFilter = categoryFilter,
+                                counts = categoryCounts,
+                                onSelectFilter = {
+                                    feedback.onLightTick()
+                                    categoryFilter = it
+                                },
+                                tagPrefix = "calendar_category_filter"
+                            )
+                        }
                     }
 
                     if (totalDayEntries == 0) {
@@ -261,7 +359,31 @@ fun CalendarScreen(
                             EmptyDayPanel(selectedDate = selectedDate)
                         }
                     } else {
-                        if (dayClasses.isNotEmpty()) {
+                        if (dayInvites.isNotEmpty()) {
+                            item(key = "calendar_shared_header_wide") {
+                                Text(
+                                    text = "Shared schedules",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = DeepBlue,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                            }
+                            items(dayInvites, key = { "cal_invite_${it.id}" }) { invite ->
+                                SharedScheduleCard(
+                                    invite = invite,
+                                    currentUserId = currentUserId,
+                                    onProfileIconClick = {
+                                        feedback.onPopOpen()
+                                        onOpenSharedInvite(invite)
+                                    },
+                                    onCardClick = {
+                                        feedback.onPopOpen()
+                                        onOpenSharedInvite(invite)
+                                    }
+                                )
+                            }
+                        }
+                        if (dayClasses.isNotEmpty() && selectedCat == null) {
                             items(dayClasses, key = { "cal_cls_${it.id}" }) { cls ->
                                 CalendarClassAgendaCard(
                                     schedule = cls,
@@ -320,11 +442,25 @@ fun CalendarScreen(
                         selectedDate = selectedDate,
                         today = today,
                         overdueItemIds = overdueItemIds,
+                        invitesByDateIso = invitesByDateIso,
                         reducedMotion = reducedMotion,
                         roomyCells = isRoomyCells,
-                        onModeChange = { mode = it },
-                        onVisibleMonthChange = { visibleMonth = it },
-                        onSelectDate = onSelectDate
+                        onModeChange = {
+                            feedback.onLightTick()
+                            mode = it
+                        },
+                        onVisibleMonthChange = {
+                            feedback.onLightTick()
+                            visibleMonth = it
+                        },
+                        onSelectDate = {
+                            feedback.onLightTick()
+                            onSelectDate(it)
+                        },
+                        onOpenAlmanac = {
+                            feedback.onPopOpen()
+                            showBunnyAlmanac = true
+                        }
                     )
                 }
 
@@ -332,8 +468,29 @@ fun CalendarScreen(
                     SelectedDayHeaderRow(
                         selectedDate = selectedDate,
                         totalDayEntries = totalDayEntries,
-                        onAddForDate = { onAddForDate(selectedDate) }
+                        onInviteFriend = {
+                            feedback.onPopOpen()
+                            onInviteFriendClick(selectedDate)
+                        },
+                        onAddForDate = {
+                            feedback.onPopOpen()
+                            onAddForDate(selectedDate)
+                        }
                     )
+                }
+
+                if (allDayItems.isNotEmpty()) {
+                    item(key = "calendar_category_filter_compact") {
+                        TaskCategoryFilterBar(
+                            selectedFilter = categoryFilter,
+                            counts = categoryCounts,
+                            onSelectFilter = {
+                                feedback.onLightTick()
+                                categoryFilter = it
+                            },
+                            tagPrefix = "calendar_category_filter"
+                        )
+                    }
                 }
 
                 if (totalDayEntries == 0) {
@@ -341,7 +498,31 @@ fun CalendarScreen(
                         EmptyDayPanel(selectedDate = selectedDate)
                     }
                 } else {
-                    if (dayClasses.isNotEmpty()) {
+                    if (dayInvites.isNotEmpty()) {
+                        item(key = "calendar_shared_header_compact") {
+                            Text(
+                                text = "Shared schedules",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = DeepBlue,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                        }
+                        items(dayInvites, key = { "cal_invite_${it.id}" }) { invite ->
+                            SharedScheduleCard(
+                                invite = invite,
+                                currentUserId = currentUserId,
+                                onProfileIconClick = {
+                                    feedback.onPopOpen()
+                                    onOpenSharedInvite(invite)
+                                },
+                                onCardClick = {
+                                    feedback.onPopOpen()
+                                    onOpenSharedInvite(invite)
+                                }
+                            )
+                        }
+                    }
+                    if (dayClasses.isNotEmpty() && selectedCat == null) {
                         items(dayClasses, key = { "cal_cls_${it.id}" }) { cls ->
                             CalendarClassAgendaCard(
                                 schedule = cls,
@@ -384,6 +565,23 @@ fun CalendarScreen(
             }
         }
     }
+
+    if (showBunnyAlmanac) {
+        val displayedMonth = if (mode == CalendarMode.MONTH) visibleMonth.month else selectedDate.month
+        MonthlyBunnyAlmanacModal(
+            highlightedMonth = displayedMonth,
+            onDismiss = { showBunnyAlmanac = false },
+            onSelectMonth = { pickedMonth ->
+                val targetYear = if (mode == CalendarMode.MONTH) visibleMonth.year else selectedDate.year
+                val targetMonthStart = CalendarDate(targetYear, pickedMonth, 1)
+                visibleMonth = targetMonthStart
+                if (mode == CalendarMode.WEEK) {
+                    val maxDay = targetMonthStart.daysInMonth()
+                    onSelectDate(CalendarDate(targetYear, pickedMonth, selectedDate.day.coerceIn(1, maxDay)))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -394,12 +592,17 @@ private fun CalendarGridPanel(
     selectedDate: CalendarDate,
     today: CalendarDate,
     overdueItemIds: Set<String>,
+    invitesByDateIso: Map<String, List<CalendarInvite>>,
     reducedMotion: Boolean,
     roomyCells: Boolean,
     onModeChange: (CalendarMode) -> Unit,
     onVisibleMonthChange: (CalendarDate) -> Unit,
-    onSelectDate: (CalendarDate) -> Unit
+    onSelectDate: (CalendarDate) -> Unit,
+    onOpenAlmanac: () -> Unit
 ) {
+    val displayedDate = if (mode == CalendarMode.MONTH) visibleMonth else selectedDate
+    val monthBreed = remember(displayedDate.month) { BunnyBreed.forMonth(displayedDate.month) }
+
     ModernPanel(
         shape = RoundedCornerShape(24.dp),
         elevation = 3.dp,
@@ -414,14 +617,65 @@ private fun CalendarGridPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = PlannerDateUtils.formatMonthYear(
-                        if (mode == CalendarMode.MONTH) visibleMonth else selectedDate
-                    ),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MidnightNavy,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = PlannerDateUtils.formatMonthYear(displayedDate),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MidnightNavy,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                    val cdBadge = stringResource(
+                        R.string.cd_monthly_bunny_badge,
+                        monthBreed.monthName,
+                        monthBreed.breedName
+                    )
+                    Surface(
+                        color = SoftIceSurface,
+                        shape = RoundedCornerShape(100.dp),
+                        border = BorderStroke(1.dp, SubtleBorder),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(100.dp))
+                            .semantics { contentDescription = cdBadge }
+                            .clickable(onClick = onOpenAlmanac)
+                            .testTag("calendar_monthly_bunny_chip")
+                    ) {
+                        AnimatedContent(
+                            targetState = monthBreed,
+                            transitionSpec = {
+                                fadeIn(tween(200, easing = FastOutSlowInEasing)) togetherWith
+                                    fadeOut(tween(140, easing = FastOutSlowInEasing))
+                            },
+                            label = "calendar_month_bunny"
+                        ) { breed ->
+                            Row(
+                                modifier = Modifier.padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                SmallBunnyIllustration(
+                                    pose = BunnyPose.GREETING,
+                                    breed = breed,
+                                    size = 28.dp
+                                )
+                                Text(
+                                    text = breed.breedName,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    color = DeepBlue,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
@@ -509,9 +763,9 @@ private fun CalendarGridPanel(
                         PlannerDateUtils.buildMonthGrid(anchorDate)
                     }
                     // Precompute ALL day buckets for this month ONCE (eliminates 42xN per-frame scans!)
-                    val monthBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds) {
+                    val monthBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds, invitesByDateIso) {
                         gridCells.filterNotNull().associateWith { date ->
-                            buildDayBucket(date, state, overdueItemIds)
+                            buildDayBucket(date, state, overdueItemIds, invitesByDateIso)
                         }
                     }
                     val rows = remember(gridCells) { gridCells.chunked(7) }
@@ -546,8 +800,8 @@ private fun CalendarGridPanel(
                     val weekDates = remember(anchorDate) {
                         PlannerDateUtils.buildWeekDates(anchorDate)
                     }
-                    val weekBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds) {
-                        weekDates.associateWith { date -> buildDayBucket(date, state, overdueItemIds) }
+                    val weekBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds, invitesByDateIso) {
+                        weekDates.associateWith { date -> buildDayBucket(date, state, overdueItemIds, invitesByDateIso) }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -600,6 +854,7 @@ private fun CalendarGridPanel(
 private fun SelectedDayHeaderRow(
     selectedDate: CalendarDate,
     totalDayEntries: Int,
+    onInviteFriend: () -> Unit,
     onAddForDate: () -> Unit
 ) {
     Row(
@@ -625,7 +880,24 @@ private fun SelectedDayHeaderRow(
                 color = MutedNavy
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        OutlinedButton(
+            onClick = onInviteFriend,
+            border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.45f)),
+            shape = RoundedCornerShape(100.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.testTag("calendar_invite_friend_button")
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.GroupAdd,
+                contentDescription = stringResource(R.string.invite_friend_title),
+                tint = DeepBlue,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Invite", style = MaterialTheme.typography.labelMedium, color = DeepBlue)
+        }
+        Spacer(modifier = Modifier.width(6.dp))
         Button(
             onClick = onAddForDate,
             colors = ButtonDefaults.buttonColors(
@@ -633,7 +905,7 @@ private fun SelectedDayHeaderRow(
                 contentColor = PureWhite
             ),
             shape = RoundedCornerShape(100.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
             modifier = Modifier.testTag("calendar_add_for_date_button")
         ) {
             Icon(
@@ -641,7 +913,7 @@ private fun SelectedDayHeaderRow(
                 contentDescription = null,
                 modifier = Modifier.size(16.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text("Add here", style = MaterialTheme.typography.labelMedium)
         }
     }
@@ -772,6 +1044,7 @@ private fun MonthDayCell(
                     if (hasPlan) CalendarDot(color = ForgetMeNotBlue)
                     if (hasTask && !hasCompletedDailyTask) CalendarDot(color = PollenYellow)
                     if (hasClass) CalendarDot(color = CalmSage)
+                    if (bucket?.hasSharedInvite == true) CalendarDot(color = Color(0xFF9368EB))
                 }
             }
         }
@@ -1019,11 +1292,26 @@ private fun CalendarAgendaCard(
                         color = MutedNavy
                     )
                 }
-                ModernPillBadge(
-                    text = item.itemType().label,
-                    containerColor = SoftIceSurface,
-                    contentColor = MutedNavy
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TaskCategoryBadge(
+                        category = item.taskCategory(),
+                        compact = true
+                    )
+                    if (item.itemType() == ItemType.TASK) {
+                        TaskPriorityBadge(
+                            priority = item.taskPriority(),
+                            compact = true
+                        )
+                    }
+                    ModernPillBadge(
+                        text = item.itemType().label,
+                        containerColor = SoftIceSurface,
+                        contentColor = MutedNavy
+                    )
+                }
             }
             if (progress.totalCount > 0) {
                 FlowerProgressRow(

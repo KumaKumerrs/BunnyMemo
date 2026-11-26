@@ -3,6 +3,8 @@ package com.example.widgets
 import android.content.Context
 import com.example.data.CalendarDate
 import com.example.data.ClassScheduleItem
+import com.example.data.DailyHabitRepository
+import com.example.data.DailyHabitSnapshot
 import com.example.data.ItemType
 import com.example.data.LocalClassScheduleEntity
 import com.example.data.LocalItemEntity
@@ -12,6 +14,8 @@ import com.example.data.LocalStepEntity
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
 import com.example.data.PlannerStep
+import com.example.data.TaskCategory
+import com.example.data.TaskPriority
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,8 +42,12 @@ data class WidgetSnapshot(
     val totalTodayTasksCount: Int,
     val latestQuickNote: PlannerItem?,
     val scheduledDatesInMonth: Set<CalendarDate>,
+    val currentWeekDates: List<CalendarDate>,
+    val scheduledDatesInCurrentWeek: Set<CalendarDate>,
+    val weekItemCountByDate: Map<CalendarDate, Int>,
     val habitBloomDates: Set<CalendarDate>,
-    val habitStreakDays: Int
+    val habitStreakDays: Int,
+    val dailyHabitSnapshot: DailyHabitSnapshot = DailyHabitSnapshot()
 )
 
 object WidgetDataLoader {
@@ -78,6 +86,7 @@ object WidgetDataLoader {
             }
             .sortedWith(
                 compareBy<PlannerItem> { it.completed }
+                    .thenBy { it.taskPriority().sortRank }
                     .thenBy { it.dueDate ?: "" }
                     .thenBy { it.dueTimeMinutes ?: Int.MAX_VALUE }
             )
@@ -114,9 +123,26 @@ object WidgetDataLoader {
             }
         }
 
+        // Current 7-day week (Sunday..Saturday containing today) for the "This Week" widget
+        val sundayOffset = today.dayOfWeekIndex()
+        val weekStart = today.plusDays(-sundayOffset)
+        val currentWeekDates = (0 until 7).map { weekStart.plusDays(it) }
+        val scheduledDatesInWeek = mutableSetOf<CalendarDate>()
+        val weekItemCounts = mutableMapOf<CalendarDate, Int>()
+        currentWeekDates.forEach { d ->
+            val itemCount = items.count { it.appearsOnDate(d) }
+            val classCount = classes.count { it.occursOnDate(d) }
+            val totalForDay = itemCount + classCount
+            if (totalForDay > 0) {
+                scheduledDatesInWeek.add(d)
+                weekItemCounts[d] = totalForDay
+            }
+        }
+
         // Habit bloom dates (matching HabitTrackerCalendar logic: any completed task or step on that date)
         val bloomDates = computeHabitBloomDates(items, steps)
         val streak = computeHabitStreak(bloomDates, today)
+        val dailyHabitSnap = DailyHabitRepository.getInstance(context.applicationContext).snapshot.value
 
         WidgetSnapshot(
             nowMillis = nowMillis,
@@ -133,8 +159,12 @@ object WidgetDataLoader {
             totalTodayTasksCount = totalTodayTasksCount,
             latestQuickNote = latestQuickNote,
             scheduledDatesInMonth = scheduledDates,
+            currentWeekDates = currentWeekDates,
+            scheduledDatesInCurrentWeek = scheduledDatesInWeek,
+            weekItemCountByDate = weekItemCounts,
             habitBloomDates = bloomDates,
-            habitStreakDays = streak
+            habitStreakDays = maxOf(streak, dailyHabitSnap.overallStreakDays),
+            dailyHabitSnapshot = dailyHabitSnap
         )
     }
 
@@ -204,6 +234,9 @@ object WidgetDataLoader {
         startAtUtcMillis = startAtUtcMillis,
         endAtUtcMillis = endAtUtcMillis,
         parentPlanId = parentPlanId,
+        priority = TaskPriority.fromRaw(priority).name,
+        category = TaskCategory.fromRaw(category).name,
+        imagePaths = com.example.data.PhotoAttachmentStore.parsePaths(imagePathsCsv),
         createdAt = createdAtMillis.toTs(),
         updatedAt = updatedAtMillis.toTs()
     )
@@ -217,6 +250,7 @@ object WidgetDataLoader {
         dueDate = dueDate,
         dueTimeMinutes = dueTimeMinutes,
         sortOrder = sortOrder,
+        timeSpentMinutes = timeSpentMinutes.coerceAtLeast(0),
         createdAt = createdAtMillis.toTs(),
         updatedAt = updatedAtMillis.toTs()
     )

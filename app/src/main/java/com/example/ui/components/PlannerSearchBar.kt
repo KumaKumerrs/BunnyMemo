@@ -200,6 +200,8 @@ fun PlannerSearchResultsView(
     val normalized = query.trim().lowercase()
     val today = state.todayDate()
     var activeFilter by rememberSaveable { mutableStateOf(PlannerSearchFilter.ALL) }
+    var priorityFilter by rememberSaveable { mutableStateOf(TaskPriorityFilter.ALL) }
+    var categoryFilter by rememberSaveable { mutableStateOf(TaskCategoryFilter.ALL) }
 
     val matchedItems = remember(state.items, state.steps, normalized) {
         if (normalized.isEmpty()) {
@@ -225,6 +227,9 @@ fun PlannerSearchResultsView(
                     it.item.title.lowercase().startsWith(normalized)
                 }
                     .thenBy { it.item.completed }
+                    .thenBy {
+                        if (it.item.itemType() == ItemType.TASK) it.item.taskPriority().sortRank else 99
+                    }
                     .thenBy { it.item.dueDate ?: "9999-99-99" }
             )
         }
@@ -241,24 +246,69 @@ fun PlannerSearchResultsView(
         }
     }
 
-    val taskCount = remember(matchedItems) { matchedItems.count { it.item.itemType() == ItemType.TASK } }
+    val matchedTasks = remember(matchedItems) { matchedItems.filter { it.item.itemType() == ItemType.TASK } }
+    val taskCount = matchedTasks.size
     val eventCount = remember(matchedItems) { matchedItems.count { it.item.itemType() == ItemType.EVENT } }
     val planCount = remember(matchedItems) { matchedItems.count { it.item.itemType() == ItemType.PLAN } }
     val classCount = matchedClasses.size
     val totalCount = matchedItems.size + classCount
 
-    val filteredItems = remember(matchedItems, activeFilter) {
-        when (activeFilter) {
+    val priorityCounts = remember(matchedTasks) {
+        mapOf(
+            TaskPriorityFilter.ALL to matchedTasks.size,
+            TaskPriorityFilter.HIGH to matchedTasks.count { it.item.taskPriority() == com.example.data.TaskPriority.HIGH },
+            TaskPriorityFilter.MEDIUM to matchedTasks.count { it.item.taskPriority() == com.example.data.TaskPriority.MEDIUM },
+            TaskPriorityFilter.LOW to matchedTasks.count { it.item.taskPriority() == com.example.data.TaskPriority.LOW }
+        )
+    }
+
+    val showPriorityChips = (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.TASKS) &&
+        matchedTasks.isNotEmpty()
+
+    val categoryCounts = remember(matchedItems) {
+        buildMap {
+            put(TaskCategoryFilter.ALL, matchedItems.size)
+            com.example.data.TaskCategory.entries.forEach { cat ->
+                val filterKey = TaskCategoryFilter.entries.firstOrNull { it.category == cat }
+                if (filterKey != null) {
+                    put(filterKey, matchedItems.count { it.item.taskCategory() == cat })
+                }
+            }
+        }
+    }
+
+    val filteredItems = remember(matchedItems, activeFilter, priorityFilter, categoryFilter) {
+        val base = when (activeFilter) {
             PlannerSearchFilter.ALL -> matchedItems
             PlannerSearchFilter.TASKS -> matchedItems.filter { it.item.itemType() == ItemType.TASK }
             PlannerSearchFilter.EVENTS -> matchedItems.filter { it.item.itemType() == ItemType.EVENT }
             PlannerSearchFilter.PLANS -> matchedItems.filter { it.item.itemType() == ItemType.PLAN }
             PlannerSearchFilter.CLASSES -> emptyList()
         }
+        val targetPriority = priorityFilter.priority
+        val priorityFiltered = if (
+            targetPriority != null &&
+            (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.TASKS)
+        ) {
+            base.filter { it.item.itemType() == ItemType.TASK && it.item.taskPriority() == targetPriority }
+        } else {
+            base
+        }
+        val targetCategory = categoryFilter.category
+        if (targetCategory != null) {
+            priorityFiltered.filter { it.item.taskCategory() == targetCategory }
+        } else {
+            priorityFiltered
+        }
     }
 
-    val filteredClasses = remember(matchedClasses, activeFilter) {
-        if (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.CLASSES) {
+    val filteredClasses = remember(matchedClasses, activeFilter, priorityFilter, categoryFilter) {
+        val isFilteredByPriority = priorityFilter != TaskPriorityFilter.ALL &&
+            (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.TASKS)
+        val isFilteredByCategory = categoryFilter != TaskCategoryFilter.ALL
+        if (!isFilteredByPriority && !isFilteredByCategory &&
+            (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.CLASSES)
+        ) {
             matchedClasses
         } else {
             emptyList()
@@ -310,6 +360,28 @@ fun PlannerSearchResultsView(
                             modifier = Modifier.testTag("search_filter_${filter.name.lowercase()}")
                         )
                     }
+                }
+            }
+
+            if (showPriorityChips) {
+                item(key = "search_priority_filter_chips") {
+                    TaskPriorityFilterBar(
+                        selectedFilter = priorityFilter,
+                        counts = priorityCounts,
+                        onSelectFilter = { priorityFilter = it },
+                        tagPrefix = "search_priority_filter"
+                    )
+                }
+            }
+
+            if (matchedItems.isNotEmpty()) {
+                item(key = "search_category_filter_chips") {
+                    TaskCategoryFilterBar(
+                        selectedFilter = categoryFilter,
+                        counts = categoryCounts,
+                        onSelectFilter = { categoryFilter = it },
+                        tagPrefix = "search_category_filter"
+                    )
                 }
             }
 
@@ -553,11 +625,26 @@ private fun SearchResultItemCard(
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        ModernPillBadge(
-                            text = badgeLabel,
-                            containerColor = badgeContainer,
-                            contentColor = badgeContent
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TaskCategoryBadge(
+                                category = item.taskCategory(),
+                                compact = true
+                            )
+                            if (itemType == ItemType.TASK) {
+                                TaskPriorityBadge(
+                                    priority = item.taskPriority(),
+                                    compact = true
+                                )
+                            }
+                            ModernPillBadge(
+                                text = badgeLabel,
+                                containerColor = badgeContainer,
+                                contentColor = badgeContent
+                            )
+                        }
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {

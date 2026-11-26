@@ -19,6 +19,33 @@ enum class ItemType(val label: String) {
     }
 }
 
+enum class TaskPriority(val label: String, val sortRank: Int) {
+    HIGH("High", 0),
+    MEDIUM("Medium", 1),
+    LOW("Low", 2);
+
+    companion object {
+        fun fromRaw(raw: String?): TaskPriority {
+            return entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: MEDIUM
+        }
+    }
+}
+
+enum class TaskCategory(val label: String) {
+    PERSONAL("Personal"),
+    WORK("Work"),
+    HEALTH("Health"),
+    STUDY("Study"),
+    CREATIVE("Creative"),
+    ERRANDS("Errands");
+
+    companion object {
+        fun fromRaw(raw: String?): TaskCategory {
+            return entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: PERSONAL
+        }
+    }
+}
+
 enum class ReminderKind(val label: String) {
     ORDINARY("Reminder"),
     PROGRESS_CHECKIN("Progress check-in");
@@ -63,10 +90,21 @@ data class PlannerItem(
     val startAtUtcMillis: Long? = null,
     val endAtUtcMillis: Long? = null,
     val parentPlanId: String? = null,
+    val priority: String = TaskPriority.MEDIUM.name,
+    val category: String = TaskCategory.PERSONAL.name,
+    val imagePaths: List<String> = emptyList(),
+    val audioMemoPath: String? = null,
+    val audioMemoDurationSeconds: Int = 0,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
     fun itemType(): ItemType = ItemType.fromRaw(type)
+
+    fun taskPriority(): TaskPriority = TaskPriority.fromRaw(priority)
+
+    fun taskCategory(): TaskCategory = TaskCategory.fromRaw(category)
+
+    fun hasAudioMemo(): Boolean = !audioMemoPath.isNullOrBlank() && audioMemoDurationSeconds > 0
 
     fun primaryCalendarDate(): CalendarDate? {
         return when (itemType()) {
@@ -114,6 +152,7 @@ data class PlannerStep(
     val dueDate: String? = null,
     val dueTimeMinutes: Int? = null,
     val sortOrder: Int = 0,
+    val timeSpentMinutes: Int = 0,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
@@ -288,7 +327,8 @@ data class UnifiedStep(
     val dueDate: String?,
     val dueTimeMinutes: Int?,
     val isLinkedTask: Boolean,
-    val sortOrder: Int
+    val sortOrder: Int,
+    val timeSpentMinutes: Int = 0
 ) {
     fun isOverdue(nowMillis: Long): Boolean {
         if (completed) return false
@@ -364,7 +404,8 @@ object PlannerLogic {
                     dueDate = step.dueDate,
                     dueTimeMinutes = step.dueTimeMinutes,
                     isLinkedTask = false,
-                    sortOrder = step.sortOrder
+                    sortOrder = step.sortOrder,
+                    timeSpentMinutes = step.timeSpentMinutes.coerceAtLeast(0)
                 )
             }
 
@@ -532,3 +573,84 @@ object PlannerLogic {
             .sortedBy { it.triggerUtcMillis }
     }
 }
+
+enum class InviteRsvpStatus(val label: String) {
+    PENDING("Pending"),
+    GOING("Going"),
+    MAYBE("Maybe"),
+    DECLINED("Can't go");
+
+    companion object {
+        fun fromRaw(raw: String?): InviteRsvpStatus {
+            return entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: PENDING
+        }
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CalendarInvite(
+    @DocumentId val id: String = "",
+    val ownerUid: String = "",
+    val ownerName: String = "",
+    val ownerEmail: String = "",
+    val ownerPhotoUrl: String? = null,
+    val inviteeEmail: String = "",
+    val inviteeUid: String? = null,
+    val plannedDate: String = "",
+    val endDate: String? = null,
+    val scheduleTimeLabel: String? = null,
+    val itemId: String? = null,
+    val title: String = "",
+    val notes: String? = null,
+    val itemType: String = ItemType.EVENT.name,
+    val category: String = TaskCategory.PERSONAL.name,
+    val rsvpStatus: String = InviteRsvpStatus.PENDING.name,
+    val replyCount: Int = 0,
+    val lastReplyText: String? = null,
+    val lastReplyAuthorName: String? = null,
+    val lastReplyAtMillis: Long? = null,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun rsvpStatusEnum(): InviteRsvpStatus = InviteRsvpStatus.fromRaw(rsvpStatus)
+    fun categoryEnum(): TaskCategory = TaskCategory.fromRaw(category)
+    fun itemTypeEnum(): ItemType = ItemType.fromRaw(itemType)
+
+    fun occursOnDate(date: CalendarDate): Boolean {
+        val start = CalendarDate.parse(plannedDate) ?: return false
+        val end = CalendarDate.parse(endDate) ?: start
+        return date >= start && date <= end
+    }
+
+    fun ownerInitials(): String {
+        val src = ownerName.ifBlank { ownerEmail }.trim()
+        if (src.isEmpty()) return "?"
+        val parts = src.split(" ", ".", "@").filter { it.isNotBlank() }
+        return when {
+            parts.size >= 2 -> "${parts[0].first().uppercaseChar()}${parts[1].first().uppercaseChar()}"
+            else -> src.take(2).uppercase()
+        }
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CalendarScheduleReply(
+    @DocumentId val id: String = "",
+    val inviteId: String = "",
+    val ownerUid: String = "",
+    val inviteeEmail: String = "",
+    val authorUid: String = "",
+    val authorName: String = "",
+    val authorEmail: String = "",
+    val authorPhotoUrl: String? = null,
+    val plannedDate: String = "",
+    val rsvpStatus: String = InviteRsvpStatus.GOING.name,
+    val message: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun rsvpStatusEnum(): InviteRsvpStatus = InviteRsvpStatus.fromRaw(rsvpStatus)
+}
+

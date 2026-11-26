@@ -14,6 +14,20 @@ data class AccomplishmentHighlight(
     val detailLabel: String
 )
 
+data class CategoryTaskSummary(
+    val category: TaskCategory,
+    val completedCount: Int,
+    val totalCount: Int
+)
+
+data class MilestoneTimeEntry(
+    val stepId: String,
+    val stepTitle: String,
+    val parentTitle: String,
+    val minutesSpent: Int,
+    val completed: Boolean
+)
+
 data class MonthlyAccomplishmentReport(
     val year: Int,
     val month: Int, // 1..12
@@ -30,11 +44,16 @@ data class MonthlyAccomplishmentReport(
     val eventsTotal: Int,
     val completionPercent: Int,
     val weeklyBlooms: List<Int>, // 5 buckets: weeks 1..5
+    val weeklyCompletedTasks: List<Int>, // 5 buckets: weeks 1..5
+    val weeklyMilestoneMinutes: List<Int>, // 5 buckets: weeks 1..5
+    val totalMilestoneMinutes: Int,
+    val categoryBreakdown: List<CategoryTaskSummary>,
+    val topTimedMilestones: List<MilestoneTimeEntry>,
     val highlights: List<AccomplishmentHighlight>,
     val reflectionMessage: String
 ) {
     val hasAnyActivity: Boolean
-        get() = totalBlooms > 0 || plansTotal > 0 || tasksTotal > 0 || eventsTotal > 0
+        get() = totalBlooms > 0 || plansTotal > 0 || tasksTotal > 0 || eventsTotal > 0 || totalMilestoneMinutes > 0
 }
 
 data class YearEndAccomplishmentReport(
@@ -49,6 +68,7 @@ data class YearEndAccomplishmentReport(
     val tasksTotal: Int,
     val eventsCompleted: Int,
     val eventsTotal: Int,
+    val totalMilestoneMinutes: Int,
     val overallCompletionPercent: Int,
     val activeMonthsCount: Int,
     val longestActiveMonthStreak: Int,
@@ -132,6 +152,9 @@ object AccomplishmentReportEngine {
 
         // Weekly blooms breakdown (5 buckets: days 1-7, 8-14, 15-21, 22-28, 29-31)
         val weeklyBuckets = MutableList(5) { 0 }
+        val weeklyCompletedTaskBuckets = MutableList(5) { 0 }
+        val weeklyMilestoneMinuteBuckets = MutableList(5) { 0 }
+
         fun addToWeek(date: CalendarDate) {
             val idx = ((date.day - 1) / 7).coerceIn(0, 4)
             weeklyBuckets[idx] = weeklyBuckets[idx] + 1
@@ -141,10 +164,12 @@ object AccomplishmentReportEngine {
             addToWeek(dateForStep(step, itemMap[step.itemId]))
         }
         completedTasks.forEach { task ->
-            addToWeek(dateForItem(task))
+            val d = dateForItem(task)
+            addToWeek(d)
+            val idx = ((d.day - 1) / 7).coerceIn(0, 4)
+            weeklyCompletedTaskBuckets[idx] = weeklyCompletedTaskBuckets[idx] + 1
         }
         completedPlans.forEach { plan ->
-            // Plans completed manually with 0 steps still earn a bloom
             val prog = PlannerLogic.computeProgress(plan, allSteps, allItems, nowMillis)
             if (prog.totalCount == 0) addToWeek(dateForItem(plan))
         }
@@ -152,6 +177,53 @@ object AccomplishmentReportEngine {
             val prog = PlannerLogic.computeProgress(ev, allSteps, allItems, nowMillis)
             if (prog.totalCount == 0) addToWeek(dateForItem(ev))
         }
+
+        monthSteps.forEach { step ->
+            val mins = step.timeSpentMinutes.coerceAtLeast(0)
+            if (mins > 0) {
+                val d = dateForStep(step, itemMap[step.itemId])
+                val idx = ((d.day - 1) / 7).coerceIn(0, 4)
+                weeklyMilestoneMinuteBuckets[idx] = weeklyMilestoneMinuteBuckets[idx] + mins
+            }
+        }
+        val totalMilestoneMinutes = monthSteps.sumOf { it.timeSpentMinutes.coerceAtLeast(0) }
+
+        val topTimedMilestones = monthSteps
+            .filter { it.timeSpentMinutes > 0 }
+            .sortedByDescending { it.timeSpentMinutes }
+            .take(5)
+            .map { step ->
+                MilestoneTimeEntry(
+                    stepId = step.id,
+                    stepTitle = step.title,
+                    parentTitle = itemMap[step.itemId]?.title ?: "Plan",
+                    minutesSpent = step.timeSpentMinutes,
+                    completed = step.completed
+                )
+            }
+
+        val categoryBreakdown = TaskCategory.entries.mapNotNull { cat ->
+            val inCat = monthItems.filter { it.taskCategory() == cat }
+            if (inCat.isEmpty()) {
+                null
+            } else {
+                val doneCount = inCat.count { item ->
+                    when (item.itemType()) {
+                        ItemType.PLAN -> PlannerLogic.computeProgress(item, allSteps, allItems, nowMillis).allStepsDone
+                        ItemType.EVENT -> {
+                            val prog = PlannerLogic.computeProgress(item, allSteps, allItems, nowMillis)
+                            isEventAccomplished(item, prog, nowMillis)
+                        }
+                        ItemType.TASK -> item.completed
+                    }
+                }
+                CategoryTaskSummary(
+                    category = cat,
+                    completedCount = doneCount,
+                    totalCount = inCat.size
+                )
+            }
+        }.sortedByDescending { it.totalCount }
 
         val totalBlooms = weeklyBuckets.sum()
 
@@ -207,7 +279,7 @@ object AccomplishmentReportEngine {
                         title = task.title,
                         type = ItemType.TASK,
                         dateLabel = PlannerDateUtils.formatCompactDate(dateForItem(task)),
-                        detailLabel = "Task finished"
+                        detailLabel = "${task.taskCategory().label} · Task finished"
                     )
                 )
             }
@@ -242,6 +314,11 @@ object AccomplishmentReportEngine {
             eventsTotal = events.size,
             completionPercent = completionPercent,
             weeklyBlooms = weeklyBuckets,
+            weeklyCompletedTasks = weeklyCompletedTaskBuckets,
+            weeklyMilestoneMinutes = weeklyMilestoneMinuteBuckets,
+            totalMilestoneMinutes = totalMilestoneMinutes,
+            categoryBreakdown = categoryBreakdown,
+            topTimedMilestones = topTimedMilestones,
             highlights = highlights,
             reflectionMessage = reflection
         )
@@ -266,6 +343,7 @@ object AccomplishmentReportEngine {
         val tasksTotal = months.sumOf { it.tasksTotal }
         val eventsCompleted = months.sumOf { it.eventsCompleted }
         val eventsTotal = months.sumOf { it.eventsTotal }
+        val totalMilestoneMinutes = months.sumOf { it.totalMilestoneMinutes }
 
         val activeMonthsCount = months.count { it.totalBlooms > 0 }
 
@@ -327,6 +405,7 @@ object AccomplishmentReportEngine {
             tasksTotal = tasksTotal,
             eventsCompleted = eventsCompleted,
             eventsTotal = eventsTotal,
+            totalMilestoneMinutes = totalMilestoneMinutes,
             overallCompletionPercent = overallPercent,
             activeMonthsCount = activeMonthsCount,
             longestActiveMonthStreak = bestStreak,
@@ -341,7 +420,7 @@ object AccomplishmentReportEngine {
         appendLine("--------------------------------------------------")
         appendLine("Blooms earned: ${report.totalBlooms} (${report.completionPercent}% completion)")
         appendLine("Plans finished: ${report.plansCompleted}/${report.plansTotal}")
-        appendLine("Milestones & prep steps bloomed: ${report.milestonesCompleted}/${report.milestonesTotal}")
+        appendLine("Milestones & prep steps bloomed: ${report.milestonesCompleted}/${report.milestonesTotal} (${report.totalMilestoneMinutes}m invested)")
         appendLine("Tasks completed: ${report.tasksCompleted}/${report.tasksTotal}")
         appendLine("Events enjoyed: ${report.eventsCompleted}/${report.eventsTotal}")
         if (report.highlights.isNotEmpty()) {
@@ -364,7 +443,7 @@ object AccomplishmentReportEngine {
             appendLine("Brightest month: ${peak.monthName} (${peak.totalBlooms} blooms)")
         }
         appendLine("Plans finished: ${report.plansCompleted}/${report.plansTotal}")
-        appendLine("Milestones & prep steps bloomed: ${report.milestonesCompleted}/${report.milestonesTotal}")
+        appendLine("Milestones & prep steps bloomed: ${report.milestonesCompleted}/${report.milestonesTotal} (${report.totalMilestoneMinutes}m invested)")
         appendLine("Tasks completed: ${report.tasksCompleted}/${report.tasksTotal}")
         appendLine("Events enjoyed: ${report.eventsCompleted}/${report.eventsTotal}")
         appendLine()

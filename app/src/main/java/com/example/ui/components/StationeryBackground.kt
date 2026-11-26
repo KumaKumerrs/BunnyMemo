@@ -47,14 +47,18 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.R
+import androidx.compose.runtime.key
+import com.example.ui.theme.BunnyFlowerCrown
 import com.example.ui.theme.CloudWhite
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotBlue
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SkyCanvasBottom
+import com.example.ui.theme.SkyCanvasMid
 import com.example.ui.theme.SkyCanvasTop
 import com.example.ui.theme.SubtleBorder
 import kotlin.math.PI
@@ -105,103 +109,84 @@ fun ForgetMeNotStationeryBackground(
 
 @Composable
 private fun SkyAmbientBackdropLayer() {
-    val reducedMotion = rememberReducedMotion()
+    val isDark = LocalIsDarkTheme.current
+    val canvasTop = SkyCanvasTop
+    val canvasCloud = CloudWhite
+    val canvasMid = SkyCanvasMid
+    val canvasBottom = SkyCanvasBottom
+    val orbBlue = ForgetMeNotBlue
+    val orbSky = SkyBlue
+    val orbHighlight = PureWhite
+    val orbPollen = PollenYellow
 
-    val breezePhase: State<Float>
-    val glowPhase: State<Float>
-    val driftPhase: State<Float>
-
-    if (reducedMotion) {
-        breezePhase = remember { mutableFloatStateOf(0f) }
-        glowPhase = remember { mutableFloatStateOf(0f) }
-        driftPhase = remember { mutableFloatStateOf(0.28f) }
-    } else {
-        val transition = rememberInfiniteTransition(label = "sky_ambient")
-        breezePhase = transition.animateFloat(
-            initialValue = 0f,
-            targetValue = (2.0 * PI).toFloat(),
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 12000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "breeze_phase"
-        )
-        glowPhase = transition.animateFloat(
-            initialValue = 0f,
-            targetValue = (2.0 * PI).toFloat(),
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 20000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "glow_phase"
-        )
-        driftPhase = transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 38000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "drift_phase"
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawWithCache {
-                // Pre-compute ALL brushes and reusable paths once per viewport size change
-                val skyGradient = Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f to SkyCanvasTop,
-                        0.38f to CloudWhite,
-                        0.74f to Color(0xFFDCECFD),
-                        1.0f to SkyCanvasBottom
+    key(isDark) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithCache {
+                    // Pre-compute ALL brushes and geometry once per viewport size & theme change.
+                    // Rendering statically avoids continuous 60/120fps full-screen GPU redraws
+                    // behind scrolling lists, search input, and modal animations.
+                    val skyGradient = Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to canvasTop,
+                            0.38f to canvasCloud,
+                            0.74f to canvasMid,
+                            1.0f to canvasBottom
+                        )
                     )
-                )
 
-                val primaryOrbRadius = (size.maxDimension * 0.56f).coerceAtLeast(1f)
-                val midOrbRadius = primaryOrbRadius * 0.84f
-                val bottomOrbRadius = primaryOrbRadius * 0.88f
+                    val primaryOrbRadius = (size.maxDimension * 0.56f).coerceAtLeast(1f)
+                    val midOrbRadius = primaryOrbRadius * 0.84f
+                    val bottomOrbRadius = primaryOrbRadius * 0.88f
 
-                // Radial brushes centered at Offset.Zero so they can be translated cleanly per frame
-                val topRightOrbBrush = Brush.radialGradient(
-                    colors = listOf(
-                        ForgetMeNotBlue.copy(alpha = 0.22f),
-                        SkyBlue.copy(alpha = 0.14f),
-                        Color.Transparent
-                    ),
-                    center = Offset.Zero,
-                    radius = primaryOrbRadius
-                )
-                val midLeftOrbBrush = Brush.radialGradient(
-                    colors = listOf(
-                        PureWhite.copy(alpha = 0.60f),
-                        SkyBlue.copy(alpha = 0.12f),
-                        Color.Transparent
-                    ),
-                    center = Offset.Zero,
-                    radius = midOrbRadius
-                )
-                val bottomOrbBrush = Brush.radialGradient(
-                    colors = listOf(
-                        ForgetMeNotBlue.copy(alpha = 0.17f),
-                        PollenYellow.copy(alpha = 0.08f),
-                        Color.Transparent
-                    ),
-                    center = Offset.Zero,
-                    radius = bottomOrbRadius
-                )
+                    val topRightOrbBrush = Brush.radialGradient(
+                        colors = listOf(
+                            orbBlue.copy(alpha = if (isDark) 0.14f else 0.22f),
+                            orbSky.copy(alpha = if (isDark) 0.10f else 0.14f),
+                            Color.Transparent
+                        ),
+                        center = Offset.Zero,
+                        radius = primaryOrbRadius
+                    )
+                    val midLeftOrbBrush = Brush.radialGradient(
+                        colors = listOf(
+                            orbHighlight.copy(alpha = if (isDark) 0.18f else 0.60f),
+                            orbSky.copy(alpha = if (isDark) 0.08f else 0.12f),
+                            Color.Transparent
+                        ),
+                        center = Offset.Zero,
+                        radius = midOrbRadius
+                    )
+                    val bottomOrbBrush = Brush.radialGradient(
+                        colors = listOf(
+                            orbBlue.copy(alpha = if (isDark) 0.12f else 0.17f),
+                            orbPollen.copy(alpha = if (isDark) 0.06f else 0.08f),
+                            Color.Transparent
+                        ),
+                        center = Offset.Zero,
+                        radius = bottomOrbRadius
+                    )
 
-                val ribbonBrush = Brush.verticalGradient(
-                    colors = listOf(
-                        SkyBlue.copy(alpha = 0.28f),
-                        ForgetMeNotBlue.copy(alpha = 0.16f)
-                    ),
-                    startY = size.height * 0.74f,
-                    endY = size.height
-                )
-                val ribbonPath = Path()
+                    val ribbonBrush = Brush.verticalGradient(
+                        colors = listOf(
+                            orbSky.copy(alpha = if (isDark) 0.20f else 0.28f),
+                            orbBlue.copy(alpha = if (isDark) 0.10f else 0.16f)
+                        ),
+                        startY = size.height * 0.74f,
+                        endY = size.height
+                    )
+                val ribbonPath = Path().apply {
+                    moveTo(0f, size.height * 0.80f)
+                    cubicTo(
+                        size.width * 0.30f, size.height * 0.75f,
+                        size.width * 0.68f, size.height * 0.88f,
+                        size.width, size.height * 0.81f
+                    )
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
 
                 // Scale floral accents gracefully on tablets without growing oversized
                 val densityScale = (size.minDimension / 390.dp.toPx()).coerceIn(0.95f, 1.35f)
@@ -210,7 +195,6 @@ private fun SkyAmbientBackdropLayer() {
                 val flowerRadiusBottom = 38.dp.toPx() * densityScale
                 val flowerRadiusBottomSmall = 20.dp.toPx() * densityScale
 
-                // Unit petal Path centered at (0, 0) pointing upward to -1f; scaled/rotated on draw
                 val unitFlowerPetalPath = buildUnitFlowerPetalPath()
                 val unitDriftingPetalPath = buildUnitDriftingPetalPath()
 
@@ -240,58 +224,29 @@ private fun SkyAmbientBackdropLayer() {
                     radius = 12.dp.toPx()
                 )
 
-                val waveAmpPx = 14.dp.toPx()
                 val marginY = 24.dp.toPx()
                 val seedSwayPx = FloatArray(SkyDriftSeeds.size) { i -> SkyDriftSeeds[i].swayAmplitudeDp.dp.toPx() }
                 val seedSizePx = FloatArray(SkyDriftSeeds.size) { i -> SkyDriftSeeds[i].sizeDp.dp.toPx() }
 
                 onDrawBehind {
-                    val breeze = breezePhase.value.toDouble()
-                    val glow = glowPhase.value.toDouble()
-                    val drift = driftPhase.value
-
                     // 1. Airy 60% Forget-Me-Not Sky-Blue canvas
                     drawRect(brush = skyGradient)
 
-                    // 2. Soft breathing watercolor orbs (zero shader allocations; translate only)
-                    translate(
-                        left = size.width * (0.86f + 0.06f * cos(glow).toFloat()),
-                        top = size.height * (0.12f + 0.05f * sin(glow).toFloat())
-                    ) {
+                    // 2. Soft watercolor orbs
+                    translate(left = size.width * 0.88f, top = size.height * 0.12f) {
                         drawCircle(brush = topRightOrbBrush, radius = primaryOrbRadius, center = Offset.Zero)
                     }
-                    translate(
-                        left = size.width * (0.10f + 0.05f * sin(glow + 1.2).toFloat()),
-                        top = size.height * (0.48f + 0.05f * cos(glow + 0.6).toFloat())
-                    ) {
+                    translate(left = size.width * 0.12f, top = size.height * 0.50f) {
                         drawCircle(brush = midLeftOrbBrush, radius = midOrbRadius, center = Offset.Zero)
                     }
-                    translate(
-                        left = size.width * (0.76f - 0.07f * sin(glow + 2.4).toFloat()),
-                        top = size.height * (0.88f + 0.04f * cos(glow + 1.8).toFloat())
-                    ) {
+                    translate(left = size.width * 0.74f, top = size.height * 0.88f) {
                         drawCircle(brush = bottomOrbBrush, radius = bottomOrbRadius, center = Offset.Zero)
                     }
 
-                    // 3. Soft sweeping silk sky wave ribbon (reused Path, zero allocation)
-                    val waveShift = sin(breeze).toFloat() * waveAmpPx
-                    ribbonPath.rewind()
-                    ribbonPath.moveTo(0f, size.height * 0.80f + waveShift)
-                    ribbonPath.cubicTo(
-                        size.width * 0.30f, size.height * 0.75f - waveShift * 0.8f,
-                        size.width * 0.68f, size.height * 0.88f + waveShift,
-                        size.width, size.height * 0.81f - waveShift * 0.6f
-                    )
-                    ribbonPath.lineTo(size.width, size.height)
-                    ribbonPath.lineTo(0f, size.height)
-                    ribbonPath.close()
+                    // 3. Soft sweeping silk sky wave ribbon
                     drawPath(path = ribbonPath, brush = ribbonBrush)
 
-                    // 4. Refined organic forget-me-not floral corner accents (cached unit petal path)
-                    val sway1 = sin(breeze).toFloat() * 4f
-                    val sway2 = cos(breeze + 1.3).toFloat() * 4.5f
-                    val sway3 = sin(breeze + 2.4).toFloat() * 3.5f
-
+                    // 4. Refined organic forget-me-not floral corner accents
                     drawCachedForgetMeNot(
                         petalPath = unitFlowerPetalPath,
                         petalBrush = petalBrushLarge,
@@ -299,7 +254,7 @@ private fun SkyAmbientBackdropLayer() {
                         radius = flowerRadiusLarge,
                         haloAlpha = 0.42f,
                         pollenAlpha = 0.38f,
-                        rotationDegrees = -14f + sway1
+                        rotationDegrees = -14f
                     )
                     drawCachedForgetMeNot(
                         petalPath = unitFlowerPetalPath,
@@ -308,7 +263,7 @@ private fun SkyAmbientBackdropLayer() {
                         radius = flowerRadiusSmall,
                         haloAlpha = 0.32f,
                         pollenAlpha = 0.28f,
-                        rotationDegrees = 22f - sway2 * 0.7f
+                        rotationDegrees = 22f
                     )
                     drawCachedForgetMeNot(
                         petalPath = unitFlowerPetalPath,
@@ -317,7 +272,7 @@ private fun SkyAmbientBackdropLayer() {
                         radius = flowerRadiusBottom,
                         haloAlpha = 0.38f,
                         pollenAlpha = 0.34f,
-                        rotationDegrees = 18f + sway2
+                        rotationDegrees = 18f
                     )
                     drawCachedForgetMeNot(
                         petalPath = unitFlowerPetalPath,
@@ -326,13 +281,14 @@ private fun SkyAmbientBackdropLayer() {
                         radius = flowerRadiusBottomSmall,
                         haloAlpha = 0.30f,
                         pollenAlpha = 0.26f,
-                        rotationDegrees = -10f + sway3
+                        rotationDegrees = -10f
                     )
 
-                    // 5. Gentle drifting translucent petals & dew motes (zero allocation)
+                    // 5. Delicate static translucent petals & dew accents
+                    val staticPhase = 0.28f
                     for (i in SkyDriftSeeds.indices) {
                         val seed = SkyDriftSeeds[i]
-                        val progress = (drift * seed.cyclesPerLoop + seed.phaseOffset) % 1f
+                        val progress = (staticPhase * seed.cyclesPerLoop + seed.phaseOffset) % 1f
                         val edgeFade = sin(progress * PI).toFloat().coerceIn(0f, 1f)
                         val effectiveAlpha = seed.alpha * edgeFade
                         if (effectiveAlpha <= 0.01f) continue
@@ -367,7 +323,8 @@ private fun SkyAmbientBackdropLayer() {
                     }
                 }
             }
-    )
+        )
+    }
 }
 
 private fun buildUnitFlowerPetalPath(): Path = Path().apply {
@@ -447,8 +404,10 @@ fun Modifier.ruledMemoLines(
 @Composable
 fun HoppingBunnyLoader(
     modifier: Modifier = Modifier,
-    size: Dp = 132.dp
+    size: Dp = 132.dp,
+    breed: BunnyBreed = BunnyBreed.forCurrentMonth()
 ) {
+    val isDarkTheme = LocalIsDarkTheme.current
     val reducedMotion = rememberReducedMotion()
     val hopPhase: State<Float>
     val trailShift: State<Float>
@@ -481,7 +440,7 @@ fun HoppingBunnyLoader(
     Box(
         modifier = modifier
             .size(size)
-            .semantics { contentDescription = "Hopping white bunny loading animation" }
+            .semantics { contentDescription = "Hopping ${breed.breedName} bunny loading animation" }
             .testTag("hopping_bunny_loader")
             .drawWithCache {
                 val w = this.size.width
@@ -494,7 +453,7 @@ fun HoppingBunnyLoader(
                     quadraticTo(w * 0.70f, h * 0.545f, w * 0.725f, h * 0.515f)
                 }
                 val trailPetalBrush = Brush.verticalGradient(
-                    colors = listOf(ForgetMeNotBlue, PureWhite.copy(alpha = 0.7f)),
+                    colors = listOf(ForgetMeNotBlue, BunnyFlowerCrown.copy(alpha = 0.7f)),
                     startY = -1f,
                     endY = 0f
                 )
@@ -523,7 +482,7 @@ fun HoppingBunnyLoader(
                                     drawPath(path = unitPetal, brush = trailPetalBrush, alpha = flowerAlpha)
                                 }
                             }
-                            drawCircle(PureWhite.copy(alpha = flowerAlpha), radius = 0.22f, center = Offset.Zero)
+                            drawCircle(BunnyFlowerCrown.copy(alpha = flowerAlpha), radius = 0.22f, center = Offset.Zero)
                             drawCircle(PollenYellow.copy(alpha = flowerAlpha), radius = 0.13f, center = Offset.Zero)
                         }
                     }
@@ -551,41 +510,16 @@ fun HoppingBunnyLoader(
                             pivot = Offset(w * 0.5f, h * 0.72f)
                         )
                     }) {
-                        drawCircle(PureWhite, radius = w * 0.075f, center = Offset(w * 0.28f, h * 0.66f))
-                        drawCircle(MidnightNavy, radius = w * 0.075f, center = Offset(w * 0.28f, h * 0.66f), style = stroke)
-
-                        rotate(jumpArc * 22f, pivot = Offset(w * 0.36f, h * 0.72f)) {
-                            drawOval(PureWhite, Offset(w * 0.28f, h * 0.69f), Size(w * 0.16f, h * 0.09f))
-                            drawOval(MidnightNavy, Offset(w * 0.28f, h * 0.69f), Size(w * 0.16f, h * 0.09f), style = stroke)
-                        }
-
-                        drawOval(PureWhite, Offset(w * 0.30f, h * 0.48f), Size(w * 0.38f, h * 0.28f))
-                        drawOval(MidnightNavy, Offset(w * 0.30f, h * 0.48f), Size(w * 0.38f, h * 0.28f), style = stroke)
-
-                        rotate(-jumpArc * 18f, pivot = Offset(w * 0.60f, h * 0.68f)) {
-                            drawOval(PureWhite, Offset(w * 0.55f, h * 0.67f), Size(w * 0.14f, h * 0.085f))
-                            drawOval(MidnightNavy, Offset(w * 0.55f, h * 0.67f), Size(w * 0.14f, h * 0.085f), style = stroke)
-                        }
-
-                        // Ears anchored directly into the top crown of the head (head x=0.43..0.75, top y=0.33)
-                        rotate(-20f - earBob, pivot = Offset(w * 0.535f, h * 0.365f)) {
-                            drawOval(PureWhite, Offset(w * 0.48f, h * 0.13f), Size(w * 0.11f, h * 0.26f))
-                            drawOval(MidnightNavy, Offset(w * 0.48f, h * 0.13f), Size(w * 0.11f, h * 0.26f), style = stroke)
-                            drawOval(SkyBlue.copy(alpha = 0.85f), Offset(w * 0.51f, h * 0.18f), Size(w * 0.05f, h * 0.16f))
-                        }
-                        rotate(-7f - earBob * 0.78f, pivot = Offset(w * 0.605f, h * 0.36f)) {
-                            drawOval(PureWhite, Offset(w * 0.55f, h * 0.12f), Size(w * 0.11f, h * 0.26f))
-                            drawOval(MidnightNavy, Offset(w * 0.55f, h * 0.12f), Size(w * 0.11f, h * 0.26f), style = stroke)
-                            drawOval(SkyBlue.copy(alpha = 0.85f), Offset(w * 0.58f, h * 0.17f), Size(w * 0.05f, h * 0.16f))
-                        }
-
-                        drawOval(PureWhite, Offset(w * 0.43f, h * 0.33f), Size(w * 0.32f, h * 0.27f))
-                        drawOval(MidnightNavy, Offset(w * 0.43f, h * 0.33f), Size(w * 0.32f, h * 0.27f), style = stroke)
-
-                        drawCircle(MidnightNavy, radius = w * 0.022f, center = Offset(w * 0.62f, h * 0.44f))
-                        drawCircle(SkyBlue, radius = w * 0.036f, center = Offset(w * 0.56f, h * 0.50f))
-                        drawCircle(MidnightNavy, radius = w * 0.017f, center = Offset(w * 0.72f, h * 0.48f))
-                        drawPath(smilePath, MidnightNavy, style = stroke)
+                        drawHoppingBreedBunny(
+                            breed = breed,
+                            isDarkTheme = isDarkTheme,
+                            w = w,
+                            h = h,
+                            stroke = stroke,
+                            jumpArc = jumpArc,
+                            earBob = earBob,
+                            smilePath = smilePath
+                        )
                     }
                 }
             }
@@ -598,6 +532,7 @@ fun HoppingBunnyLoader(
 @Composable
 fun HoppingBunnyLoadingScreen(
     caption: String = stringResource(R.string.bunny_loading_caption),
+    breed: BunnyBreed = BunnyBreed.forCurrentMonth(),
     modifier: Modifier = Modifier
 ) {
     ForgetMeNotStationeryBackground(modifier = modifier.testTag("bunny_loading_screen")) {
@@ -609,7 +544,7 @@ fun HoppingBunnyLoadingScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            HoppingBunnyLoader(size = 152.dp)
+            HoppingBunnyLoader(size = 152.dp, breed = breed)
             Spacer(modifier = Modifier.height(18.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,

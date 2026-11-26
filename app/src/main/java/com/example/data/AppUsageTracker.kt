@@ -48,9 +48,15 @@ class AppUsageTracker private constructor(context: Context) {
     private var sessionStartElapsedMs: Long = 0L
     private var lastFlushedElapsedMs: Long = 0L
     private var activeDateIso: String = CalendarDate.today().toIsoString()
+    private var cachedHistoryDateIso: String = ""
+    private var cachedPastSixDays: List<DailyUsageEntry> = emptyList()
+    private var cachedPastSixTotalSeconds: Long = 0L
+    private var cachedPastSixActiveDays: Int = 0
+    private var cachedTodayStoredSeconds: Long = 0L
+    private var cachedAllTimeStoredSeconds: Long = 0L
     private var tickerJob: Job? = null
 
-    private val _usageSummary = MutableStateFlow(buildSnapshot(unflushedSeconds = 0L, sessionSeconds = 0L))
+    private val _usageSummary = MutableStateFlow(buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L))
     val usageSummary: StateFlow<AppUsageSummary> = _usageSummary.asStateFlow()
 
     fun onForegroundResume() {
@@ -61,7 +67,8 @@ class AppUsageTracker private constructor(context: Context) {
             sessionStartElapsedMs = nowElapsed
             lastFlushedElapsedMs = nowElapsed
             activeDateIso = CalendarDate.today().toIsoString()
-            _usageSummary.value = buildSnapshot(unflushedSeconds = 0L, sessionSeconds = 0L)
+            refreshCacheFromPrefsLocked(CalendarDate.today())
+            _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
         }
         startTicker()
     }
@@ -74,7 +81,7 @@ class AppUsageTracker private constructor(context: Context) {
             isForeground = false
             sessionStartElapsedMs = 0L
             lastFlushedElapsedMs = 0L
-            _usageSummary.value = buildSnapshot(unflushedSeconds = 0L, sessionSeconds = 0L)
+            _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
         }
         tickerJob?.cancel()
         tickerJob = null
@@ -85,20 +92,24 @@ class AppUsageTracker private constructor(context: Context) {
         tickerJob = scope.launch {
             var tickCount = 0
             while (isActive) {
-                delay(1_000L)
+                delay(5_000L)
                 val nowElapsed = SystemClock.elapsedRealtime()
-                val todayIso = CalendarDate.today().toIsoString()
+                val today = CalendarDate.today()
+                val todayIso = today.toIsoString()
                 synchronized(lock) {
                     if (!isForeground) return@launch
                     tickCount++
-                    // Flush on midnight boundary or every 10 seconds to stay crash-safe
-                    if (todayIso != activeDateIso || tickCount % 10 == 0) {
+                    // Flush on midnight boundary or every 10 seconds (2 ticks) to stay crash-safe
+                    if (todayIso != activeDateIso || tickCount % 2 == 0) {
                         flushLocked(nowElapsed)
-                        activeDateIso = todayIso
+                        if (todayIso != activeDateIso) {
+                            activeDateIso = todayIso
+                            refreshCacheFromPrefsLocked(today)
+                        }
                     }
                     val unflushedSec = ((nowElapsed - lastFlushedElapsedMs) / 1_000L).coerceAtLeast(0L)
                     val sessionSec = ((nowElapsed - sessionStartElapsedMs) / 1_000L).coerceAtLeast(0L)
-                    _usageSummary.value = buildSnapshot(
+                    _usageSummary.value = buildSnapshotLocked(
                         unflushedSeconds = unflushedSec,
                         sessionSeconds = sessionSec
                     )
@@ -113,40 +124,71 @@ class AppUsageTracker private constructor(context: Context) {
         val dayKey = dayPrefKey(activeDateIso)
         val prevDay = prefs.getLong(dayKey, 0L)
         val prevTotal = prefs.getLong(KEY_ALL_TIME_SECONDS, 0L)
+        val updatedDay = prevDay + deltaSec
+        val updatedAllTime = prevTotal + deltaSec
         prefs.edit()
-            .putLong(dayKey, prevDay + deltaSec)
-            .putLong(KEY_ALL_TIME_SECONDS, prevTotal + deltaSec)
+            .putLong(dayKey, updatedDay)
+            .putLong(KEY_ALL_TIME_SECONDS, updatedAllTime)
             .apply()
+        if (activeDateIso == cachedHistoryDateIso) {
+            cachedTodayStoredSeconds = updatedDay
+        }
+        cachedAllTimeStoredSeconds = updatedAllTime
         lastFlushedElapsedMs += deltaSec * 1_000L
     }
 
-    private fun buildSnapshot(unflushedSeconds: Long, sessionSeconds: Long): AppUsageSummary {
-        val today = CalendarDate.today()
+    private fun refreshCacheFromPrefsLocked(today: CalendarDate) {
         val todayIso = today.toIsoString()
-        val history = ArrayList<DailyUsageEntry>(7)
-        var weekTotal = 0L
-        var activeDays = 0
-
-        for (offset in -6..0) {
+        val pastList = ArrayList<DailyUsageEntry>(6)
+        var pastTotal = 0L
+        var pastActive = 0
+        for (offset in -6..-1) {
             val d = today.plusDays(offset)
             val iso = d.toIsoString()
             val stored = prefs.getLong(dayPrefKey(iso), 0L)
-            val effective = if (iso == todayIso) stored + unflushedSeconds else stored
-            weekTotal += effective
-            if (effective > 0L) activeDays++
-            history.add(
+            pastTotal += stored
+            if (stored > 0L) pastActive++
+            pastList.add(
                 DailyUsageEntry(
                     date = d,
-                    shortDayLabel = if (offset == 0) "Today" else PlannerDateUtils.weekdayShortLabel(d.dayOfWeekIndex()),
-                    seconds = effective,
-                    isToday = offset == 0
+                    shortDayLabel = PlannerDateUtils.weekdayShortLabel(d.dayOfWeekIndex()),
+                    seconds = stored,
+                    isToday = false
                 )
             )
         }
+        cachedHistoryDateIso = todayIso
+        cachedPastSixDays = pastList
+        cachedPastSixTotalSeconds = pastTotal
+        cachedPastSixActiveDays = pastActive
+        cachedTodayStoredSeconds = prefs.getLong(dayPrefKey(todayIso), 0L)
+        cachedAllTimeStoredSeconds = prefs.getLong(KEY_ALL_TIME_SECONDS, 0L)
+    }
 
-        val todayTotal = history.lastOrNull()?.seconds ?: unflushedSeconds
-        val allTime = prefs.getLong(KEY_ALL_TIME_SECONDS, 0L) + unflushedSeconds
+    private fun buildSnapshotLocked(unflushedSeconds: Long, sessionSeconds: Long): AppUsageSummary {
+        val today = CalendarDate.today()
+        val todayIso = today.toIsoString()
+        if (cachedHistoryDateIso != todayIso) {
+            refreshCacheFromPrefsLocked(today)
+        }
+
+        val todayTotal = cachedTodayStoredSeconds + unflushedSeconds
+        val weekTotal = cachedPastSixTotalSeconds + todayTotal
+        val activeDays = cachedPastSixActiveDays + if (todayTotal > 0L) 1 else 0
+        val allTime = cachedAllTimeStoredSeconds + unflushedSeconds
         val dailyAvg = if (activeDays > 0) weekTotal / activeDays else 0L
+
+        val history = ArrayList<DailyUsageEntry>(7).apply {
+            addAll(cachedPastSixDays)
+            add(
+                DailyUsageEntry(
+                    date = today,
+                    shortDayLabel = "Today",
+                    seconds = todayTotal,
+                    isToday = true
+                )
+            )
+        }
 
         return AppUsageSummary(
             todaySeconds = todayTotal,

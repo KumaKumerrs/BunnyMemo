@@ -64,6 +64,11 @@ class LocalPlannerRepository(
         startAtUtcMillis = startAtUtcMillis,
         endAtUtcMillis = endAtUtcMillis,
         parentPlanId = parentPlanId,
+        priority = TaskPriority.fromRaw(priority).name,
+        category = TaskCategory.fromRaw(category).name,
+        imagePaths = PhotoAttachmentStore.parsePaths(imagePathsCsv),
+        audioMemoPath = audioMemoPath,
+        audioMemoDurationSeconds = audioMemoDurationSeconds,
         createdAt = createdAtMillis.toTimestamp(),
         updatedAt = updatedAtMillis.toTimestamp()
     )
@@ -77,6 +82,7 @@ class LocalPlannerRepository(
         dueDate = dueDate,
         dueTimeMinutes = dueTimeMinutes,
         sortOrder = sortOrder,
+        timeSpentMinutes = timeSpentMinutes.coerceAtLeast(0),
         createdAt = createdAtMillis.toTimestamp(),
         updatedAt = updatedAtMillis.toTimestamp()
     )
@@ -309,7 +315,10 @@ class LocalPlannerRepository(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         steps: List<StepDraft>,
-        reminders: List<ReminderDraft>
+        reminders: List<ReminderDraft>,
+        imagePaths: List<String>,
+        priority: TaskPriority,
+        category: TaskCategory
     ): Result<String> {
         return try {
             val cleanTitle = title.trim().take(200)
@@ -319,6 +328,7 @@ class LocalPlannerRepository(
             val itemId = newId("item")
             val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
             val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK }
+            val encodedPhotos = PhotoAttachmentStore.encodePaths(imagePaths)
 
             val itemEntity = LocalItemEntity(
                 id = itemId,
@@ -333,7 +343,10 @@ class LocalPlannerRepository(
                 endAtUtcMillis = endAtUtcMillis?.coerceAtLeast(0L),
                 parentPlanId = cleanParent,
                 createdAtMillis = now,
-                updatedAtMillis = now
+                updatedAtMillis = now,
+                imagePathsCsv = encodedPhotos,
+                priority = priority.name,
+                category = category.name
             )
 
             val draftItem = itemEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
@@ -408,7 +421,10 @@ class LocalPlannerRepository(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         existingReminders: List<PlannerReminder>,
-        updatedReminderDrafts: List<ReminderDraft>?
+        updatedReminderDrafts: List<ReminderDraft>?,
+        imagePaths: List<String>?,
+        priority: TaskPriority?,
+        category: TaskCategory?
     ): Result<Unit> {
         return try {
             require(itemId.isNotBlank()) { "Item ID must not be blank." }
@@ -418,7 +434,15 @@ class LocalPlannerRepository(
             val now = System.currentTimeMillis()
             val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
             val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK }
-            val oldCreated = dao.getItemById(itemId)?.createdAtMillis ?: now
+            val existingEntity = dao.getItemById(itemId)
+            val oldCreated = existingEntity?.createdAtMillis ?: now
+            val resolvedPhotosCsv = if (imagePaths != null) {
+                PhotoAttachmentStore.encodePaths(imagePaths)
+            } else {
+                existingEntity?.imagePathsCsv
+            }
+            val resolvedPriority = (priority ?: TaskPriority.fromRaw(existingEntity?.priority)).name
+            val resolvedCategory = (category ?: TaskCategory.fromRaw(existingEntity?.category)).name
 
             val updatedEntity = LocalItemEntity(
                 id = itemId,
@@ -433,7 +457,12 @@ class LocalPlannerRepository(
                 endAtUtcMillis = endAtUtcMillis?.coerceAtLeast(0L),
                 parentPlanId = cleanParent,
                 createdAtMillis = oldCreated,
-                updatedAtMillis = now
+                updatedAtMillis = now,
+                imagePathsCsv = resolvedPhotosCsv,
+                priority = resolvedPriority,
+                category = resolvedCategory,
+                audioMemoPath = existingEntity?.audioMemoPath,
+                audioMemoDurationSeconds = existingEntity?.audioMemoDurationSeconds ?: 0
             )
             val updatedModel = updatedEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
 
@@ -523,6 +552,50 @@ class LocalPlannerRepository(
         }
     }
 
+    override suspend fun updateItemImages(
+        userId: String,
+        itemId: String,
+        imagePaths: List<String>
+    ): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        dao.updateItemImages(itemId, PhotoAttachmentStore.encodePaths(imagePaths), now)
+    }
+
+    override suspend fun updateItemAudioMemo(
+        userId: String,
+        itemId: String,
+        audioMemoPath: String?,
+        durationSeconds: Int
+    ): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        dao.updateItemAudioMemo(
+            itemId = itemId,
+            audioMemoPath = audioMemoPath?.takeIf { it.isNotBlank() },
+            durationSeconds = durationSeconds.coerceAtLeast(0),
+            now = now
+        )
+    }
+
+    override suspend fun updateItemPriority(
+        userId: String,
+        itemId: String,
+        priority: TaskPriority
+    ): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        dao.updateItemPriority(itemId, priority.name, now)
+        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
+    }
+
+    override suspend fun updateItemCategory(
+        userId: String,
+        itemId: String,
+        category: TaskCategory
+    ): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        dao.updateItemCategory(itemId, category.name, now)
+        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
+    }
+
     override suspend fun toggleItemCompleted(
         userId: String,
         itemId: String,
@@ -540,12 +613,19 @@ class LocalPlannerRepository(
         itemReminders: List<PlannerReminder>
     ): Result<Unit> = runCatching {
         val now = System.currentTimeMillis()
+        val existingEntity = dao.getItemById(itemId)
+        val existingPhotos = PhotoAttachmentStore.parsePaths(existingEntity?.imagePathsCsv)
+        val existingAudioMemo = existingEntity?.audioMemoPath
         val stepIds = (dao.getStepsByItemId(itemId).map { it.id } +
             itemSteps.filter { it.itemId == itemId }.map { it.id }).distinct()
         val remIds = (dao.getRemindersByItemId(itemId).map { it.id } +
             itemReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
 
         dao.deleteItemCascade(itemId)
+        if (existingPhotos.isNotEmpty()) {
+            PhotoAttachmentStore.deletePhotoFiles(existingPhotos)
+        }
+        com.example.audio.TaskAudioMemoManager.deleteMemoFile(existingAudioMemo)
 
         val syncOps = buildList {
             remIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, it, now)) }
@@ -591,6 +671,19 @@ class LocalPlannerRepository(
     ): Result<Unit> = runCatching {
         val now = System.currentTimeMillis()
         dao.updateStepCompleted(stepId, completed, now)
+        enqueueUpsert(SyncEntityType.STEP, stepId, now)
+    }
+
+    override suspend fun addStepTimeSpent(
+        userId: String,
+        stepId: String,
+        addedMinutes: Int
+    ): Result<Unit> = runCatching {
+        val step = dao.getStepById(stepId) ?: error("Step not found.")
+        val now = System.currentTimeMillis()
+        val updatedTotal = (step.timeSpentMinutes + addedMinutes.coerceIn(1, 1440))
+            .coerceIn(0, 100_000)
+        dao.updateStepTimeSpent(stepId, updatedTotal, now)
         enqueueUpsert(SyncEntityType.STEP, stepId, now)
     }
 
@@ -768,45 +861,5 @@ class LocalPlannerRepository(
         val now = System.currentTimeMillis()
         dao.deleteClassScheduleById(scheduleId)
         enqueueDelete(SyncEntityType.CLASS_SCHEDULE, scheduleId, now)
-    }
-
-    override suspend fun seedWeekendScrapbookSample(
-        userId: String,
-        defaultHour: Int,
-        defaultMinute: Int
-    ): Result<String> {
-        val today = CalendarDate.today()
-        val dueDate = today.plusDays(3)
-        return createItemWithStepsAndReminders(
-            userId = userId.ifBlank { LOCAL_USER_ID },
-            type = ItemType.PLAN,
-            title = "Make a weekend scrapbook",
-            notes = "Keep our favorite little snapshots and ticket stubs together.",
-            startDate = today.toIsoString(),
-            dueDate = dueDate.toIsoString(),
-            dueTimeMinutes = 17 * 60,
-            startAtUtcMillis = null,
-            endAtUtcMillis = null,
-            parentPlanId = null,
-            steps = listOf(
-                StepDraft(title = "Choose photos", dueDate = today.toIsoString()),
-                StepDraft(title = "Print photos", dueDate = today.plusDays(1).toIsoString()),
-                StepDraft(title = "Write a note", dueDate = today.plusDays(2).toIsoString())
-            ),
-            reminders = listOf(
-                ReminderDraft(
-                    kind = ReminderKind.PROGRESS_CHECKIN,
-                    offsetMinutes = 1440,
-                    localHour = defaultHour,
-                    localMinute = defaultMinute
-                ),
-                ReminderDraft(
-                    kind = ReminderKind.ORDINARY,
-                    offsetMinutes = 60,
-                    localHour = defaultHour,
-                    localMinute = defaultMinute
-                )
-            )
-        )
     }
 }

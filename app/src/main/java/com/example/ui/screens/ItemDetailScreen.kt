@@ -29,8 +29,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,17 +55,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.CalendarDate
 import com.example.data.ItemType
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
 import com.example.data.PlannerReminder
 import com.example.data.ReminderKind
+import com.example.data.TaskCategory
+import com.example.data.TaskPriority
 import com.example.data.UnifiedStep
 import androidx.compose.foundation.shape.CircleShape
 import com.example.ui.components.BunnyMemoConfirmModal
@@ -73,8 +79,16 @@ import com.example.ui.components.FlowerProgressRow
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
+import com.example.ui.components.PhotoLightboxModal
+import com.example.ui.components.PhotoThumbnailGalleryCard
 import com.example.ui.components.SmallBunnyIllustration
+import com.example.ui.components.TaskAudioMemoCard
+import com.example.ui.components.TaskCategoryBadge
+import com.example.ui.components.TaskCategorySelector
+import com.example.ui.components.TaskPriorityBadge
+import com.example.ui.components.TaskPrioritySelector
 import com.example.ui.components.TonalInsetPanel
+import com.example.ui.components.formatCompactDuration
 import com.example.ui.components.ruledMemoLines
 import com.example.ui.theme.CalmSage
 import com.example.ui.theme.CalmSageContainer
@@ -108,9 +122,18 @@ fun ItemDetailScreen(
     onDeleteStep: (UnifiedStep) -> Unit,
     onAddReminder: (PlannerItem, ReminderKind, Int) -> Unit,
     onDeleteReminder: (PlannerReminder) -> Unit,
+    onUpdatePhotos: (PlannerItem, List<String>) -> Unit = { _, _ -> },
+    onUpdateAudioMemo: (PlannerItem, String?, Int) -> Unit = { _, _, _ -> },
+    onUpdatePriority: (PlannerItem, TaskPriority) -> Unit = { _, _ -> },
+    onUpdateCategory: (PlannerItem, TaskCategory) -> Unit = { _, _ -> },
+    onLogStepTime: (UnifiedStep, Int) -> Unit = { _, _ -> },
+    onInviteFriend: (PlannerItem) -> Unit = {},
     onDismissCelebration: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
+
     if (showBackButton) {
         BackHandler(onBack = onBack)
     }
@@ -125,6 +148,7 @@ fun ItemDetailScreen(
     var newStepDueDate by remember(item.id) { mutableStateOf<CalendarDate?>(null) }
     var showStepDatePicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var lightboxPhotoPath by remember { mutableStateOf<String?>(null) }
 
     val supportsChecklist = item.itemType() == ItemType.PLAN || item.itemType() == ItemType.EVENT
 
@@ -165,10 +189,32 @@ fun ItemDetailScreen(
                             containerColor = SoftIceSurface,
                             contentColor = MidnightNavy
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        TaskCategoryBadge(category = item.taskCategory())
+                        if (item.itemType() == ItemType.TASK) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            TaskPriorityBadge(priority = item.taskPriority())
+                        }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         IconButton(
-                            onClick = { onEditItem(item) },
+                            onClick = {
+                                feedback.onPopOpen()
+                                onInviteFriend(item)
+                            },
+                            modifier = Modifier.testTag("detail_invite_friend_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.GroupAdd,
+                                contentDescription = stringResource(R.string.invite_friend_title),
+                                tint = DeepBlue
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                feedback.onPopOpen()
+                                onEditItem(item)
+                            },
                             modifier = Modifier.testTag("detail_edit_button")
                         ) {
                             Icon(
@@ -178,7 +224,10 @@ fun ItemDetailScreen(
                             )
                         }
                         IconButton(
-                            onClick = { showDeleteConfirm = true },
+                            onClick = {
+                                feedback.onLightTick()
+                                showDeleteConfirm = true
+                            },
                             modifier = Modifier.testTag("detail_delete_button")
                         ) {
                             Icon(
@@ -385,6 +434,26 @@ fun ItemDetailScreen(
                                     )
                                 }
                             }
+                            TaskPrioritySelector(
+                                selected = item.taskPriority(),
+                                onSelect = { newPriority ->
+                                    if (newPriority != item.taskPriority()) {
+                                        feedback.onLightTick()
+                                        onUpdatePriority(item, newPriority)
+                                    }
+                                },
+                                tagPrefix = "detail_priority"
+                            )
+                            TaskCategorySelector(
+                                selected = item.taskCategory(),
+                                onSelect = { newCategory ->
+                                    if (newCategory != item.taskCategory()) {
+                                        feedback.onLightTick()
+                                        onUpdateCategory(item, newCategory)
+                                    }
+                                },
+                                tagPrefix = "detail_category"
+                            )
                         }
                     }
 
@@ -412,7 +481,10 @@ fun ItemDetailScreen(
                     ) {
                         if (item.itemType() == ItemType.TASK || (item.itemType() == ItemType.PLAN && progress.totalCount == 0)) {
                             Button(
-                                onClick = { onToggleItemCompleted(item, !item.completed) },
+                                onClick = {
+                                    feedback.onTaskToggled(!item.completed)
+                                    onToggleItemCompleted(item, !item.completed)
+                                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (item.completed) CalmSage else DeepBlue,
                                     contentColor = PureWhite
@@ -444,6 +516,25 @@ fun ItemDetailScreen(
                     }
                 }
             }
+        }
+
+        // Picture Attachments Gallery Card
+        item(key = "detail_photos_card") {
+            PhotoThumbnailGalleryCard(
+                imagePaths = item.imagePaths,
+                onUpdatePhotos = { updated -> onUpdatePhotos(item, updated) },
+                onPhotoClick = { path -> lightboxPhotoPath = path }
+            )
+        }
+
+        // Voice Audio Memo Recorder & Player Card
+        item(key = "detail_audio_memo_card") {
+            TaskAudioMemoCard(
+                item = item,
+                onUpdateAudioMemo = { path, durationSec ->
+                    onUpdateAudioMemo(item, path, durationSec)
+                }
+            )
         }
 
         // Progress & Checklist section for Plans and Events
@@ -607,67 +698,123 @@ fun ItemDetailScreen(
                     elevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Checkbox(
-                            checked = step.completed,
-                            onCheckedChange = { checked -> onToggleStep(step, checked) },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = DeepBlue,
-                                uncheckedColor = ForgetMeNotBlue,
-                                checkmarkColor = PureWhite
-                            ),
-                            modifier = Modifier.testTag("detail_step_checkbox_${step.id}")
-                        )
-                        ForgetMeNotFlower(
-                            bloomed = step.completed,
-                            size = 20.dp,
-                            animatePop = step.completed
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = step.title,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    textDecoration = if (step.completed) TextDecoration.LineThrough else TextDecoration.None
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = step.completed,
+                                onCheckedChange = { checked ->
+                                    feedback.onTaskToggled(checked)
+                                    onToggleStep(step, checked)
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = DeepBlue,
+                                    uncheckedColor = ForgetMeNotBlue,
+                                    checkmarkColor = PureWhite
                                 ),
-                                color = if (step.completed) MaterialTheme.colorScheme.onSurfaceVariant else MidnightNavy
+                                modifier = Modifier.testTag("detail_step_checkbox_${step.id}")
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                step.dueDate?.let { raw ->
-                                    CalendarDate.parse(raw)?.let { parsed ->
+                            ForgetMeNotFlower(
+                                bloomed = step.completed,
+                                size = 20.dp,
+                                animatePop = step.completed
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = step.title,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        textDecoration = if (step.completed) TextDecoration.LineThrough else TextDecoration.None
+                                    ),
+                                    color = if (step.completed) MaterialTheme.colorScheme.onSurfaceVariant else MidnightNavy
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    step.dueDate?.let { raw ->
+                                        CalendarDate.parse(raw)?.let { parsed ->
+                                            Text(
+                                                text = "Due ${PlannerDateUtils.formatCompactDate(parsed)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (overdue) OverdueTerracotta else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    if (step.isLinkedTask) {
                                         Text(
-                                            text = "Due ${PlannerDateUtils.formatCompactDate(parsed)}",
+                                            text = "Linked task",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = if (overdue) OverdueTerracotta else MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = DeepBlue
+                                        )
+                                    }
+                                    if (step.timeSpentMinutes > 0) {
+                                        Text(
+                                            text = formatCompactDuration(step.timeSpentMinutes),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = CalmSage
+                                        )
+                                    }
+                                    if (overdue) {
+                                        Text(
+                                            text = "Overdue",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = OverdueTerracotta
                                         )
                                     }
                                 }
-                                if (step.isLinkedTask) {
-                                    Text(
-                                        text = "Linked task",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = DeepBlue
-                                    )
-                                }
-                                if (overdue) {
-                                    Text(
-                                        text = "Overdue",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = OverdueTerracotta
+                            }
+                            IconButton(onClick = {
+                                feedback.onDeleteAction()
+                                onDeleteStep(step)
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteOutline,
+                                    contentDescription = "Remove step",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        if (!step.isLinkedTask) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 48.dp, end = 8.dp, bottom = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Timer,
+                                    contentDescription = null,
+                                    tint = MutedNavy,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (step.timeSpentMinutes > 0) "Time logged:" else "Log effort:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MutedNavy
+                                )
+                                listOf(15, 30).forEach { mins ->
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            feedback.onSaveSuccess()
+                                            onLogStepTime(step, mins)
+                                        },
+                                        label = {
+                                            Text(
+                                                text = "+${mins}m",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("step_log_${mins}m_${step.id}")
                                     )
                                 }
                             }
-                        }
-                        IconButton(onClick = { onDeleteStep(step) }) {
-                            Icon(
-                                imageVector = Icons.Outlined.DeleteOutline,
-                                contentDescription = "Remove step",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
                         }
                     }
                 }
@@ -802,6 +949,18 @@ fun ItemDetailScreen(
                 onDeleteItem(item)
             },
             onDismiss = { showDeleteConfirm = false }
+        )
+    }
+
+    lightboxPhotoPath?.let { viewingPath ->
+        PhotoLightboxModal(
+            imagePath = viewingPath,
+            onRemove = {
+                val updated = item.imagePaths.filterNot { it == viewingPath }
+                onUpdatePhotos(item, updated)
+                lightboxPhotoPath = null
+            },
+            onDismiss = { lightboxPhotoPath = null }
         )
     }
 }

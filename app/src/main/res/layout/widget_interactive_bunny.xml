@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_sky_card"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <!-- Top Header: Month Breed Title + Streak & Baby Bunnies Badge -->
+    <LinearLayout
+        android:id="@+id/widget_bunny_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@string/cd_forget_me_not"
+            android:src="@drawable/ic_widget_flower" />
+
+        <TextView
+            android:id="@+id/widget_bunny_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/widget_bunny_family_name"
+            android:textColor="#2B4360"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_bunny_streak_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill_sage"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp"
+            android:text="0d · 3 kits"
+            android:textColor="#35917A"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Resizable Big Bunny + Exclusive Baby Bunnies Meadow Scene + Direct Touch Hotspots -->
+    <FrameLayout
+        android:id="@+id/widget_bunny_stage_frame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_bunny_canvas_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:adjustViewBounds="true"
+            android:contentDescription="@string/widget_bunny_family_desc"
+            android:scaleType="fitCenter" />
+
+        <!-- Direct-on-rabbit invisible interaction zones (Head Pat, Left Cheek Pinch, Right Cheek Pinch, Belly Talk) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- Top 42%: Head & Ears Pat Zone -->
+            <TextView
+                android:id="@+id/widget_bunny_hotspot_head"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="42"
+                android:background="@android:color/transparent"
+                android:contentDescription="@string/month_bunny_pat_chip" />
+
+            <!-- Middle 36%: Left Cheek Pinch | Center Talk | Right Cheek Pinch -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="36"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_bunny_hotspot_left_cheek"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="38"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/month_bunny_pinch_chip" />
+
+                <TextView
+                    android:id="@+id/widget_bunny_hotspot_talk"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="24"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/widget_bunny_talk_btn" />
+
+                <TextView
+                    android:id="@+id/widget_bunny_hotspot_right_cheek"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="38"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/month_bunny_pinch_chip" />
+            </LinearLayout>
+
+            <!-- Bottom 22%: Paws & Baby Bunnies Zone (Tap to Talk / Open) -->
+            <TextView
+                android:id="@+id/widget_bunny_hotspot_bottom"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="22"
+                android:background="@android:color/transparent"
+                android:contentDescription="@string/widget_bunny_talk_btn" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Bunny Speech Bubble Bar -->
+    <LinearLayout
+        android:id="@+id/widget_bunny_dialogue_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/widget_row_card"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp">
+
+        <TextView
+            android:id="@+id/widget_bunny_dialogue_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:text="@string/widget_bunny_default_greeting"
+            android:textColor="#2B4360"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Bottom Interactive 8-Bit Action Pills: Pat Head · Pinch Cheeks · Talk · Open -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_bunny_btn_pat"
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_pill_pollen"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="1"
+            android:paddingHorizontal="6dp"
+            android:text="@string/widget_bunny_pat_btn"
+            android:textColor="#2B4360"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_bunny_btn_pinch"
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="5dp"
+            android:layout_weight="1.15"
+            android:background="@drawable/widget_row_card"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="1"
+            android:paddingHorizontal="6dp"
+            android:text="@string/widget_bunny_pinch_btn"
+            android:textColor="#2B4360"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_bunny_btn_talk"
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="5dp"
+            android:layout_weight="0.9"
+            android:background="@drawable/widget_pill_deep_blue"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="1"
+            android:paddingHorizontal="6dp"
+            android:text="@string/widget_bunny_talk_btn"
+            android:textColor="#FCFEFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

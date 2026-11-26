@@ -31,7 +31,10 @@ interface PlannerDataSource {
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         steps: List<StepDraft>,
-        reminders: List<ReminderDraft>
+        reminders: List<ReminderDraft>,
+        imagePaths: List<String> = emptyList(),
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        category: TaskCategory = TaskCategory.PERSONAL
     ): Result<String>
 
     suspend fun updateItemAndRebuildReminders(
@@ -48,7 +51,35 @@ interface PlannerDataSource {
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         existingReminders: List<PlannerReminder>,
-        updatedReminderDrafts: List<ReminderDraft>? = null
+        updatedReminderDrafts: List<ReminderDraft>? = null,
+        imagePaths: List<String>? = null,
+        priority: TaskPriority? = null,
+        category: TaskCategory? = null
+    ): Result<Unit>
+
+    suspend fun updateItemImages(
+        userId: String,
+        itemId: String,
+        imagePaths: List<String>
+    ): Result<Unit>
+
+    suspend fun updateItemAudioMemo(
+        userId: String,
+        itemId: String,
+        audioMemoPath: String?,
+        durationSeconds: Int
+    ): Result<Unit>
+
+    suspend fun updateItemPriority(
+        userId: String,
+        itemId: String,
+        priority: TaskPriority
+    ): Result<Unit>
+
+    suspend fun updateItemCategory(
+        userId: String,
+        itemId: String,
+        category: TaskCategory
     ): Result<Unit>
 
     suspend fun toggleItemCompleted(userId: String, itemId: String, completed: Boolean): Result<Unit>
@@ -70,6 +101,7 @@ interface PlannerDataSource {
     ): Result<String>
 
     suspend fun toggleStepCompleted(userId: String, stepId: String, completed: Boolean): Result<Unit>
+    suspend fun addStepTimeSpent(userId: String, stepId: String, addedMinutes: Int): Result<Unit>
     suspend fun deleteStep(userId: String, stepId: String): Result<Unit>
 
     suspend fun addReminder(
@@ -124,10 +156,4 @@ interface PlannerDataSource {
     ): Result<Unit>
 
     suspend fun deleteClassSchedule(userId: String, scheduleId: String): Result<Unit>
-
-    suspend fun seedWeekendScrapbookSample(
-        userId: String,
-        defaultHour: Int,
-        defaultMinute: Int
-    ): Result<String>
 }

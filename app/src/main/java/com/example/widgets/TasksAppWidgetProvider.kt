@@ -182,11 +182,12 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
                                     }
                                 )
 
+                                val priorityLabel = task.taskPriority().label
                                 val metaText = when {
-                                    isQuickNote -> "Quick Note"
-                                    isOverdue -> "Overdue · ${PlannerDateUtils.formatCompactDate(due!!)}"
-                                    task.dueTimeMinutes != null -> "Today · ${PlannerDateUtils.formatTimeOfDay(task.dueTimeMinutes)}"
-                                    else -> "Due today"
+                                    isQuickNote -> "$priorityLabel · Quick Note"
+                                    isOverdue -> "$priorityLabel · Overdue · ${PlannerDateUtils.formatCompactDate(due!!)}"
+                                    task.dueTimeMinutes != null -> "$priorityLabel · Today · ${PlannerDateUtils.formatTimeOfDay(task.dueTimeMinutes)}"
+                                    else -> "$priorityLabel · Due today"
                                 }
                                 setTextViewText(META_IDS[i], metaText)
                                 setTextColor(

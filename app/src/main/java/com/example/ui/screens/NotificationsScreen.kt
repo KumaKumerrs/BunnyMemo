@@ -28,7 +28,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Snooze
@@ -37,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -49,12 +52,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.CalendarDate
+import com.example.data.CalendarInvite
 import com.example.data.InboxNotificationEntry
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
@@ -67,6 +73,7 @@ import com.example.ui.components.BunnyPose
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
+import com.example.ui.components.SharedScheduleCard
 import com.example.ui.components.SmallBunnyIllustration
 import com.example.ui.components.TonalInsetPanel
 import com.example.ui.components.adaptiveHorizontalPadding
@@ -93,8 +100,14 @@ fun NotificationsScreen(
     onRescheduleItem: (PlannerItem) -> Unit,
     onSnoozeReminder: (PlannerReminder, Int) -> Unit,
     onDismissReminder: (PlannerReminder) -> Unit,
+    calendarInvites: List<CalendarInvite> = emptyList(),
+    currentUserId: String? = null,
+    onOpenSharedInvite: (CalendarInvite) -> Unit = {},
+    onInviteFriendClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val today = state.todayDate()
     val entries = state.inboxEntries
     val groupedByDate = remember(entries) {
@@ -156,7 +169,33 @@ fun NotificationsScreen(
                     contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    if (entries.isEmpty()) {
+                    item(key = "inbox_shared_invites_header_wide") {
+                        SharedInvitesInboxHeader(
+                            count = calendarInvites.size,
+                            onInviteFriend = {
+                                feedback.onPopOpen()
+                                onInviteFriendClick()
+                            }
+                        )
+                    }
+                    if (calendarInvites.isNotEmpty()) {
+                        items(calendarInvites, key = { "inbox_invite_${it.id}" }) { invite ->
+                            SharedScheduleCard(
+                                invite = invite,
+                                currentUserId = currentUserId,
+                                onProfileIconClick = {
+                                    feedback.onPopOpen()
+                                    onOpenSharedInvite(invite)
+                                },
+                                onCardClick = {
+                                    feedback.onPopOpen()
+                                    onOpenSharedInvite(invite)
+                                }
+                            )
+                        }
+                    }
+
+                    if (entries.isEmpty() && calendarInvites.isEmpty()) {
                         item(key = "inbox_empty") {
                             EmptyInboxPanel()
                         }
@@ -175,9 +214,18 @@ fun NotificationsScreen(
                                     entry = entry,
                                     nowMillis = state.nowMillis,
                                     onOpen = { onOpenItem(entry.item.id) },
-                                    onReschedule = { onRescheduleItem(entry.item) },
-                                    onSnooze = { mins -> onSnoozeReminder(entry.reminder, mins) },
-                                    onDismiss = { onDismissReminder(entry.reminder) }
+                                    onReschedule = {
+                                        feedback.onPopOpen()
+                                        onRescheduleItem(entry.item)
+                                    },
+                                    onSnooze = { mins ->
+                                        feedback.onReminderSnoozed()
+                                        onSnoozeReminder(entry.reminder, mins)
+                                    },
+                                    onDismiss = {
+                                        feedback.onReminderDismissed()
+                                        onDismissReminder(entry.reminder)
+                                    }
                                 )
                             }
                         }
@@ -203,7 +251,10 @@ fun NotificationsScreen(
                         summary = state.dailyDigestSummary,
                         hasNotificationPermission = hasNotificationPermission,
                         onToggleEnabled = onToggleDailyDigest,
-                        onChangeTimeClick = { showDailyTimeModal = true },
+                        onChangeTimeClick = {
+                            feedback.onPopOpen()
+                            showDailyTimeModal = true
+                        },
                         onSendPreviewClick = onPreviewAction
                     )
                 }
@@ -214,7 +265,33 @@ fun NotificationsScreen(
                     }
                 }
 
-                if (entries.isEmpty()) {
+                item(key = "inbox_shared_invites_header_compact") {
+                    SharedInvitesInboxHeader(
+                        count = calendarInvites.size,
+                        onInviteFriend = {
+                            feedback.onPopOpen()
+                            onInviteFriendClick()
+                        }
+                    )
+                }
+                if (calendarInvites.isNotEmpty()) {
+                    items(calendarInvites, key = { "inbox_invite_${it.id}" }) { invite ->
+                        SharedScheduleCard(
+                            invite = invite,
+                            currentUserId = currentUserId,
+                            onProfileIconClick = {
+                                feedback.onPopOpen()
+                                onOpenSharedInvite(invite)
+                            },
+                            onCardClick = {
+                                feedback.onPopOpen()
+                                onOpenSharedInvite(invite)
+                            }
+                        )
+                    }
+                }
+
+                if (entries.isEmpty() && calendarInvites.isEmpty()) {
                     item(key = "inbox_empty") {
                         EmptyInboxPanel()
                     }
@@ -233,9 +310,18 @@ fun NotificationsScreen(
                                 entry = entry,
                                 nowMillis = state.nowMillis,
                                 onOpen = { onOpenItem(entry.item.id) },
-                                onReschedule = { onRescheduleItem(entry.item) },
-                                onSnooze = { mins -> onSnoozeReminder(entry.reminder, mins) },
-                                onDismiss = { onDismissReminder(entry.reminder) }
+                                onReschedule = {
+                                    feedback.onPopOpen()
+                                    onRescheduleItem(entry.item)
+                                },
+                                onSnooze = { mins ->
+                                    feedback.onReminderSnoozed()
+                                    onSnoozeReminder(entry.reminder, mins)
+                                },
+                                onDismiss = {
+                                    feedback.onReminderDismissed()
+                                    onDismissReminder(entry.reminder)
+                                }
                             )
                         }
                     }
@@ -681,6 +767,50 @@ private fun InboxEntryCard(
                     Text("Dismiss", color = MutedNavy)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SharedInvitesInboxHeader(
+    count: Int,
+    onInviteFriend: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (count > 0) "Shared calendar invites ($count)" else "Shared calendar invites",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MidnightNavy
+            )
+            Text(
+                text = "Tap a friend's profile icon to view or reply on planned dates",
+                style = MaterialTheme.typography.labelSmall,
+                color = MutedNavy
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(
+            onClick = onInviteFriend,
+            border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.45f)),
+            shape = RoundedCornerShape(100.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.testTag("inbox_invite_friend_button")
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.GroupAdd,
+                contentDescription = null,
+                tint = DeepBlue,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Invite", style = MaterialTheme.typography.labelMedium, color = DeepBlue)
         }
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -53,12 +54,14 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.CloudSync
@@ -115,15 +118,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.AppUsageSummary
 import com.example.data.AppUsageTracker
 import com.example.data.CalendarDate
+import com.example.data.CalendarInvite
 import com.example.data.ClassScheduleItem
+import com.example.data.ItemType
 import com.example.data.LocalPlannerRepository
+import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
 import com.example.data.RoomFirestoreSyncService
 import com.example.data.RoomSyncStatus
+import com.example.data.SharedCalendarRepository
 import com.example.data.SyncPhase
+import com.example.data.TaskCategory
 import com.example.data.onGoogleSignInClicked
 import com.example.data.signOut
 import com.example.notifications.ReminderScheduler
@@ -131,8 +140,11 @@ import com.example.ui.components.BunnyMemoCloudSyncModal
 import com.example.ui.components.ClassScheduleEditorModal
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ForgetMeNotStationeryBackground
+import com.example.ui.components.FriendScheduleDetailModal
 import com.example.ui.components.HoppingBunnyLoadingScreen
+import com.example.ui.components.InviteFriendToCalendarDialog
 import com.example.ui.components.ItemEditorDialog
+import com.example.ui.components.MonthBunnyOverlay
 import com.example.ui.components.PlannerSearchBar
 import com.example.ui.components.PlannerSearchResultsView
 import com.example.ui.components.QuickNoteModal
@@ -146,8 +158,10 @@ import com.example.ui.screens.ClassScheduleScreen
 import com.example.ui.screens.DedicationScreen
 import com.example.ui.screens.ItemDetailScreen
 import com.example.ui.screens.NotificationsScreen
+import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.TodayScreen
+import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotTheme
 import com.example.ui.theme.MidnightNavy
@@ -155,6 +169,7 @@ import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyCanvasTop
 import com.example.ui.theme.SubtleBorder
+import com.example.ui.theme.ThemePreferencesManager
 import com.example.viewmodel.PlannerUiState
 import com.example.viewmodel.PlannerViewModel
 import com.example.widgets.WidgetIntents
@@ -163,6 +178,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 private const val MODE_PREFS_NAME = "bunny_memo_mode_prefs"
@@ -180,19 +196,31 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                AndroidColor.TRANSPARENT,
-                AndroidColor.TRANSPARENT
-            ),
-            navigationBarStyle = SystemBarStyle.light(
-                AndroidColor.TRANSPARENT,
-                AndroidColor.TRANSPARENT
-            )
-        )
         latestDirective = parseLaunchDirective(intent)
+        val themePrefs = ThemePreferencesManager.getInstance(applicationContext)
         setContent {
-            ForgetMeNotTheme {
+            val themeMode by themePrefs.themeMode.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
+            val isDark = when (themeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            LaunchedEffect(isDark) {
+                val barStyle = if (isDark) {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(
+                        AndroidColor.TRANSPARENT,
+                        AndroidColor.TRANSPARENT
+                    )
+                }
+                enableEdgeToEdge(
+                    statusBarStyle = barStyle,
+                    navigationBarStyle = barStyle
+                )
+            }
+            ForgetMeNotTheme(darkTheme = isDark) {
                 AppContent(
                     launchDirective = latestDirective,
                     onDirectiveConsumed = { consumedId ->
@@ -228,10 +256,21 @@ private enum class PlannerTab(val labelRes: Int) {
     CALENDAR(R.string.nav_calendar),
     CLASSES(R.string.nav_classes),
     NOTIFICATIONS(R.string.nav_notifications),
-    REPORTS(R.string.nav_reports)
+    REPORTS(R.string.nav_reports),
+    PROFILE(R.string.nav_profile)
 }
 
 private enum class AppRootStage { SPLASH, AUTH, PLANNER }
+
+private data class InviteFriendPrefill(
+    val title: String,
+    val dateIso: String,
+    val timeLabel: String? = null,
+    val notes: String? = null,
+    val itemId: String? = null,
+    val itemType: ItemType = ItemType.EVENT,
+    val category: TaskCategory = TaskCategory.PERSONAL
+)
 
 @Composable
 fun AppContent(
@@ -244,15 +283,23 @@ fun AppContent(
     val usageSummary by usageTracker.usageSummary.collectAsStateWithLifecycle()
     val syncService = remember(context) { RoomFirestoreSyncService.getInstance(context) }
     val syncStatus by syncService.syncStatus.collectAsStateWithLifecycle()
+    val feedbackManager = remember(context) { BunnyFeedbackManager.getInstance(context) }
 
-    DisposableEffect(lifecycleOwner, usageTracker) {
+    DisposableEffect(lifecycleOwner, usageTracker, feedbackManager) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             usageTracker.onForegroundResume()
+            feedbackManager.onForegroundResume()
         }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> usageTracker.onForegroundResume()
-                Lifecycle.Event.ON_PAUSE -> usageTracker.onForegroundPause()
+                Lifecycle.Event.ON_RESUME -> {
+                    usageTracker.onForegroundResume()
+                    feedbackManager.onForegroundResume()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    usageTracker.onForegroundPause()
+                    feedbackManager.onForegroundPause()
+                }
                 else -> Unit
             }
         }
@@ -260,6 +307,7 @@ fun AppContent(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             usageTracker.onForegroundPause()
+            feedbackManager.onForegroundPause()
         }
     }
 
@@ -267,7 +315,9 @@ fun AppContent(
         context.applicationContext.getSharedPreferences(MODE_PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
+    var currentUser by remember {
+        mutableStateOf(runCatching { Firebase.auth.currentUser }.getOrNull())
+    }
     var useLocalMode by remember {
         mutableStateOf(modePrefs.getBoolean(KEY_LOCAL_MODE_ENABLED, false))
     }
@@ -283,11 +333,12 @@ fun AppContent(
     }
 
     DisposableEffect(Unit) {
+        val firebaseAuth = runCatching { Firebase.auth }.getOrNull()
         val listener = FirebaseAuth.AuthStateListener { auth ->
             currentUser = auth.currentUser
         }
-        Firebase.auth.addAuthStateListener(listener)
-        onDispose { Firebase.auth.removeAuthStateListener(listener) }
+        firebaseAuth?.addAuthStateListener(listener)
+        onDispose { firebaseAuth?.removeAuthStateListener(listener) }
     }
 
     // Activate automatic Room-to-Firestore synchronization when signed in with Google
@@ -331,7 +382,7 @@ fun AppContent(
 
             AppRootStage.AUTH -> AuthScreen(
                 onAuthSuccess = {
-                    currentUser = Firebase.auth.currentUser
+                    currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
                 },
                 onContinueLocally = {
                     modePrefs.edit().putBoolean(KEY_LOCAL_MODE_ENABLED, true).apply()
@@ -349,7 +400,9 @@ fun AppContent(
                     PlannerWorkspaceShell(
                         isLocalMode = isLocalMode,
                         currentUserId = sessionKey,
+                        userDisplayName = user?.displayName,
                         userEmail = user?.email,
+                        userPhotoUrl = user?.photoUrl?.toString(),
                         usageSummary = usageSummary,
                         syncStatus = syncStatus,
                         onRequestManualSync = { syncService.requestSync(restoredFromOffline = false) },
@@ -358,7 +411,7 @@ fun AppContent(
                         externalBannerMessage = migrationBanner,
                         onClearExternalBanner = { migrationBanner = null },
                         onSignedInFromLocal = {
-                            currentUser = Firebase.auth.currentUser
+                            currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
                         },
                         onSwitchToLocalAfterSignOut = {
                             syncService.stopCloudSync()
@@ -379,7 +432,9 @@ private enum class PlannerShellStage { LOADING, ERROR, DEDICATION, WORKSPACE }
 private fun PlannerWorkspaceShell(
     isLocalMode: Boolean,
     currentUserId: String,
+    userDisplayName: String?,
     userEmail: String?,
+    userPhotoUrl: String?,
     usageSummary: AppUsageSummary,
     syncStatus: RoomSyncStatus,
     onRequestManualSync: () -> Unit,
@@ -393,7 +448,11 @@ private fun PlannerWorkspaceShell(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val reducedMotion = rememberReducedMotion()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
+    val feedbackManager = remember(context) { BunnyFeedbackManager.getInstance(context) }
+    val sharedCalendarRepo = remember(context) { SharedCalendarRepository(context) }
 
     val viewModel: PlannerViewModel = viewModel(
         key = currentUserId,
@@ -418,6 +477,26 @@ private fun PlannerWorkspaceShell(
     val celebratingItemId by viewModel.celebratingItemId.collectAsStateWithLifecycle()
     val feedbackMessage by viewModel.feedbackMessage.collectAsStateWithLifecycle()
     val isSaving by viewModel.isSaving.collectAsStateWithLifecycle()
+
+    val calendarInvites by remember(sharedCalendarRepo, isLocalMode, currentUserId, userEmail) {
+        if (isLocalMode) {
+            flowOf(emptyList())
+        } else {
+            sharedCalendarRepo.observeAllVisibleInvites(currentUserId, userEmail)
+        }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    LaunchedEffect(calendarInvites, currentUserId, isLocalMode) {
+        if (!isLocalMode) {
+            sharedCalendarRepo.notifyUnseenUpdates(calendarInvites, currentUserId)
+        }
+    }
+
+    LaunchedEffect(celebratingItemId) {
+        if (celebratingItemId != null) {
+            feedbackManager.onCelebrateBloom()
+        }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(feedbackMessage) {
@@ -474,6 +553,16 @@ private fun PlannerWorkspaceShell(
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var showQuickNoteModal by remember { mutableStateOf(false) }
     var quickNotePrefillText by remember { mutableStateOf("") }
+    var invitePrefill by remember { mutableStateOf<InviteFriendPrefill?>(null) }
+    var inspectedSharedInvite by remember { mutableStateOf<CalendarInvite?>(null) }
+    val inspectedInviteReplies by remember(sharedCalendarRepo, inspectedSharedInvite?.id) {
+        val inviteId = inspectedSharedInvite?.id
+        if (inviteId.isNullOrBlank()) flowOf(emptyList())
+        else sharedCalendarRepo.observeReplies(inviteId)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val liveInspectedInvite = inspectedSharedInvite?.let { currentInv ->
+        calendarInvites.firstOrNull { it.id == currentInv.id } ?: currentInv
+    }
 
     // Apply home screen widget & notification deep-link directives cleanly
     LaunchedEffect(launchDirective?.id) {
@@ -672,19 +761,27 @@ private fun PlannerWorkspaceShell(
                                             showEditorDialog = true
                                         },
                                         onToggleItemCompleted = { item, checked ->
+                                            feedbackManager.onTaskToggled(checked)
                                             viewModel.toggleItemCompleted(item, checked)
                                         },
                                         onDeleteItem = { item ->
+                                            feedbackManager.onDeleteAction()
                                             viewModel.deleteItem(item) { selectedItemId = null }
                                         },
                                         onAddStep = { itemId, title, due ->
+                                            feedbackManager.onSaveSuccess()
                                             viewModel.addStep(itemId, title, due, null)
                                         },
                                         onToggleStep = { step, checked ->
+                                            feedbackManager.onTaskToggled(checked)
                                             viewModel.toggleUnifiedStep(step, checked)
                                         },
-                                        onDeleteStep = { step -> viewModel.deleteStep(step) },
+                                        onDeleteStep = { step ->
+                                            feedbackManager.onDeleteAction()
+                                            viewModel.deleteStep(step)
+                                        },
                                         onAddReminder = { item, kind, offset ->
+                                            feedbackManager.onSaveSuccess()
                                             viewModel.addReminder(
                                                 item = item,
                                                 kind = kind,
@@ -693,7 +790,49 @@ private fun PlannerWorkspaceShell(
                                                 localMinute = current.profile.defaultReminderMinute
                                             )
                                         },
-                                        onDeleteReminder = { rem -> viewModel.deleteReminder(rem) },
+                                        onDeleteReminder = { rem ->
+                                            feedbackManager.onDeleteAction()
+                                            viewModel.deleteReminder(rem)
+                                        },
+                                        onUpdatePhotos = { item, paths ->
+                                            feedbackManager.onLightTick()
+                                            viewModel.updateItemPhotos(item, paths)
+                                        },
+                                        onUpdateAudioMemo = { item, path, durationSec ->
+                                            viewModel.updateItemAudioMemo(item, path, durationSec)
+                                        },
+                                        onUpdatePriority = { item, priority ->
+                                            feedbackManager.onLightTick()
+                                            viewModel.updateItemPriority(item, priority)
+                                        },
+                                        onUpdateCategory = { item, category ->
+                                            feedbackManager.onLightTick()
+                                            viewModel.updateItemCategory(item, category)
+                                        },
+                                        onLogStepTime = { step, mins ->
+                                            feedbackManager.onLightTick()
+                                            viewModel.logStepTimeSpent(step, mins)
+                                        },
+                                        onInviteFriend = { item ->
+                                            feedbackManager.onPopOpen()
+                                            val timeLabel = when {
+                                                item.startAtUtcMillis != null -> PlannerDateUtils.formatEventTimeRange(
+                                                    item.startAtUtcMillis,
+                                                    item.endAtUtcMillis
+                                                )
+                                                item.dueTimeMinutes != null -> PlannerDateUtils.formatTimeOfDay(item.dueTimeMinutes)
+                                                else -> null
+                                            }
+                                            invitePrefill = InviteFriendPrefill(
+                                                title = item.title,
+                                                dateIso = (item.primaryCalendarDate() ?: current.todayDate()).toIsoString(),
+                                                timeLabel = timeLabel,
+                                                notes = item.notes,
+                                                itemId = item.id,
+                                                itemType = item.itemType(),
+                                                category = item.taskCategory()
+                                            )
+                                        },
                                         onDismissCelebration = { viewModel.clearCelebration() },
                                         modifier = Modifier.padding(innerPadding)
                                     )
@@ -722,6 +861,7 @@ private fun PlannerWorkspaceShell(
                                                         selected = activeTab == tab,
                                                         icon = { TabIcon(tab, activeTab == tab, if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0) },
                                                         onClick = {
+                                                            feedbackManager.onTabSwitch()
                                                             activeTab = tab
                                                             selectedItemId = null
                                                             searchQuery = ""
@@ -735,6 +875,7 @@ private fun PlannerWorkspaceShell(
                                                     text = { Text(if (isLocalMode) "Back up memos" else "Sync now") },
                                                     leadingIcon = { Icon(if (isLocalMode) Icons.Outlined.CloudUpload else Icons.Outlined.CloudSync, contentDescription = null, tint = DeepBlue) },
                                                     onClick = {
+                                                        feedbackManager.onLightTick()
                                                         scope.launch { drawerState.close() }
                                                         if (isLocalMode) {
                                                             cloudSignInError = null
@@ -746,6 +887,7 @@ private fun PlannerWorkspaceShell(
                                                     text = { Text("Dedication") },
                                                     leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, tint = DeepBlue) },
                                                     onClick = {
+                                                        feedbackManager.onPopOpen()
                                                         scope.launch { drawerState.close() }
                                                         forceShowDedication = true
                                                     }
@@ -754,6 +896,7 @@ private fun PlannerWorkspaceShell(
                                                     text = { Text("Settings") },
                                                     leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = DeepBlue) },
                                                     onClick = {
+                                                        feedbackManager.onPopOpen()
                                                         scope.launch { drawerState.close() }
                                                         showSettingsDialog = true
                                                     }
@@ -762,6 +905,7 @@ private fun PlannerWorkspaceShell(
                                         }
                                     }
                                 ) {
+                                    Box(modifier = Modifier.fillMaxSize()) {
                                     Scaffold(
                                         containerColor = Color.Transparent,
                                         contentWindowInsets = WindowInsets.safeDrawing,
@@ -817,12 +961,16 @@ private fun PlannerWorkspaceShell(
                                                         }
                                                     },
                                                     navigationIcon = {
-                                                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                                        IconButton(onClick = {
+                                                            feedbackManager.onLightTick()
+                                                            scope.launch { drawerState.open() }
+                                                        }) {
                                                             Icon(Icons.Default.Menu, contentDescription = "Open planner navigation")
                                                         }
                                                     },
                                                     actions = {
                                                         IconButton(onClick = {
+                                                            feedbackManager.onPopOpen()
                                                             searchOpen = !searchOpen
                                                             if (!searchOpen) searchQuery = ""
                                                         }) {
@@ -842,7 +990,10 @@ private fun PlannerWorkspaceShell(
                                         floatingActionButton = {
                                             Box {
                                                 ExtendedFloatingActionButton(
-                                                    onClick = { createMenuOpen = true },
+                                                    onClick = {
+                                                        feedbackManager.onPopOpen()
+                                                        createMenuOpen = true
+                                                    },
                                                     containerColor = DeepBlue,
                                                     contentColor = PureWhite,
                                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
@@ -852,6 +1003,7 @@ private fun PlannerWorkspaceShell(
                                                     DropdownMenuItem(
                                                         text = { Text(if (activeTab == PlannerTab.CLASSES) "Add class" else "Add planner item") },
                                                         onClick = {
+                                                            feedbackManager.onPopOpen()
                                                             createMenuOpen = false
                                                             if (activeTab == PlannerTab.CLASSES) {
                                                                 editingClassSchedule = null
@@ -871,6 +1023,7 @@ private fun PlannerWorkspaceShell(
                                                     DropdownMenuItem(
                                                         text = { Text(stringResource(R.string.action_quick_note)) },
                                                         onClick = {
+                                                            feedbackManager.onPopOpen()
                                                             createMenuOpen = false
                                                             quickNotePrefillText = ""
                                                             showQuickNoteModal = true
@@ -937,6 +1090,7 @@ private fun PlannerWorkspaceShell(
                                                                 selectedItemId = selectedItemId,
                                                                 onSelectItem = { id -> selectedItemId = id },
                                                                 onToggleTask = { task, checked ->
+                                                                    feedbackManager.onTaskToggled(checked)
                                                                     viewModel.toggleItemCompleted(task, checked)
                                                                 },
                                                                 onEditClass = { cls ->
@@ -977,28 +1131,41 @@ private fun PlannerWorkspaceShell(
                                                             selectedItemId = selectedItemId,
                                                             onSelectItem = { id -> selectedItemId = id },
                                                             onToggleTask = { task, checked ->
+                                                                feedbackManager.onTaskToggled(checked)
                                                                 viewModel.toggleItemCompleted(task, checked)
                                                             },
                                                             onToggleStep = { step, checked ->
+                                                                feedbackManager.onTaskToggled(checked)
                                                                 viewModel.toggleUnifiedStep(step, checked)
                                                             },
                                                             onAddClick = { date ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingItem = null
                                                                 editorPrefillDate = date
                                                                 showEditorDialog = true
                                                             },
-                                                            onAddSamplePlan = {
-                                                                viewModel.seedSampleScrapbookPlan { newId ->
-                                                                    selectedItemId = newId
-                                                                }
-                                                            },
                                                             onEditClass = { cls ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingClassSchedule = cls
                                                                 classPrefillDayOfWeek = null
                                                                 showClassEditorModal = true
                                                             },
                                                             onOpenReports = {
+                                                                feedbackManager.onTabSwitch()
                                                                 activeTab = PlannerTab.REPORTS
+                                                            },
+                                                            calendarInvites = calendarInvites,
+                                                            currentUserId = if (isLocalMode) null else currentUserId,
+                                                            onInviteFriendClick = {
+                                                                feedbackManager.onPopOpen()
+                                                                invitePrefill = InviteFriendPrefill(
+                                                                    title = "",
+                                                                    dateIso = current.todayDate().toIsoString()
+                                                                )
+                                                            },
+                                                            onOpenSharedInvite = { invite ->
+                                                                feedbackManager.onPopOpen()
+                                                                inspectedSharedInvite = invite
                                                             }
                                                         )
 
@@ -1009,14 +1176,29 @@ private fun PlannerWorkspaceShell(
                                                             onSelectDate = { d -> selectedDateIso = d.toIsoString() },
                                                             onSelectItem = { id -> selectedItemId = id },
                                                             onAddForDate = { d ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingItem = null
                                                                 editorPrefillDate = d
                                                                 showEditorDialog = true
                                                             },
                                                             onEditClass = { cls ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingClassSchedule = cls
                                                                 classPrefillDayOfWeek = null
                                                                 showClassEditorModal = true
+                                                            },
+                                                            calendarInvites = calendarInvites,
+                                                            currentUserId = if (isLocalMode) null else currentUserId,
+                                                            onInviteFriendClick = { date ->
+                                                                feedbackManager.onPopOpen()
+                                                                invitePrefill = InviteFriendPrefill(
+                                                                    title = "",
+                                                                    dateIso = date.toIsoString()
+                                                                )
+                                                            },
+                                                            onOpenSharedInvite = { invite ->
+                                                                feedbackManager.onPopOpen()
+                                                                inspectedSharedInvite = invite
                                                             }
                                                         )
 
@@ -1025,11 +1207,13 @@ private fun PlannerWorkspaceShell(
                                                             hasNotificationPermission = hasNotificationPermission,
                                                             onRequestNotificationPermission = requestNotifPermission,
                                                             onAddClassForDay = { dayIdx ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingClassSchedule = null
                                                                 classPrefillDayOfWeek = dayIdx
                                                                 showClassEditorModal = true
                                                             },
                                                             onEditClass = { cls ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingClassSchedule = cls
                                                                 classPrefillDayOfWeek = null
                                                                 showClassEditorModal = true
@@ -1041,32 +1225,90 @@ private fun PlannerWorkspaceShell(
                                                             hasNotificationPermission = hasNotificationPermission,
                                                             onRequestNotificationPermission = requestNotifPermission,
                                                             onToggleDailyDigest = { enabled ->
+                                                                feedbackManager.onLightTick()
                                                                 viewModel.setDailyDigestEnabled(enabled)
                                                             },
                                                             onUpdateDailyDigestTime = { h, m ->
+                                                                feedbackManager.onSaveSuccess()
                                                                 viewModel.updateDailyDigestTime(h, m)
                                                             },
                                                             onSendDailyDigestPreview = {
+                                                                feedbackManager.onPopOpen()
                                                                 viewModel.sendDailyDigestPreview()
                                                             },
                                                             onOpenItem = { id -> selectedItemId = id },
                                                             onRescheduleItem = { item ->
+                                                                feedbackManager.onPopOpen()
                                                                 editingItem = item
                                                                 editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
                                                                 showEditorDialog = true
                                                             },
                                                             onSnoozeReminder = { rem, mins ->
+                                                                feedbackManager.onReminderSnoozed()
                                                                 viewModel.snoozeReminder(rem, mins)
                                                             },
                                                             onDismissReminder = { rem ->
+                                                                feedbackManager.onReminderDismissed()
                                                                 viewModel.dismissReminder(rem)
+                                                            },
+                                                            calendarInvites = calendarInvites,
+                                                            currentUserId = if (isLocalMode) null else currentUserId,
+                                                            onOpenSharedInvite = { invite ->
+                                                                feedbackManager.onPopOpen()
+                                                                inspectedSharedInvite = invite
+                                                            },
+                                                            onInviteFriendClick = {
+                                                                feedbackManager.onPopOpen()
+                                                                invitePrefill = InviteFriendPrefill(
+                                                                    title = "",
+                                                                    dateIso = current.todayDate().toIsoString()
+                                                                )
                                                             }
                                                         )
 
                                                         PlannerTab.REPORTS -> ReportsScreen(
                                                             state = current,
-                                                            usageSummary = usageSummary,
                                                             onSelectItem = { id -> selectedItemId = id }
+                                                        )
+
+                                                        PlannerTab.PROFILE -> ProfileScreen(
+                                                            state = current,
+                                                            userDisplayName = userDisplayName,
+                                                            userEmail = userEmail,
+                                                            userPhotoUrl = userPhotoUrl,
+                                                            isLocalMode = isLocalMode,
+                                                            syncStatus = syncStatus,
+                                                            calendarInvites = calendarInvites,
+                                                            isExpanded = supportsSideDetailPane,
+                                                            onEditDedication = {
+                                                                feedbackManager.onPopOpen()
+                                                                forceShowDedication = true
+                                                            },
+                                                            onOpenSettings = {
+                                                                feedbackManager.onPopOpen()
+                                                                showSettingsDialog = true
+                                                            },
+                                                            onInviteFriendClick = {
+                                                                feedbackManager.onPopOpen()
+                                                                invitePrefill = InviteFriendPrefill(
+                                                                    title = "",
+                                                                    dateIso = current.todayDate().toIsoString()
+                                                                )
+                                                            },
+                                                            onTriggerSync = {
+                                                                feedbackManager.onLightTick()
+                                                                onRequestManualSync()
+                                                            },
+                                                            onGoogleSignIn = {
+                                                                feedbackManager.onPopOpen()
+                                                                cloudSignInError = null
+                                                                showCloudSyncModal = true
+                                                            },
+                                                            onSignOut = {
+                                                                feedbackManager.onLightTick()
+                                                                onSwitchToLocalAfterSignOut()
+                                                                signOut(credentialManager = credentialManager, scope = scope)
+                                                            }
                                                         )
                                                     }
                                                             }
@@ -1114,19 +1356,27 @@ private fun PlannerWorkspaceShell(
                                                                     showEditorDialog = true
                                                                 },
                                                                 onToggleItemCompleted = { item, checked ->
+                                                                    feedbackManager.onTaskToggled(checked)
                                                                     viewModel.toggleItemCompleted(item, checked)
                                                                 },
                                                                 onDeleteItem = { item ->
+                                                                    feedbackManager.onDeleteAction()
                                                                     viewModel.deleteItem(item) { selectedItemId = null }
                                                                 },
                                                                 onAddStep = { itemId, title, due ->
+                                                                    feedbackManager.onSaveSuccess()
                                                                     viewModel.addStep(itemId, title, due, null)
                                                                 },
                                                                 onToggleStep = { step, checked ->
+                                                                    feedbackManager.onTaskToggled(checked)
                                                                     viewModel.toggleUnifiedStep(step, checked)
                                                                 },
-                                                                onDeleteStep = { step -> viewModel.deleteStep(step) },
+                                                                onDeleteStep = { step ->
+                                                                    feedbackManager.onDeleteAction()
+                                                                    viewModel.deleteStep(step)
+                                                                },
                                                                 onAddReminder = { item, kind, offset ->
+                                                                    feedbackManager.onSaveSuccess()
                                                                     viewModel.addReminder(
                                                                         item = item,
                                                                         kind = kind,
@@ -1135,7 +1385,49 @@ private fun PlannerWorkspaceShell(
                                                                         localMinute = current.profile.defaultReminderMinute
                                                                     )
                                                                 },
-                                                                onDeleteReminder = { rem -> viewModel.deleteReminder(rem) },
+                                                                onDeleteReminder = { rem ->
+                                                                    feedbackManager.onDeleteAction()
+                                                                    viewModel.deleteReminder(rem)
+                                                                },
+                                                                onUpdatePhotos = { item, paths ->
+                                                                    feedbackManager.onLightTick()
+                                                                    viewModel.updateItemPhotos(item, paths)
+                                                                },
+                                                                onUpdateAudioMemo = { item, path, durationSec ->
+                                                                    viewModel.updateItemAudioMemo(item, path, durationSec)
+                                                                },
+                                                                onUpdatePriority = { item, priority ->
+                                                                    feedbackManager.onLightTick()
+                                                                    viewModel.updateItemPriority(item, priority)
+                                                                },
+                                                                onUpdateCategory = { item, category ->
+                                                                    feedbackManager.onLightTick()
+                                                                    viewModel.updateItemCategory(item, category)
+                                                                },
+                                                                onLogStepTime = { step, mins ->
+                                                                    feedbackManager.onLightTick()
+                                                                    viewModel.logStepTimeSpent(step, mins)
+                                                                },
+                                                                onInviteFriend = { item ->
+                                                                    feedbackManager.onPopOpen()
+                                                                    val timeLabel = when {
+                                                                        item.startAtUtcMillis != null -> PlannerDateUtils.formatEventTimeRange(
+                                                                            item.startAtUtcMillis,
+                                                                            item.endAtUtcMillis
+                                                                        )
+                                                                        item.dueTimeMinutes != null -> PlannerDateUtils.formatTimeOfDay(item.dueTimeMinutes)
+                                                                        else -> null
+                                                                    }
+                                                                    invitePrefill = InviteFriendPrefill(
+                                                                        title = item.title,
+                                                                        dateIso = (item.primaryCalendarDate() ?: current.todayDate()).toIsoString(),
+                                                                        timeLabel = timeLabel,
+                                                                        notes = item.notes,
+                                                                        itemId = item.id,
+                                                                        itemType = item.itemType(),
+                                                                        category = item.taskCategory()
+                                                                    )
+                                                                },
                                                                 onDismissCelebration = { viewModel.clearCelebration() }
                                                             )
                                                         }
@@ -1143,6 +1435,13 @@ private fun PlannerWorkspaceShell(
                                                 }
                                             }
                                         }
+                                    }
+
+                                    MonthBunnyOverlay(
+                                        state = current,
+                                        onOpenItem = { itemId -> selectedItemId = itemId },
+                                        modifier = Modifier.align(Alignment.BottomStart)
+                                    )
                                     }
                                 }
                             }
@@ -1165,7 +1464,7 @@ private fun PlannerWorkspaceShell(
                             showEditorDialog = false
                             editingItem = null
                         },
-                        onSaveNew = { type, title, notes, startDate, dueDate, dueTime, startUtc, endUtc, parentPlanId, steps, reminders ->
+                        onSaveNew = { type, title, notes, startDate, dueDate, dueTime, startUtc, endUtc, parentPlanId, steps, reminders, imagePaths, priority, category ->
                             viewModel.createItem(
                                 type = type,
                                 title = title,
@@ -1177,13 +1476,17 @@ private fun PlannerWorkspaceShell(
                                 endAtUtcMillis = endUtc,
                                 parentPlanId = parentPlanId,
                                 steps = steps,
-                                reminders = reminders
+                                reminders = reminders,
+                                imagePaths = imagePaths,
+                                priority = priority,
+                                category = category
                             ) { createdId ->
+                                feedbackManager.onSaveSuccess()
                                 showEditorDialog = false
                                 selectedItemId = createdId
                             }
                         },
-                        onSaveEdit = { item, type, title, notes, startDate, dueDate, dueTime, startUtc, endUtc, parentPlanId, reminders ->
+                        onSaveEdit = { item, type, title, notes, startDate, dueDate, dueTime, startUtc, endUtc, parentPlanId, reminders, imagePaths, priority, category ->
                             viewModel.updateItem(
                                 item = item,
                                 type = type,
@@ -1195,8 +1498,12 @@ private fun PlannerWorkspaceShell(
                                 startAtUtcMillis = startUtc,
                                 endAtUtcMillis = endUtc,
                                 parentPlanId = parentPlanId,
-                                updatedReminders = reminders
+                                updatedReminders = reminders,
+                                imagePaths = imagePaths,
+                                priority = priority,
+                                category = category
                             ) {
+                                feedbackManager.onSaveSuccess()
                                 showEditorDialog = false
                                 editingItem = null
                             }
@@ -1218,9 +1525,6 @@ private fun PlannerWorkspaceShell(
                         onUpdateDefaultReminderTime = { h, m -> viewModel.updateDefaultReminderTime(h, m) },
                         onToggleDailyDigest = { enabled -> viewModel.setDailyDigestEnabled(enabled) },
                         onUpdateDailyDigestTime = { h, m -> viewModel.updateDailyDigestTime(h, m) },
-                        onAddSamplePlan = {
-                            viewModel.seedSampleScrapbookPlan { newId -> selectedItemId = newId }
-                        },
                         onRequestNotificationPermission = requestNotifPermission,
                         onSyncNow = onRequestManualSync,
                         onPinWidget = { kind ->
@@ -1316,11 +1620,14 @@ private fun PlannerWorkspaceShell(
                             showQuickNoteModal = false
                             quickNotePrefillText = ""
                         },
-                        onSaveNote = { rawText, dueIso ->
+                        onSaveNote = { rawText, dueIso, priority, category ->
                             viewModel.createQuickNote(
                                 rawText = rawText,
-                                dueDateIso = dueIso
+                                dueDateIso = dueIso,
+                                priority = priority,
+                                category = category
                             ) {
+                                feedbackManager.onSaveSuccess()
                                 showQuickNoteModal = false
                                 quickNotePrefillText = ""
                             }
@@ -1337,6 +1644,82 @@ private fun PlannerWorkspaceShell(
                             if (!isSigningInToCloud) {
                                 showCloudSyncModal = false
                                 cloudSignInError = null
+                            }
+                        }
+                    )
+                }
+
+                invitePrefill?.let { prefill ->
+                    InviteFriendToCalendarDialog(
+                        initialTitle = prefill.title,
+                        initialDateIso = prefill.dateIso,
+                        initialTimeLabel = prefill.timeLabel,
+                        initialNotes = prefill.notes,
+                        initialItemType = prefill.itemType,
+                        initialCategory = prefill.category,
+                        isSignedIn = !isLocalMode,
+                        onDismiss = { invitePrefill = null },
+                        onSendInvite = { email, title, plannedDate, timeLabel, notes, sendViaEmailApp ->
+                            scope.launch {
+                                sharedCalendarRepo.sendCalendarInvite(
+                                    inviteeEmailRaw = email,
+                                    title = title,
+                                    plannedDate = plannedDate,
+                                    scheduleTimeLabel = timeLabel,
+                                    notes = notes,
+                                    itemId = prefill.itemId,
+                                    itemType = prefill.itemType,
+                                    category = prefill.category
+                                ).onSuccess { createdInvite ->
+                                    feedbackManager.onSaveSuccess()
+                                    invitePrefill = null
+                                    if (sendViaEmailApp) {
+                                        sharedCalendarRepo.launchEmailInvitation(context, createdInvite)
+                                    }
+                                    snackbarHostState.showSnackbar("Calendar invite shared with $email.")
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar(err.localizedMessage ?: "Could not share calendar invite.")
+                                }
+                            }
+                        }
+                    )
+                }
+
+                liveInspectedInvite?.let { invite ->
+                    FriendScheduleDetailModal(
+                        invite = invite,
+                        replies = inspectedInviteReplies,
+                        currentUserId = if (isLocalMode) null else currentUserId,
+                        onDismiss = { inspectedSharedInvite = null },
+                        onSendReply = { rsvpStatus, message ->
+                            scope.launch {
+                                sharedCalendarRepo.replyToScheduleInvite(
+                                    invite = invite,
+                                    rsvpStatus = rsvpStatus,
+                                    messageRaw = message
+                                ).onSuccess {
+                                    feedbackManager.onSaveSuccess()
+                                    snackbarHostState.showSnackbar("Reply sent (${rsvpStatus.label}).")
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar(err.localizedMessage ?: "Could not send reply.")
+                                }
+                            }
+                        },
+                        onResendEmail = {
+                            feedbackManager.onLightTick()
+                            sharedCalendarRepo.launchEmailInvitation(context, invite)
+                        },
+                        onDeleteInvite = {
+                            scope.launch {
+                                sharedCalendarRepo.deleteInvite(invite.id)
+                                    .onSuccess {
+                                        feedbackManager.onDeleteAction()
+                                        inspectedSharedInvite = null
+                                        snackbarHostState.showSnackbar("Shared calendar invite removed.")
+                                    }
+                                    .onFailure { err ->
+                                        snackbarHostState.showSnackbar(err.localizedMessage ?: "Could not remove invite.")
+                                    }
                             }
                         }
                     )
@@ -1358,6 +1741,7 @@ private fun TabIcon(
         PlannerTab.CLASSES -> if (selected) Icons.Filled.School else Icons.Outlined.School
         PlannerTab.NOTIFICATIONS -> if (selected) Icons.Filled.Notifications else Icons.Outlined.Notifications
         PlannerTab.REPORTS -> if (selected) Icons.Filled.AutoStories else Icons.Outlined.AutoStories
+        PlannerTab.PROFILE -> if (selected) Icons.Filled.Person else Icons.Outlined.Person
     }
     if (badgeCount > 0) {
         BadgedBox(

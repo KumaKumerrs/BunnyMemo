@@ -5,6 +5,35 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Explicit Play-compliant package queries for popular social media & entertainment apps -->
+    <queries>
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.facebook.lite" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.instagram.barcelona" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.reddit.frontpage" />
+        <package android:name="com.snapchat.android" />
+        <package android:name="com.pinterest" />
+        <package android:name="tv.twitch.android.app" />
+        <package android:name="com.discord" />
+        <package android:name="com.whatsapp" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.android.chrome" />
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -32,6 +61,15 @@
             android:name=".notifications.ReminderBroadcastReceiver"
             android:exported="false" />
 
+        <service
+            android:name=".focus.DoomscrollGuardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-activated anti-doomscroll focus monitor displaying a growing bunny overlay over chosen social media apps" />
+        </service>
+
         <!-- Bunny Memo Home Screen Widgets -->
         <receiver
             android:name=".widgets.CalendarAppWidgetProvider"
@@ -43,6 +81,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_calendar_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.WeeklyCalendarAppWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_weekly_calendar_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_weekly_calendar_info" />
         </receiver>
 
         <receiver
@@ -80,6 +130,23 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_quick_actions_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.InteractiveBunnyAppWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_bunny_family_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widgets.ACTION_BUNNY_PAT" />
+                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_LEFT" />
+                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_RIGHT" />
+                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_BOTH" />
+                <action android:name="com.example.widgets.ACTION_BUNNY_TALK" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_interactive_bunny_info" />
         </receiver>
     </application>
 

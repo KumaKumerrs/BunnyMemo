@@ -45,8 +45,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.CalendarDate
 import com.example.data.ItemType
 import com.example.data.PlannerDateUtils
@@ -55,6 +57,8 @@ import com.example.data.PlannerReminder
 import com.example.data.ReminderDraft
 import com.example.data.ReminderKind
 import com.example.data.StepDraft
+import com.example.data.TaskCategory
+import com.example.data.TaskPriority
 import com.example.ui.theme.CloudWhite
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.MidnightNavy
@@ -86,7 +90,10 @@ fun ItemEditorDialog(
         endAtUtcMillis: Long?,
         parentPlanId: String?,
         steps: List<StepDraft>,
-        reminders: List<ReminderDraft>
+        reminders: List<ReminderDraft>,
+        imagePaths: List<String>,
+        priority: TaskPriority,
+        category: TaskCategory
     ) -> Unit,
     onSaveEdit: (
         item: PlannerItem,
@@ -99,11 +106,22 @@ fun ItemEditorDialog(
         startAtUtcMillis: Long?,
         endAtUtcMillis: Long?,
         parentPlanId: String?,
-        reminders: List<ReminderDraft>
+        reminders: List<ReminderDraft>,
+        imagePaths: List<String>,
+        priority: TaskPriority,
+        category: TaskCategory
     ) -> Unit
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val isEditing = existingItem != null
     var selectedType by remember { mutableStateOf(existingItem?.itemType() ?: ItemType.TASK) }
+    var selectedPriority by remember(existingItem?.id) {
+        mutableStateOf(existingItem?.taskPriority() ?: TaskPriority.MEDIUM)
+    }
+    var selectedCategory by remember(existingItem?.id) {
+        mutableStateOf(existingItem?.taskCategory() ?: TaskCategory.PERSONAL)
+    }
     var title by remember { mutableStateOf(existingItem?.title ?: "") }
     var notes by remember { mutableStateOf(existingItem?.notes ?: "") }
     var titleError by remember { mutableStateOf<String?>(null) }
@@ -161,6 +179,13 @@ fun ItemEditorDialog(
     val draftSteps = remember { mutableStateListOf<StepDraft>() }
     var newStepTitle by remember { mutableStateOf("") }
     var newStepDueDate by remember { mutableStateOf<CalendarDate?>(null) }
+
+    // Attached pictures for Tasks, Plans, and Events
+    val draftImagePaths = remember(existingItem?.id) {
+        mutableStateListOf<String>().apply {
+            existingItem?.imagePaths?.let { addAll(it) }
+        }
+    }
 
     // Reminder drafts
     val draftReminders = remember {
@@ -317,6 +342,15 @@ fun ItemEditorDialog(
                                 )
                             }
 
+                            TaskPrioritySelector(
+                                selected = selectedPriority,
+                                onSelect = {
+                                    feedback.onLightTick()
+                                    selectedPriority = it
+                                },
+                                tagPrefix = "editor_priority"
+                            )
+
                             if (availablePlans.isNotEmpty()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
@@ -375,6 +409,16 @@ fun ItemEditorDialog(
                         }
                     }
 
+                    // Color-coded category tag for Tasks, Plans, and Events
+                    TaskCategorySelector(
+                        selected = selectedCategory,
+                        onSelect = {
+                            feedback.onLightTick()
+                            selectedCategory = it
+                        },
+                        tagPrefix = "editor_category"
+                    )
+
                     // Notes
                     OutlinedTextField(
                         value = notes,
@@ -383,6 +427,21 @@ fun ItemEditorDialog(
                         minLines = 2,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Picture attachments (Tasks, Plans, Events)
+                    PhotoAttachmentPickerSection(
+                        imagePaths = draftImagePaths,
+                        onAddPaths = { added ->
+                            added.forEach { path ->
+                                if (path !in draftImagePaths && draftImagePaths.size < com.example.data.PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM) {
+                                    draftImagePaths.add(path)
+                                }
+                            }
+                        },
+                        onRemovePath = { path ->
+                            draftImagePaths.remove(path)
+                        }
                     )
 
                     // Optional initial steps for new Plan or Event
@@ -618,7 +677,10 @@ fun ItemEditorDialog(
                                     finalEventStart,
                                     finalEventEnd,
                                     if (selectedType == ItemType.TASK) parentPlanId else null,
-                                    syncedReminders
+                                    syncedReminders,
+                                    draftImagePaths.toList(),
+                                    selectedPriority,
+                                    selectedCategory
                                 )
                             } else {
                                 onSaveNew(
@@ -632,7 +694,10 @@ fun ItemEditorDialog(
                                     finalEventEnd,
                                     if (selectedType == ItemType.TASK) parentPlanId else null,
                                     draftSteps.toList(),
-                                    syncedReminders
+                                    syncedReminders,
+                                    draftImagePaths.toList(),
+                                    selectedPriority,
+                                    selectedCategory
                                 )
                             }
                         },

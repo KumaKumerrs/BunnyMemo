@@ -52,8 +52,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.CalendarDate
+import com.example.data.DailyHabitRepository
 import com.example.data.ItemType
 import com.example.data.PlannerDateUtils
 import com.example.data.PlannerItem
@@ -93,7 +96,8 @@ data class HabitGardenSummary(
 fun computeHabitGardenSummary(
     items: List<PlannerItem>,
     steps: List<PlannerStep>,
-    today: CalendarDate
+    today: CalendarDate,
+    habitCheckInCountByDate: Map<CalendarDate, Int> = emptyMap()
 ): HabitGardenSummary {
     val completedByDate = HashMap<CalendarDate, Int>()
     val totalByDate = HashMap<CalendarDate, Int>()
@@ -115,6 +119,13 @@ fun computeHabitGardenSummary(
         totalByDate[date] = (totalByDate[date] ?: 0) + 1
         if (step.completed) {
             completedByDate[date] = (completedByDate[date] ?: 0) + 1
+        }
+    }
+
+    for ((date, count) in habitCheckInCountByDate) {
+        if (count > 0) {
+            totalByDate[date] = (totalByDate[date] ?: 0) + count
+            completedByDate[date] = (completedByDate[date] ?: 0) + count
         }
     }
 
@@ -178,14 +189,17 @@ fun ForgetMeNotHabitCalendarCard(
     initialMonth: CalendarDate = CalendarDate(today.year, today.month, 1),
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val habitRepo = remember(context) { DailyHabitRepository.getInstance(context) }
+    val habitSnapshot by habitRepo.snapshot.collectAsStateWithLifecycle()
     val reducedMotion = rememberReducedMotion()
     var visibleMonth by remember(initialMonth.year, initialMonth.month) {
         mutableStateOf(CalendarDate(initialMonth.year, initialMonth.month, 1))
     }
     var inspectedDate by remember(today) { mutableStateOf(today) }
 
-    val summary = remember(items, steps, today) {
-        computeHabitGardenSummary(items, steps, today)
+    val summary = remember(items, steps, today, habitSnapshot.checkInCountByDate) {
+        computeHabitGardenSummary(items, steps, today, habitSnapshot.checkInCountByDate)
     }
 
     val gridCells = remember(visibleMonth) {

@@ -31,6 +31,8 @@
         "startAtUtcMillis": { "type": "integer", "description": "UTC epoch milliseconds for timed Event start." },
         "endAtUtcMillis": { "type": "integer", "description": "UTC epoch milliseconds for timed Event end." },
         "parentPlanId": { "type": "string", "description": "Optional Plan ID when a Task counts as one step in a Plan." },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"], "description": "Optional priority tag for categorizing tasks." },
+        "category": { "type": "string", "enum": ["PERSONAL", "WORK", "HEALTH", "STUDY", "CREATIVE", "ERRANDS"], "description": "Optional color-coded task category label." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
       },
@@ -48,6 +50,7 @@
         "dueDate": { "type": "string", "description": "Optional step due date in YYYY-MM-DD format." },
         "dueTimeMinutes": { "type": "integer", "description": "Optional step due time in minutes since midnight (0-1439)." },
         "sortOrder": { "type": "integer", "description": "Ordering index within the parent item." },
+        "timeSpentMinutes": { "type": "integer", "description": "Optional logged minutes spent working on this milestone." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
       },
@@ -96,6 +99,55 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
       },
       "required": ["userId", "subject", "repeatMode", "daysOfWeek", "dayOfMonth", "startTimeMinutes", "endTimeMinutes", "semesterStartDate", "semesterMonths", "notifyEnabled", "notifyOffsetMinutes", "colorKey", "createdAt", "updatedAt"]
+    },
+    "CalendarInvite": {
+      "title": "CalendarInvite",
+      "description": "Shared schedule invite sent via email + Firestore between owner and a friend invitee.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "description": "Firebase Auth UID of the invite creator." },
+        "ownerName": { "type": "string", "description": "Display name of the invite creator." },
+        "ownerEmail": { "type": "string", "description": "Lowercase email of the invite creator." },
+        "ownerPhotoUrl": { "type": "string", "description": "Optional avatar URL of the creator." },
+        "inviteeEmail": { "type": "string", "description": "Lowercase email address of the invited friend." },
+        "inviteeUid": { "type": "string", "description": "Firebase Auth UID of the invitee once they reply." },
+        "plannedDate": { "type": "string", "description": "Planned date in YYYY-MM-DD format." },
+        "endDate": { "type": "string", "description": "Optional end date in YYYY-MM-DD format." },
+        "scheduleTimeLabel": { "type": "string", "description": "Optional time label such as 3:00 PM." },
+        "itemId": { "type": "string", "description": "Optional source PlannerItem ID." },
+        "title": { "type": "string", "description": "Title of the shared event, task, or plan." },
+        "notes": { "type": "string", "description": "Optional schedule notes or location details." },
+        "itemType": { "type": "string", "enum": ["PLAN", "TASK", "EVENT"], "description": "Source item type." },
+        "category": { "type": "string", "enum": ["PERSONAL", "WORK", "HEALTH", "STUDY", "CREATIVE", "ERRANDS"], "description": "Category tag." },
+        "rsvpStatus": { "type": "string", "enum": ["PENDING", "GOING", "MAYBE", "DECLINED"], "description": "Latest RSVP status from the invited friend." },
+        "replyCount": { "type": "integer", "description": "Total number of replies on this planned date." },
+        "lastReplyText": { "type": "string", "description": "Preview of the most recent reply message." },
+        "lastReplyAuthorName": { "type": "string", "description": "Display name of the author of the most recent reply." },
+        "lastReplyAtMillis": { "type": "integer", "description": "Epoch milliseconds when the last reply was sent." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["ownerUid", "ownerName", "ownerEmail", "inviteeEmail", "plannedDate", "title", "itemType", "category", "rsvpStatus", "replyCount", "createdAt", "updatedAt"]
+    },
+    "CalendarScheduleReply": {
+      "title": "CalendarScheduleReply",
+      "description": "Reply or RSVP message posted on a shared planned date.",
+      "type": "object",
+      "properties": {
+        "inviteId": { "type": "string", "description": "Parent CalendarInvite document ID." },
+        "ownerUid": { "type": "string", "description": "Creator UID copied for participant rules clarity." },
+        "inviteeEmail": { "type": "string", "description": "Invitee lowercase email copied for validation." },
+        "authorUid": { "type": "string", "description": "Firebase Auth UID of the reply author." },
+        "authorName": { "type": "string", "description": "Display name of the reply author." },
+        "authorEmail": { "type": "string", "description": "Email of the reply author." },
+        "authorPhotoUrl": { "type": "string", "description": "Optional avatar URL of the reply author." },
+        "plannedDate": { "type": "string", "description": "Planned date in YYYY-MM-DD format." },
+        "rsvpStatus": { "type": "string", "enum": ["PENDING", "GOING", "MAYBE", "DECLINED"], "description": "RSVP status attached to this reply." },
+        "message": { "type": "string", "description": "Reply text on the planned date." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["inviteId", "ownerUid", "inviteeEmail", "authorUid", "authorName", "authorEmail", "plannedDate", "rsvpStatus", "message", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -118,6 +170,14 @@
     "/users/{userId}/classSchedules/{scheduleId}": {
       "schema": { "$ref": "#/entities/ClassSchedule" },
       "description": "Owner's customizable semester class schedule entries."
+    },
+    "/calendarInvites/{inviteId}": {
+      "schema": { "$ref": "#/entities/CalendarInvite" },
+      "description": "Shared schedule invitations visible only to the creator and verified-email invitee."
+    },
+    "/calendarInvites/{inviteId}/replies/{replyId}": {
+      "schema": { "$ref": "#/entities/CalendarScheduleReply" },
+      "description": "Replies on a shared planned date accessible only to the creator and verified-email invitee."
     }
   }
 }
