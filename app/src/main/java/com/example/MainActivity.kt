@@ -1,5 +1,6 @@
 package com.example
 
+import android.graphics.Color as AndroidColor
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -37,46 +39,43 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.CloudSync
-import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -85,16 +84,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -145,20 +145,15 @@ import com.example.ui.screens.ItemDetailScreen
 import com.example.ui.screens.NotificationsScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.TodayScreen
-import com.example.ui.theme.CalmSage
-import com.example.ui.theme.CloudWhite
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotTheme
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.OverdueTerracotta
-import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PureWhite
-import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SkyCanvasTop
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 import com.example.viewmodel.PlannerViewModel
-import com.example.widgets.PlannerWidgetKind
 import com.example.widgets.WidgetIntents
 import com.example.widgets.WidgetUpdateManager
 import com.google.firebase.Firebase
@@ -166,9 +161,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-import android.graphics.Color as AndroidColor
-import androidx.activity.SystemBarStyle
 
 private const val MODE_PREFS_NAME = "bunny_memo_mode_prefs"
 private const val KEY_LOCAL_MODE_ENABLED = "local_mode_enabled"
@@ -476,6 +468,7 @@ private fun PlannerWorkspaceShell(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var forceShowDedication by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
     var showQuickNoteModal by remember { mutableStateOf(false) }
     var quickNotePrefillText by remember { mutableStateOf("") }
 
@@ -634,7 +627,6 @@ private fun PlannerWorkspaceShell(
 
                 ForgetMeNotStationeryBackground {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val useNavigationRail = maxWidth >= 600.dp
                         val supportsSideDetailPane = maxWidth >= 720.dp
                         val detailPaneWidth = adaptiveDetailPaneWidth(maxWidth)
                         val showingCompactDetail = !supportsSideDetailPane && selectedItem != null
@@ -704,513 +696,428 @@ private fun PlannerWorkspaceShell(
                                     )
                                 }
                             } else {
-                                Scaffold(
-                                    containerColor = Color.Transparent,
-                                    contentWindowInsets = WindowInsets.safeDrawing,
-                                    snackbarHost = { SnackbarHost(snackbarHostState) },
-                                    topBar = {
-                                        Column {
-                                            TopAppBar(
-                                                colors = TopAppBarDefaults.topAppBarColors(
-                                                    containerColor = SkyCanvasTop.copy(alpha = 0.86f),
-                                                    titleContentColor = MidnightNavy
-                                                ),
-                                                title = {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        ForgetMeNotFlower(bloomed = true, size = 24.dp)
-                                                        Spacer(modifier = Modifier.width(10.dp))
-                                                        Column {
-                                                            Text(
-                                                                text = "Bunny Memo",
-                                                                style = MaterialTheme.typography.titleLarge,
-                                                                color = MidnightNavy
-                                                            )
-                                                            val statusText = when {
-                                                                isLocalMode -> stringResource(R.string.local_mode_badge)
-                                                                syncStatus.phase == SyncPhase.SYNCING -> stringResource(
-                                                                    R.string.sync_status_syncing,
-                                                                    syncStatus.pendingCount.coerceAtLeast(1)
-                                                                )
-                                                                syncStatus.phase == SyncPhase.OFFLINE_QUEUED -> stringResource(
-                                                                    R.string.sync_status_offline_pending,
-                                                                    syncStatus.pendingCount
-                                                                )
-                                                                syncStatus.phase == SyncPhase.OFFLINE_IDLE -> stringResource(
-                                                                    R.string.sync_status_offline_idle
-                                                                )
-                                                                syncStatus.phase == SyncPhase.ERROR -> stringResource(
-                                                                    R.string.sync_status_error,
-                                                                    syncStatus.pendingCount
-                                                                )
-                                                                else -> stringResource(R.string.sync_status_synced)
-                                                            }
-                                                            val statusColor = when {
-                                                                !isLocalMode && (syncStatus.phase == SyncPhase.OFFLINE_QUEUED || syncStatus.phase == SyncPhase.ERROR) -> OverdueTerracotta
-                                                                !isLocalMode && syncStatus.phase == SyncPhase.SYNCING -> DeepBlue
-                                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                                            }
-                                                            Text(
-                                                                text = statusText,
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                color = statusColor,
-                                                                modifier = Modifier.testTag("top_bar_sync_status_text")
-                                                            )
-                                                        }
-                                                    }
-                                                },
-                                                actions = {
-                                                    if (isLocalMode) {
-                                                        IconButton(
-                                                            onClick = {
-                                                                cloudSignInError = null
-                                                                showCloudSyncModal = true
-                                                            },
-                                                            modifier = Modifier.testTag("top_bar_cloud_backup_button")
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Outlined.CloudUpload,
-                                                                contentDescription = "Sign in with Google to back up memos",
-                                                                tint = DeepBlue
-                                                            )
-                                                        }
-                                                    } else {
-                                                        val syncIcon = when (syncStatus.phase) {
-                                                            SyncPhase.SYNCED -> Icons.Outlined.CloudDone
-                                                            SyncPhase.SYNCING -> Icons.Outlined.CloudSync
-                                                            SyncPhase.OFFLINE_QUEUED, SyncPhase.OFFLINE_IDLE -> Icons.Outlined.CloudOff
-                                                            else -> Icons.Outlined.CloudUpload
-                                                        }
-                                                        val syncTint = when (syncStatus.phase) {
-                                                            SyncPhase.SYNCED -> CalmSage
-                                                            SyncPhase.OFFLINE_QUEUED, SyncPhase.ERROR -> OverdueTerracotta
-                                                            else -> DeepBlue
-                                                        }
-                                                        IconButton(
-                                                            onClick = onRequestManualSync,
-                                                            modifier = Modifier.testTag("top_bar_sync_now_button")
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = syncIcon,
-                                                                contentDescription = "Sync pending Room changes to Firestore",
-                                                                tint = syncTint
-                                                            )
-                                                        }
-                                                    }
-                                                    IconButton(
-                                                        onClick = { forceShowDedication = true },
-                                                        modifier = Modifier.testTag("top_bar_dedication_button")
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.FavoriteBorder,
-                                                            contentDescription = "View dedication note",
-                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                    IconButton(
-                                                        onClick = { showSettingsDialog = true },
-                                                        modifier = Modifier.testTag("top_bar_settings_button")
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.Settings,
-                                                            contentDescription = "Planner settings",
-                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                            )
-                                            HorizontalDivider(
-                                                thickness = 0.75.dp,
-                                                color = SubtleBorder.copy(alpha = 0.85f)
-                                            )
-                                        }
-                                    },
-                                    bottomBar = {
-                                        if (!useNavigationRail) {
-                                            Column {
-                                                HorizontalDivider(
-                                                    thickness = 0.75.dp,
-                                                    color = SubtleBorder.copy(alpha = 0.9f)
-                                                )
-                                                NavigationBar(
-                                                    containerColor = PureWhite,
-                                                    windowInsets = WindowInsets.navigationBars,
-                                                    tonalElevation = 0.dp
-                                                ) {
-                                                    PlannerTab.entries.forEach { tab ->
-                                                        val selected = activeTab == tab
-                                                        NavigationBarItem(
-                                                            selected = selected,
-                                                            onClick = {
-                                                                activeTab = tab
-                                                                if (searchQuery.isNotEmpty()) searchQuery = ""
-                                                            },
-                                                            icon = {
-                                                                TabIcon(
-                                                                    tab = tab,
-                                                                    selected = selected,
-                                                                    badgeCount = if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0
-                                                                )
-                                                            },
-                                                            label = { Text(stringResource(tab.labelRes)) },
-                                                            colors = NavigationBarItemDefaults.colors(
-                                                                selectedIconColor = DeepBlue,
-                                                                selectedTextColor = MidnightNavy,
-                                                                indicatorColor = SkyBlue.copy(alpha = 0.65f),
-                                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                                            ),
-                                                            modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    floatingActionButton = {
-                                        Column(
-                                            horizontalAlignment = Alignment.End,
-                                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            ExtendedFloatingActionButton(
-                                                onClick = {
-                                                    quickNotePrefillText = ""
-                                                    showQuickNoteModal = true
-                                                },
-                                                containerColor = PollenSoft,
-                                                contentColor = MidnightNavy,
-                                                shape = RoundedCornerShape(100.dp),
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.EditNote,
-                                                        contentDescription = null,
-                                                        tint = DeepBlue
-                                                    )
-                                                },
-                                                text = { Text(stringResource(R.string.action_quick_note)) },
-                                                modifier = Modifier.testTag("fab_quick_note")
-                                            )
-                                            ExtendedFloatingActionButton(
-                                                onClick = {
-                                                    if (activeTab == PlannerTab.CLASSES) {
-                                                        editingClassSchedule = null
-                                                        classPrefillDayOfWeek = current.todayDate().dayOfWeekIndex()
-                                                        showClassEditorModal = true
-                                                    } else {
-                                                        editingItem = null
-                                                        editorPrefillDate = if (activeTab == PlannerTab.CALENDAR) {
-                                                            selectedDate
-                                                        } else {
-                                                            current.todayDate()
-                                                        }
-                                                        showEditorDialog = true
-                                                    }
-                                                },
-                                                containerColor = DeepBlue,
-                                                contentColor = PureWhite,
-                                                shape = RoundedCornerShape(100.dp),
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = null
-                                                    )
-                                                },
-                                                text = { Text(if (activeTab == PlannerTab.CLASSES) "Class" else "Add") },
-                                                modifier = Modifier.testTag("fab_add_item")
-                                            )
-                                        }
-                                    }
-                                ) { innerPadding ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(innerPadding)
-                                    ) {
-                                        if (useNavigationRail) {
-                                            NavigationRail(
-                                                containerColor = PureWhite,
-                                                modifier = Modifier.fillMaxHeight()
-                                            ) {
-                                                Spacer(modifier = Modifier.height(12.dp))
+                                val drawerState = rememberDrawerState(DrawerValue.Closed)
+                                BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+                                var createMenuOpen by remember { mutableStateOf(false) }
+                                ModalNavigationDrawer(
+                                    drawerState = drawerState,
+                                    gesturesEnabled = drawerState.isOpen,
+                                    drawerContent = {
+                                        ModalDrawerSheet {
+                                            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+                                                Text("Bunny Memo", style = MaterialTheme.typography.headlineSmall,
+                                                    modifier = Modifier.padding(12.dp))
                                                 PlannerTab.entries.forEach { tab ->
-                                                    val selected = activeTab == tab
-                                                    NavigationRailItem(
-                                                        selected = selected,
+                                                    NavigationDrawerItem(
+                                                        label = { Text(stringResource(tab.labelRes)) },
+                                                        selected = activeTab == tab,
+                                                        icon = { TabIcon(tab, activeTab == tab, if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0) },
                                                         onClick = {
                                                             activeTab = tab
-                                                            if (searchQuery.isNotEmpty()) searchQuery = ""
-                                                        },
-                                                        icon = {
-                                                            TabIcon(
-                                                                tab = tab,
-                                                                selected = selected,
-                                                                badgeCount = if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0
+                                                            selectedItemId = null
+                                                            searchQuery = ""
+                                                            searchOpen = false
+                                                            scope.launch { drawerState.close() }
+                                                        }
+                                                    )
+                                                }
+                                                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                                                DropdownMenuItem(text = { Text(if (isLocalMode) "Back up memos" else "Sync now") }, onClick = {
+                                                    scope.launch { drawerState.close() }
+                                                    if (isLocalMode) {
+                                                        cloudSignInError = null
+                                                        showCloudSyncModal = true
+                                                    } else onRequestManualSync()
+                                                })
+                                                DropdownMenuItem(text = { Text("Dedication") }, onClick = {
+                                                    scope.launch { drawerState.close() }
+                                                    forceShowDedication = true
+                                                })
+                                                DropdownMenuItem(text = { Text("Settings") }, onClick = {
+                                                    scope.launch { drawerState.close() }
+                                                    showSettingsDialog = true
+                                                })
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Scaffold(
+                                        containerColor = Color.Transparent,
+                                        contentWindowInsets = WindowInsets.safeDrawing,
+                                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                                        topBar = {
+                                            Column {
+                                                TopAppBar(
+                                                    colors = TopAppBarDefaults.topAppBarColors(
+                                                        containerColor = SkyCanvasTop.copy(alpha = 0.86f),
+                                                        titleContentColor = MidnightNavy
+                                                    ),
+                                                    title = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            ForgetMeNotFlower(bloomed = true, size = 24.dp)
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column {
+                                                                Text(
+                                                                    text = stringResource(activeTab.labelRes),
+                                                                    style = MaterialTheme.typography.titleLarge,
+                                                                    color = MidnightNavy
+                                                                )
+                                                                val statusText = when {
+                                                                    isLocalMode -> stringResource(R.string.local_mode_badge)
+                                                                    syncStatus.phase == SyncPhase.SYNCING -> stringResource(
+                                                                        R.string.sync_status_syncing,
+                                                                        syncStatus.pendingCount.coerceAtLeast(1)
+                                                                    )
+                                                                    syncStatus.phase == SyncPhase.OFFLINE_QUEUED -> stringResource(
+                                                                        R.string.sync_status_offline_pending,
+                                                                        syncStatus.pendingCount
+                                                                    )
+                                                                    syncStatus.phase == SyncPhase.OFFLINE_IDLE -> stringResource(
+                                                                        R.string.sync_status_offline_idle
+                                                                    )
+                                                                    syncStatus.phase == SyncPhase.ERROR -> stringResource(
+                                                                        R.string.sync_status_error,
+                                                                        syncStatus.pendingCount
+                                                                    )
+                                                                    else -> stringResource(R.string.sync_status_synced)
+                                                                }
+                                                                val statusColor = when {
+                                                                    !isLocalMode && (syncStatus.phase == SyncPhase.OFFLINE_QUEUED || syncStatus.phase == SyncPhase.ERROR) -> OverdueTerracotta
+                                                                    !isLocalMode && syncStatus.phase == SyncPhase.SYNCING -> DeepBlue
+                                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                                }
+                                                                Text(
+                                                                    text = statusText,
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    color = statusColor,
+                                                                    modifier = Modifier.testTag("top_bar_sync_status_text")
+                                                                )
+                                                            }
+                                                        }
+                                                    },
+                                                    navigationIcon = {
+                                                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                                            Icon(Icons.Default.Menu, contentDescription = "Open planner navigation")
+                                                        }
+                                                    },
+                                                    actions = {
+                                                        IconButton(onClick = {
+                                                            searchOpen = !searchOpen
+                                                            if (!searchOpen) searchQuery = ""
+                                                        }) {
+                                                            Icon(
+                                                                if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                                                                contentDescription = if (searchOpen) "Close search" else "Search planner"
                                                             )
-                                                        },
-                                                        label = { Text(stringResource(tab.labelRes)) },
-                                                        colors = NavigationRailItemDefaults.colors(
-                                                            selectedIconColor = DeepBlue,
-                                                            selectedTextColor = MidnightNavy,
-                                                            indicatorColor = SkyBlue.copy(alpha = 0.65f),
-                                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        ),
-                                                        modifier = Modifier.testTag("rail_tab_${tab.name.lowercase()}")
+                                                        }
+                                                    }
+                                                )
+                                                HorizontalDivider(
+                                                    thickness = 0.75.dp,
+                                                    color = SubtleBorder.copy(alpha = 0.85f)
+                                                )
+                                            }
+                                        },
+                                        floatingActionButton = {
+                                            Box {
+                                                ExtendedFloatingActionButton(
+                                                    onClick = { createMenuOpen = true },
+                                                    containerColor = DeepBlue,
+                                                    contentColor = PureWhite,
+                                                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                                    text = { Text("Create") }
+                                                )
+                                                DropdownMenu(expanded = createMenuOpen, onDismissRequest = { createMenuOpen = false }) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(if (activeTab == PlannerTab.CLASSES) "Add class" else "Add planner item") },
+                                                        onClick = {
+                                                            createMenuOpen = false
+                                                            if (activeTab == PlannerTab.CLASSES) {
+                                                                editingClassSchedule = null
+                                                                classPrefillDayOfWeek = current.todayDate().dayOfWeekIndex()
+                                                                showClassEditorModal = true
+                                                            } else {
+                                                                editingItem = null
+                                                                editorPrefillDate = if (activeTab == PlannerTab.CALENDAR) {
+                                                                    selectedDate
+                                                                } else {
+                                                                    current.todayDate()
+                                                                }
+                                                                showEditorDialog = true
+                                                            }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.action_quick_note)) },
+                                                        onClick = {
+                                                            createMenuOpen = false
+                                                            quickNotePrefillText = ""
+                                                            showQuickNoteModal = true
+                                                        }
                                                     )
                                                 }
                                             }
-                                            VerticalDivider(color = SubtleBorder)
                                         }
-
-                                        // Primary pane with top Planner Search Bar and crisp tab transitions
-                                        BackHandler(enabled = searchQuery.isNotBlank()) {
-                                            searchQuery = ""
-                                        }
-                                        Column(
+                                    ) { innerPadding ->
+                                        Row(
                                             modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxHeight()
+                                                .fillMaxSize()
+                                                .padding(innerPadding)
                                         ) {
-                                            val searchHorizontalPad = adaptiveHorizontalPadding(this@BoxWithConstraints.maxWidth)
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(
-                                                        start = searchHorizontalPad,
-                                                        end = searchHorizontalPad,
-                                                        top = 12.dp,
-                                                        bottom = 6.dp
-                                                    ),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                PlannerSearchBar(
-                                                    query = searchQuery,
-                                                    onQueryChange = { searchQuery = it },
-                                                    modifier = Modifier.widthIn(max = 760.dp)
-                                                )
-                                            }
 
-                                            Box(
+                                            BackHandler(enabled = searchOpen && drawerState.isClosed) {
+                                                searchQuery = ""
+                                                searchOpen = false
+                                            }
+                                            Column(
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .fillMaxWidth()
+                                                    .fillMaxHeight()
                                             ) {
-                                                val isSearching = searchQuery.isNotBlank()
-                                                AnimatedContent(
-                                                    targetState = isSearching,
-                                                    transitionSpec = {
-                                                        fadeIn(tween(150, easing = FastOutSlowInEasing)) togetherWith
-                                                            fadeOut(tween(120, easing = FastOutSlowInEasing))
-                                                    },
-                                                    label = "planner_search_mode_transition"
-                                                ) { showingSearch ->
-                                                    if (showingSearch) {
-                                                        PlannerSearchResultsView(
+                                                val searchHorizontalPad = adaptiveHorizontalPadding(this@BoxWithConstraints.maxWidth)
+                                                if (searchOpen) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(
+                                                                start = searchHorizontalPad,
+                                                                end = searchHorizontalPad,
+                                                                top = 12.dp,
+                                                                bottom = 6.dp
+                                                            ),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        PlannerSearchBar(
                                                             query = searchQuery,
+                                                            onQueryChange = { searchQuery = it },
+                                                            modifier = Modifier.widthIn(max = 760.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .fillMaxWidth()
+                                                ) {
+                                                    val isSearching = searchQuery.isNotBlank()
+                                                    AnimatedContent(
+                                                        targetState = isSearching,
+                                                        transitionSpec = {
+                                                            fadeIn(tween(150, easing = FastOutSlowInEasing)) togetherWith
+                                                                fadeOut(tween(120, easing = FastOutSlowInEasing))
+                                                        },
+                                                        label = "planner_search_mode_transition"
+                                                    ) { showingSearch ->
+                                                        if (showingSearch) {
+                                                            PlannerSearchResultsView(
+                                                                query = searchQuery,
+                                                                state = current,
+                                                                selectedItemId = selectedItemId,
+                                                                onSelectItem = { id -> selectedItemId = id },
+                                                                onToggleTask = { task, checked ->
+                                                                    viewModel.toggleItemCompleted(task, checked)
+                                                                },
+                                                                onEditClass = { cls ->
+                                                                    editingClassSchedule = cls
+                                                                    classPrefillDayOfWeek = null
+                                                                    showClassEditorModal = true
+                                                                },
+                                                                onClearSearch = { searchQuery = "" },
+                                                                onSaveQueryAsQuickNote = { prefill ->
+                                                                    quickNotePrefillText = prefill
+                                                                    showQuickNoteModal = true
+                                                                }
+                                                            )
+                                                        } else {
+                                                            AnimatedContent(
+                                                                targetState = activeTab,
+                                                                transitionSpec = {
+                                                                    if (reducedMotion) {
+                                                                        fadeIn(tween(130)) togetherWith fadeOut(tween(100))
+                                                                    } else {
+                                                                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                                                        (slideInHorizontally(
+                                                                            animationSpec = tween(210, easing = FastOutSlowInEasing)
+                                                                        ) { width -> direction * (width / 24) } +
+                                                                            fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
+                                                                            (slideOutHorizontally(
+                                                                                animationSpec = tween(160, easing = FastOutSlowInEasing)
+                                                                            ) { width -> -direction * (width / 28) } +
+                                                                                fadeOut(tween(140, easing = FastOutSlowInEasing)))
+                                                                    }
+                                                                },
+                                                                label = "section_tab_transition"
+                                                            ) { targetTab ->
+                                                    when (targetTab) {
+                                                        PlannerTab.TODAY -> TodayScreen(
                                                             state = current,
+                                                            usageSummary = usageSummary,
                                                             selectedItemId = selectedItemId,
                                                             onSelectItem = { id -> selectedItemId = id },
                                                             onToggleTask = { task, checked ->
                                                                 viewModel.toggleItemCompleted(task, checked)
+                                                            },
+                                                            onToggleStep = { step, checked ->
+                                                                viewModel.toggleUnifiedStep(step, checked)
+                                                            },
+                                                            onAddClick = { date ->
+                                                                editingItem = null
+                                                                editorPrefillDate = date
+                                                                showEditorDialog = true
+                                                            },
+                                                            onAddSamplePlan = {
+                                                                viewModel.seedSampleScrapbookPlan { newId ->
+                                                                    selectedItemId = newId
+                                                                }
                                                             },
                                                             onEditClass = { cls ->
                                                                 editingClassSchedule = cls
                                                                 classPrefillDayOfWeek = null
                                                                 showClassEditorModal = true
                                                             },
-                                                            onClearSearch = { searchQuery = "" },
-                                                            onSaveQueryAsQuickNote = { prefill ->
-                                                                quickNotePrefillText = prefill
-                                                                showQuickNoteModal = true
+                                                            onOpenReports = {
+                                                                activeTab = PlannerTab.REPORTS
                                                             }
                                                         )
-                                                    } else {
-                                                        AnimatedContent(
-                                                            targetState = activeTab,
-                                                            transitionSpec = {
-                                                                if (reducedMotion) {
-                                                                    fadeIn(tween(130)) togetherWith fadeOut(tween(100))
-                                                                } else {
-                                                                    val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                                                                    (slideInHorizontally(
-                                                                        animationSpec = tween(210, easing = FastOutSlowInEasing)
-                                                                    ) { width -> direction * (width / 24) } +
-                                                                        fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
-                                                                        (slideOutHorizontally(
-                                                                            animationSpec = tween(160, easing = FastOutSlowInEasing)
-                                                                        ) { width -> -direction * (width / 28) } +
-                                                                            fadeOut(tween(140, easing = FastOutSlowInEasing)))
-                                                                }
+
+                                                        PlannerTab.CALENDAR -> CalendarScreen(
+                                                            state = current,
+                                                            selectedDate = selectedDate,
+                                                            selectedItemId = selectedItemId,
+                                                            onSelectDate = { d -> selectedDateIso = d.toIsoString() },
+                                                            onSelectItem = { id -> selectedItemId = id },
+                                                            onAddForDate = { d ->
+                                                                editingItem = null
+                                                                editorPrefillDate = d
+                                                                showEditorDialog = true
                                                             },
-                                                            label = "section_tab_transition"
-                                                        ) { targetTab ->
-                                                when (targetTab) {
-                                                    PlannerTab.TODAY -> TodayScreen(
-                                                        state = current,
-                                                        usageSummary = usageSummary,
-                                                        selectedItemId = selectedItemId,
-                                                        onSelectItem = { id -> selectedItemId = id },
-                                                        onToggleTask = { task, checked ->
-                                                            viewModel.toggleItemCompleted(task, checked)
-                                                        },
-                                                        onToggleStep = { step, checked ->
-                                                            viewModel.toggleUnifiedStep(step, checked)
-                                                        },
-                                                        onAddClick = { date ->
-                                                            editingItem = null
-                                                            editorPrefillDate = date
-                                                            showEditorDialog = true
-                                                        },
-                                                        onAddSamplePlan = {
-                                                            viewModel.seedSampleScrapbookPlan { newId ->
-                                                                selectedItemId = newId
+                                                            onEditClass = { cls ->
+                                                                editingClassSchedule = cls
+                                                                classPrefillDayOfWeek = null
+                                                                showClassEditorModal = true
                                                             }
-                                                        },
-                                                        onEditClass = { cls ->
-                                                            editingClassSchedule = cls
-                                                            classPrefillDayOfWeek = null
-                                                            showClassEditorModal = true
-                                                        },
-                                                        onOpenReports = {
-                                                            activeTab = PlannerTab.REPORTS
-                                                        }
-                                                    )
+                                                        )
 
-                                                    PlannerTab.CALENDAR -> CalendarScreen(
-                                                        state = current,
-                                                        selectedDate = selectedDate,
-                                                        selectedItemId = selectedItemId,
-                                                        onSelectDate = { d -> selectedDateIso = d.toIsoString() },
-                                                        onSelectItem = { id -> selectedItemId = id },
-                                                        onAddForDate = { d ->
-                                                            editingItem = null
-                                                            editorPrefillDate = d
-                                                            showEditorDialog = true
-                                                        },
-                                                        onEditClass = { cls ->
-                                                            editingClassSchedule = cls
-                                                            classPrefillDayOfWeek = null
-                                                            showClassEditorModal = true
-                                                        }
-                                                    )
+                                                        PlannerTab.CLASSES -> ClassScheduleScreen(
+                                                            state = current,
+                                                            hasNotificationPermission = hasNotificationPermission,
+                                                            onRequestNotificationPermission = requestNotifPermission,
+                                                            onAddClassForDay = { dayIdx ->
+                                                                editingClassSchedule = null
+                                                                classPrefillDayOfWeek = dayIdx
+                                                                showClassEditorModal = true
+                                                            },
+                                                            onEditClass = { cls ->
+                                                                editingClassSchedule = cls
+                                                                classPrefillDayOfWeek = null
+                                                                showClassEditorModal = true
+                                                            }
+                                                        )
 
-                                                    PlannerTab.CLASSES -> ClassScheduleScreen(
-                                                        state = current,
-                                                        hasNotificationPermission = hasNotificationPermission,
-                                                        onRequestNotificationPermission = requestNotifPermission,
-                                                        onAddClassForDay = { dayIdx ->
-                                                            editingClassSchedule = null
-                                                            classPrefillDayOfWeek = dayIdx
-                                                            showClassEditorModal = true
-                                                        },
-                                                        onEditClass = { cls ->
-                                                            editingClassSchedule = cls
-                                                            classPrefillDayOfWeek = null
-                                                            showClassEditorModal = true
-                                                        }
-                                                    )
+                                                        PlannerTab.NOTIFICATIONS -> NotificationsScreen(
+                                                            state = current,
+                                                            hasNotificationPermission = hasNotificationPermission,
+                                                            onRequestNotificationPermission = requestNotifPermission,
+                                                            onToggleDailyDigest = { enabled ->
+                                                                viewModel.setDailyDigestEnabled(enabled)
+                                                            },
+                                                            onUpdateDailyDigestTime = { h, m ->
+                                                                viewModel.updateDailyDigestTime(h, m)
+                                                            },
+                                                            onSendDailyDigestPreview = {
+                                                                viewModel.sendDailyDigestPreview()
+                                                            },
+                                                            onOpenItem = { id -> selectedItemId = id },
+                                                            onRescheduleItem = { item ->
+                                                                editingItem = item
+                                                                editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
+                                                                showEditorDialog = true
+                                                            },
+                                                            onSnoozeReminder = { rem, mins ->
+                                                                viewModel.snoozeReminder(rem, mins)
+                                                            },
+                                                            onDismissReminder = { rem ->
+                                                                viewModel.dismissReminder(rem)
+                                                            }
+                                                        )
 
-                                                    PlannerTab.NOTIFICATIONS -> NotificationsScreen(
-                                                        state = current,
-                                                        hasNotificationPermission = hasNotificationPermission,
-                                                        onRequestNotificationPermission = requestNotifPermission,
-                                                        onToggleDailyDigest = { enabled ->
-                                                            viewModel.setDailyDigestEnabled(enabled)
-                                                        },
-                                                        onUpdateDailyDigestTime = { h, m ->
-                                                            viewModel.updateDailyDigestTime(h, m)
-                                                        },
-                                                        onSendDailyDigestPreview = {
-                                                            viewModel.sendDailyDigestPreview()
-                                                        },
-                                                        onOpenItem = { id -> selectedItemId = id },
-                                                        onRescheduleItem = { item ->
-                                                            editingItem = item
-                                                            editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
-                                                            showEditorDialog = true
-                                                        },
-                                                        onSnoozeReminder = { rem, mins ->
-                                                            viewModel.snoozeReminder(rem, mins)
-                                                        },
-                                                        onDismissReminder = { rem ->
-                                                            viewModel.dismissReminder(rem)
-                                                        }
-                                                    )
-
-                                                    PlannerTab.REPORTS -> ReportsScreen(
-                                                        state = current,
-                                                        usageSummary = usageSummary,
-                                                        onSelectItem = { id -> selectedItemId = id }
-                                                    )
-                                                }
+                                                        PlannerTab.REPORTS -> ReportsScreen(
+                                                            state = current,
+                                                            usageSummary = usageSummary,
+                                                            onSelectItem = { id -> selectedItemId = id }
+                                                        )
+                                                    }
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        // Tablet/expanded detail side panel (fixed adaptive width, zero weight oscillation)
-                                        AnimatedVisibility(
-                                            visible = supportsSideDetailPane && selectedItem != null,
-                                            enter = fadeIn(tween(180)) + expandHorizontally(
-                                                animationSpec = tween(220, easing = FastOutSlowInEasing),
-                                                expandFrom = Alignment.Start
-                                            ),
-                                            exit = fadeOut(tween(140)) + shrinkHorizontally(
-                                                animationSpec = tween(180, easing = FastOutSlowInEasing),
-                                                shrinkTowards = Alignment.Start
-                                            )
-                                        ) {
-                                            if (selectedItem != null) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .width(detailPaneWidth)
-                                                        .fillMaxHeight()
-                                                ) {
-                                                    VerticalDivider(color = SubtleBorder)
-                                                    Box(
+                                            // Tablet/expanded detail side panel (fixed adaptive width, zero weight oscillation)
+                                            AnimatedVisibility(
+                                                visible = supportsSideDetailPane && selectedItem != null,
+                                                enter = fadeIn(tween(180)) + expandHorizontally(
+                                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                                    expandFrom = Alignment.Start
+                                                ),
+                                                exit = fadeOut(tween(140)) + shrinkHorizontally(
+                                                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                                                    shrinkTowards = Alignment.Start
+                                                )
+                                            ) {
+                                                if (selectedItem != null) {
+                                                    Row(
                                                         modifier = Modifier
-                                                            .weight(1f)
+                                                            .width(detailPaneWidth)
                                                             .fillMaxHeight()
                                                     ) {
-                                                        ItemDetailScreen(
-                                                            item = selectedItem,
-                                                            state = current,
-                                                            isCelebrating = celebratingItemId == selectedItem.id,
-                                                            showBackButton = false,
-                                                            onBack = {
-                                                                selectedItemId = null
-                                                                viewModel.clearCelebration()
-                                                            },
-                                                            onEditItem = { itemToEdit ->
-                                                                editingItem = itemToEdit
-                                                                editorPrefillDate = itemToEdit.primaryCalendarDate() ?: current.todayDate()
-                                                                showEditorDialog = true
-                                                            },
-                                                            onToggleItemCompleted = { item, checked ->
-                                                                viewModel.toggleItemCompleted(item, checked)
-                                                            },
-                                                            onDeleteItem = { item ->
-                                                                viewModel.deleteItem(item) { selectedItemId = null }
-                                                            },
-                                                            onAddStep = { itemId, title, due ->
-                                                                viewModel.addStep(itemId, title, due, null)
-                                                            },
-                                                            onToggleStep = { step, checked ->
-                                                                viewModel.toggleUnifiedStep(step, checked)
-                                                            },
-                                                            onDeleteStep = { step -> viewModel.deleteStep(step) },
-                                                            onAddReminder = { item, kind, offset ->
-                                                                viewModel.addReminder(
-                                                                    item = item,
-                                                                    kind = kind,
-                                                                    offsetMinutes = offset,
-                                                                    localHour = current.profile.defaultReminderHour,
-                                                                    localMinute = current.profile.defaultReminderMinute
-                                                                )
-                                                            },
-                                                            onDeleteReminder = { rem -> viewModel.deleteReminder(rem) },
-                                                            onDismissCelebration = { viewModel.clearCelebration() }
-                                                        )
+                                                        VerticalDivider(color = SubtleBorder)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .fillMaxHeight()
+                                                        ) {
+                                                            ItemDetailScreen(
+                                                                item = selectedItem,
+                                                                state = current,
+                                                                isCelebrating = celebratingItemId == selectedItem.id,
+                                                                showBackButton = false,
+                                                                onBack = {
+                                                                    selectedItemId = null
+                                                                    viewModel.clearCelebration()
+                                                                },
+                                                                onEditItem = { itemToEdit ->
+                                                                    editingItem = itemToEdit
+                                                                    editorPrefillDate = itemToEdit.primaryCalendarDate() ?: current.todayDate()
+                                                                    showEditorDialog = true
+                                                                },
+                                                                onToggleItemCompleted = { item, checked ->
+                                                                    viewModel.toggleItemCompleted(item, checked)
+                                                                },
+                                                                onDeleteItem = { item ->
+                                                                    viewModel.deleteItem(item) { selectedItemId = null }
+                                                                },
+                                                                onAddStep = { itemId, title, due ->
+                                                                    viewModel.addStep(itemId, title, due, null)
+                                                                },
+                                                                onToggleStep = { step, checked ->
+                                                                    viewModel.toggleUnifiedStep(step, checked)
+                                                                },
+                                                                onDeleteStep = { step -> viewModel.deleteStep(step) },
+                                                                onAddReminder = { item, kind, offset ->
+                                                                    viewModel.addReminder(
+                                                                        item = item,
+                                                                        kind = kind,
+                                                                        offsetMinutes = offset,
+                                                                        localHour = current.profile.defaultReminderHour,
+                                                                        localMinute = current.profile.defaultReminderMinute
+                                                                    )
+                                                                },
+                                                                onDeleteReminder = { rem -> viewModel.deleteReminder(rem) },
+                                                                onDismissCelebration = { viewModel.clearCelebration() }
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
