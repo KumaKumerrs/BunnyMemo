@@ -7,13 +7,16 @@ import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -48,52 +51,103 @@ class DoomscrollGuardService : Service() {
     private var overlayLayoutParams: WindowManager.LayoutParams? = null
     private var isOverlayAttached: Boolean = false
     private var lastOverlayWasTakeover: Boolean = false
+    private var lastAppliedWidth: Int = Int.MIN_VALUE
+    private var lastAppliedHeight: Int = Int.MIN_VALUE
+    private var lastAppliedFlags: Int = Int.MIN_VALUE
+    private var lastAppliedGravity: Int = Int.MIN_VALUE
+    private var lastAppliedY: Int = Int.MIN_VALUE
 
     private var activeWatchedPkg: String? = null
+    private var sessionStartElapsedMs: Long = 0L
     private var elapsedSeconds: Int = 0
     private var takeoverCountedForSession: Boolean = false
     private var lastKnownForegroundPkg: String? = null
 
+    private var isScreenInteractive: Boolean = true
+    private var screenReceiverRegistered: Boolean = false
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    isScreenInteractive = false
+                    monitorJob?.cancel()
+                    monitorJob = null
+                    resetSession()
+                    removeOverlayOnMain()
+                    DoomscrollGuardManager.updateLiveStatus(
+                        DoomscrollLiveStatus(
+                            isServiceRunning = true,
+                            maxScrollSeconds = DoomscrollGuardManager.config.value.maxScrollSeconds
+                        )
+                    )
+                }
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                    isScreenInteractive = true
+                    startMonitoringLoop()
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         DoomscrollGuardManager.initialize(applicationContext)
+        FocusSessionManager.initialize(applicationContext)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        isScreenInteractive = pm?.isInteractive ?: true
         ensureNotificationChannel()
+        registerScreenReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_GUARD) {
+        val isStopAction = intent?.action == ACTION_STOP_GUARD
+        val notifText = if (FocusSessionManager.isBlockingAppsNow()) {
+            getString(R.string.focus_guard_notif_pomodoro)
+        } else {
+            getString(R.string.focus_guard_notif_watching)
+        }
+        val notification = buildNotification(notifText)
+
+        // Always satisfy Android 14+ foreground service contract before stopping
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        }
+
+        if (isStopAction) {
             DoomscrollGuardManager.setGuardEnabled(applicationContext, false)
             if (FocusSessionManager.isBlockingAppsNow()) {
                 FocusSessionManager.pause(applicationContext)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
             }
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val notifText = if (FocusSessionManager.isBlockingAppsNow()) {
-            "Pomodoro Focus Session active · Blocking distracting apps."
-        } else {
-            "Bunny Focus Guard is watching your selected social apps."
+        if (isScreenInteractive) {
+            startMonitoringLoop()
         }
-        val notification = buildNotification(notifText)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-
-        startMonitoringLoop()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        unregisterScreenReceiver()
         monitorJob?.cancel()
         serviceScope.cancel()
         removeOverlayOnMain()
@@ -106,14 +160,42 @@ class DoomscrollGuardService : Service() {
         super.onDestroy()
     }
 
+    private fun registerScreenReceiver() {
+        if (screenReceiverRegistered) return
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(screenStateReceiver, filter)
+            }
+            screenReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterScreenReceiver() {
+        if (!screenReceiverRegistered) return
+        runCatching { unregisterReceiver(screenStateReceiver) }
+        screenReceiverRegistered = false
+    }
+
     private fun startMonitoringLoop() {
         if (monitorJob?.isActive == true) return
         monitorJob = serviceScope.launch {
             while (isActive) {
+                if (!isScreenInteractive) return@launch
+
                 val cfg = DoomscrollGuardManager.config.value
                 val focusState = FocusSessionManager.state.value
                 val focusBlocking = focusState.isBlockingDistractionsNow
-                if ((!cfg.isEnabled && !focusBlocking) || !DoomscrollGuardManager.hasAllRequiredPermissions(applicationContext)) {
+                if ((!cfg.isEnabled && !focusBlocking) ||
+                    cfg.watchedPackages.isEmpty() ||
+                    !DoomscrollGuardManager.hasAllRequiredPermissions(applicationContext)
+                ) {
                     withContext(Dispatchers.Main) { removeOverlayNow() }
                     stopSelf()
                     return@launch
@@ -134,7 +216,7 @@ class DoomscrollGuardService : Service() {
                             maxScrollSeconds = cfg.maxScrollSeconds
                         )
                     )
-                    delay(1500L)
+                    delay(2000L)
                     continue
                 }
 
@@ -165,12 +247,15 @@ class DoomscrollGuardService : Service() {
                             )
                         }
                     } else {
+                        val nowElapsed = SystemClock.elapsedRealtime()
                         if (fgPkg != activeWatchedPkg) {
                             activeWatchedPkg = fgPkg
+                            sessionStartElapsedMs = nowElapsed
                             elapsedSeconds = 1
                             takeoverCountedForSession = false
                         } else {
-                            elapsedSeconds += 1
+                            elapsedSeconds = (((nowElapsed - sessionStartElapsedMs) / 1000L).toInt() + 1)
+                                .coerceAtLeast(1)
                         }
 
                         val maxSec = cfg.maxScrollSeconds.coerceAtLeast(20)
@@ -218,8 +303,10 @@ class DoomscrollGuardService : Service() {
 
     private fun resetSession() {
         activeWatchedPkg = null
+        sessionStartElapsedMs = 0L
         elapsedSeconds = 0
         takeoverCountedForSession = false
+        lastKnownForegroundPkg = null
     }
 
     private fun queryForegroundPackage(nowMillis: Long): String? {
@@ -227,20 +314,47 @@ class DoomscrollGuardService : Service() {
             val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
             val events = usm.queryEvents(nowMillis - 30_000L, nowMillis)
             val event = UsageEvents.Event()
-            var latestPkg: String? = null
+            var latestResumedPkg: String? = null
+            var latestPausedPkg: String? = null
+            var latestResumedTs = 0L
+            var latestPausedTs = 0L
+
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
+                val pkg = event.packageName
+                if (pkg.isNullOrBlank()) continue
                 val isForegroundEvent =
                     event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
                         (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
                             @Suppress("DEPRECATION")
                             event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND)
-                if (isForegroundEvent && !event.packageName.isNullOrBlank()) {
-                    latestPkg = event.packageName
+                val isBackgroundEvent =
+                    event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                        event.eventType == UsageEvents.Event.ACTIVITY_STOPPED ||
+                        (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                            @Suppress("DEPRECATION")
+                            event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND)
+
+                when {
+                    isForegroundEvent && event.timeStamp >= latestResumedTs -> {
+                        latestResumedPkg = pkg
+                        latestResumedTs = event.timeStamp
+                    }
+                    isBackgroundEvent && event.timeStamp >= latestPausedTs -> {
+                        latestPausedPkg = pkg
+                        latestPausedTs = event.timeStamp
+                    }
                 }
             }
-            if (latestPkg != null) {
-                lastKnownForegroundPkg = latestPkg
+
+            if (latestResumedPkg != null) {
+                lastKnownForegroundPkg = latestResumedPkg
+            } else if (latestPausedPkg != null &&
+                latestPausedPkg == lastKnownForegroundPkg &&
+                latestPausedTs > latestResumedTs
+            ) {
+                // Tracked app moved to background without another resumed event in window
+                lastKnownForegroundPkg = null
             }
             lastKnownForegroundPkg
         } catch (e: Exception) {
@@ -267,12 +381,18 @@ class DoomscrollGuardService : Service() {
         val view = overlayView ?: BunnyOverlayView(
             context = applicationContext,
             onBackToProductivity = {
+                // Launch MainActivity BEFORE removing the SYSTEM_ALERT_WINDOW so Android 14-16
+                // BAL exemptions remain active while our visible overlay is still attached.
+                val launchIntent = Intent(applicationContext, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                }
+                runCatching { startActivity(launchIntent) }
                 resetSession()
                 removeOverlayNow()
-                val launchIntent = Intent(applicationContext, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                startActivity(launchIntent)
             },
             onPauseFiveMinutes = {
                 if (FocusSessionManager.isBlockingAppsNow()) {
@@ -302,10 +422,8 @@ class DoomscrollGuardService : Service() {
         }
 
         val flags = if (isTakeover) {
-            // Full screen takeover intercepts scrolling touches until user taps Back to Bunny Memo or Pause 5m
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         } else {
-            // While growing, allow user to see the bunny getting steadily larger & harder to ignore
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
@@ -317,6 +435,8 @@ class DoomscrollGuardService : Service() {
 
         val widthPx = if (isTakeover) WindowManager.LayoutParams.MATCH_PARENT else currentSizePx
         val heightPx = if (isTakeover) WindowManager.LayoutParams.MATCH_PARENT else currentSizePx
+        val gravity = if (isTakeover) Gravity.CENTER else (Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        val yOffset = if (isTakeover) 0 else ((1f - progress) * 28f * density).roundToInt()
 
         val params = overlayLayoutParams ?: WindowManager.LayoutParams(
             widthPx,
@@ -325,26 +445,36 @@ class DoomscrollGuardService : Service() {
             flags,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.CENTER
+            this.gravity = gravity
         }.also { overlayLayoutParams = it }
+
+        val layoutChanged = !isOverlayAttached ||
+            lastOverlayWasTakeover != isTakeover ||
+            lastAppliedWidth != widthPx ||
+            lastAppliedHeight != heightPx ||
+            lastAppliedFlags != flags ||
+            lastAppliedGravity != gravity ||
+            lastAppliedY != yOffset
 
         params.width = widthPx
         params.height = heightPx
         params.flags = flags
-        params.gravity = if (isTakeover) Gravity.CENTER else (Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-        params.y = if (isTakeover) 0 else ((1f - progress) * 28f * density).roundToInt()
+        params.gravity = gravity
+        params.y = yOffset
 
         try {
             if (!isOverlayAttached) {
                 wm.addView(view, params)
                 isOverlayAttached = true
-            } else if (lastOverlayWasTakeover != isTakeover) {
-                // Re-attach cleanly when transitioning touchability mode
-                wm.updateViewLayout(view, params)
-            } else {
+            } else if (layoutChanged) {
                 wm.updateViewLayout(view, params)
             }
             lastOverlayWasTakeover = isTakeover
+            lastAppliedWidth = widthPx
+            lastAppliedHeight = heightPx
+            lastAppliedFlags = flags
+            lastAppliedGravity = gravity
+            lastAppliedY = yOffset
         } catch (e: Exception) {
             Log.w(TAG, "Overlay update error: ${e.message}")
         }
@@ -355,16 +485,23 @@ class DoomscrollGuardService : Service() {
     }
 
     private fun removeOverlayNow() {
-        if (!isOverlayAttached) return
-        val wm = windowManager ?: return
-        val view = overlayView ?: return
-        try {
-            wm.removeViewImmediate(view)
-        } catch (_: Exception) {
-        } finally {
-            isOverlayAttached = false
-            lastOverlayWasTakeover = false
+        val wm = windowManager
+        val view = overlayView
+        if (isOverlayAttached && wm != null && view != null) {
+            try {
+                wm.removeViewImmediate(view)
+            } catch (_: Exception) {
+            }
         }
+        isOverlayAttached = false
+        lastOverlayWasTakeover = false
+        lastAppliedWidth = Int.MIN_VALUE
+        lastAppliedHeight = Int.MIN_VALUE
+        lastAppliedFlags = Int.MIN_VALUE
+        lastAppliedGravity = Int.MIN_VALUE
+        lastAppliedY = Int.MIN_VALUE
+        overlayView = null
+        overlayLayoutParams = null
     }
 
     private fun ensureNotificationChannel() {
@@ -401,7 +538,7 @@ class DoomscrollGuardService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_widget_flower)
+            .setSmallIcon(R.drawable.ic_notif_flower_mono)
             .setContentTitle(getString(R.string.focus_guard_title))
             .setContentText(contentText)
             .setOngoing(true)

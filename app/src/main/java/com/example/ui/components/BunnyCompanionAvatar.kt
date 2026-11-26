@@ -66,39 +66,59 @@ fun BunnyCompanionAvatar(
 ) {
     val isDarkTheme = LocalIsDarkTheme.current
     val reducedMotion = rememberReducedMotion()
-    val infiniteTransition = rememberInfiniteTransition(label = "month_bunny_idle")
+    val needsExpressiveParticles = !reducedMotion && (
+        expression == BunnyCompanionExpression.PATTED ||
+            expression == BunnyCompanionExpression.HAPPY ||
+            expression == BunnyCompanionExpression.LISTENING ||
+            expression == BunnyCompanionExpression.SAD
+        )
 
-    val idleBreath by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (expression == BunnyCompanionExpression.SAD) 2400 else 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bunny_breath"
-    )
+    val idleBreathState = if (reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        val breathTransition = rememberInfiniteTransition(label = "month_bunny_breath")
+        breathTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (expression == BunnyCompanionExpression.SAD) 2800 else 2000, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bunny_breath"
+        )
+    }
 
-    val talkCycle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bunny_talk"
-    )
+    val talkCycleState = if (reducedMotion || !isTalking) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        val talkTransition = rememberInfiniteTransition(label = "month_bunny_talk")
+        talkTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bunny_talk"
+        )
+    }
 
-    val floatCycle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bunny_particles"
-    )
+    val floatCycleState = if (!needsExpressiveParticles) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        val particleTransition = rememberInfiniteTransition(label = "month_bunny_particles")
+        particleTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bunny_particles"
+        )
+    }
 
-    val earDroop by animateFloatAsState(
+    val earDroopState = animateFloatAsState(
         targetValue = when (expression) {
             BunnyCompanionExpression.SAD -> 1f
             BunnyCompanionExpression.PATTED -> 0.35f
@@ -111,7 +131,7 @@ fun BunnyCompanionAvatar(
         label = "bunny_ear_droop"
     )
 
-    val squishAmount by animateFloatAsState(
+    val squishAmountState = animateFloatAsState(
         targetValue = when {
             patPulse > 0.05f -> 0.14f * patPulse
             expression == BunnyCompanionExpression.PATTED -> 0.08f
@@ -122,12 +142,12 @@ fun BunnyCompanionAvatar(
         label = "bunny_squish"
     )
 
-    val animatedLeftPull by animateFloatAsState(
+    val animatedLeftPullState = animateFloatAsState(
         targetValue = leftCheekPull.coerceIn(0f, 1.4f),
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
         label = "left_cheek_pull"
     )
-    val animatedRightPull by animateFloatAsState(
+    val animatedRightPullState = animateFloatAsState(
         targetValue = rightCheekPull.coerceIn(0f, 1.4f),
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
         label = "right_cheek_pull"
@@ -141,6 +161,14 @@ fun BunnyCompanionAvatar(
                 else Modifier
             )
     ) {
+        val idleBreath = idleBreathState.value
+        val talkCycle = talkCycleState.value
+        val floatCycle = floatCycleState.value
+        val earDroop = earDroopState.value
+        val squishAmount = squishAmountState.value
+        val animatedLeftPull = animatedLeftPullState.value
+        val animatedRightPull = animatedRightPullState.value
+
         val w = this.size.width
         val h = this.size.height
         val palette = breed.palette(isDarkTheme)

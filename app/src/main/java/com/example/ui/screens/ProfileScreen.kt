@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.GroupAdd
@@ -91,6 +93,8 @@ import com.example.ui.theme.CalmSageContainer
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.MutedNavy
+import com.example.ui.theme.OverdueContainer
+import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.PureWhite
@@ -116,6 +120,7 @@ fun ProfileScreen(
     onTriggerSync: () -> Unit,
     onGoogleSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onDeleteAccount: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,11 +135,10 @@ fun ProfileScreen(
     var showBunnyAlmanac by remember { mutableStateOf(false) }
 
     val yearFlowers = remember(
-        today.year,
+        today,
         state.items,
         state.steps,
-        habitSnapshot.checkInCountByDate,
-        state.nowMillis
+        habitSnapshot.checkInCountByDate
     ) {
         computeYearBouquetFlowerCount(
             year = today.year,
@@ -152,19 +156,20 @@ fun ProfileScreen(
     }
     val completedItemsTotal = remember(state.items) { state.items.count { it.completed } }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .testTag("profile_screen"),
         contentAlignment = Alignment.TopCenter
     ) {
+        val wide = isExpanded || maxWidth >= 720.dp
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = if (isExpanded) 1040.dp else 640.dp),
+                .widthIn(max = if (wide) 1040.dp else 640.dp),
             contentPadding = PaddingValues(
-                start = if (isExpanded) 28.dp else 18.dp,
-                end = if (isExpanded) 28.dp else 18.dp,
+                start = if (wide) 28.dp else 18.dp,
+                end = if (wide) 28.dp else 18.dp,
                 top = 12.dp,
                 bottom = bottomContentPadding
             ),
@@ -216,11 +221,17 @@ fun ProfileScreen(
                     onSignOut = {
                         feedback.onLightTick()
                         onSignOut()
+                    },
+                    onDeleteAccount = onDeleteAccount?.let { cb ->
+                        {
+                            feedback.onLightTick()
+                            cb()
+                        }
                     }
                 )
             }
 
-            if (isExpanded) {
+            if (wide) {
                 item(key = "profile_wide_row") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -315,7 +326,8 @@ private fun ProfileIdentityCard(
     onInviteFriendClick: () -> Unit,
     onTriggerSync: () -> Unit,
     onGoogleSignIn: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onDeleteAccount: (() -> Unit)?
 ) {
     val displayTitle = userDisplayName?.takeIf { it.isNotBlank() }
         ?: userEmail?.substringBefore("@")?.takeIf { it.isNotBlank() }
@@ -330,7 +342,7 @@ private fun ProfileIdentityCard(
         SyncPhase.SYNCING -> Triple("Syncing…", SkyBlue.copy(alpha = 0.7f), DeepBlue)
         SyncPhase.OFFLINE_QUEUED -> Triple("${syncStatus.pendingCount} queued", PollenSoft, MidnightNavy)
         SyncPhase.OFFLINE_IDLE -> Triple("Offline", SoftIceSurface, MutedNavy)
-        SyncPhase.ERROR -> Triple("Sync retry", PollenSoft, MidnightNavy)
+        SyncPhase.ERROR -> Triple("Sync error · Tap to retry", OverdueContainer, OverdueTerracotta)
         SyncPhase.LOCAL_ONLY -> Triple("On this device", SoftIceSurface, MutedNavy)
     }
 
@@ -367,6 +379,11 @@ private fun ProfileIdentityCard(
                     modifier = Modifier.size(68.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = initials,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = DeepBlue
+                        )
                         if (!userPhotoUrl.isNullOrBlank()) {
                             AsyncImage(
                                 model = userPhotoUrl,
@@ -375,12 +392,6 @@ private fun ProfileIdentityCard(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .clip(CircleShape)
-                            )
-                        } else {
-                            Text(
-                                text = initials,
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = DeepBlue
                             )
                         }
                     }
@@ -408,11 +419,20 @@ private fun ProfileIdentityCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ModernPillBadge(
-                            text = syncBadge.first,
-                            containerColor = syncBadge.second,
-                            contentColor = syncBadge.third
-                        )
+                        val badgeModifier = if (!isLocalMode) {
+                            Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .clickable(onClick = onTriggerSync)
+                        } else {
+                            Modifier
+                        }
+                        Box(modifier = badgeModifier) {
+                            ModernPillBadge(
+                                text = syncBadge.first,
+                                containerColor = syncBadge.second,
+                                contentColor = syncBadge.third
+                            )
+                        }
                     }
                 }
 
@@ -462,7 +482,7 @@ private fun ProfileIdentityCard(
                     onClick = onInviteFriendClick,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     modifier = Modifier
@@ -575,6 +595,29 @@ private fun ProfileIdentityCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(stringResource(R.string.profile_sign_out_cta), color = MidnightNavy)
+                    }
+                }
+                if (onDeleteAccount != null) {
+                    OutlinedButton(
+                        onClick = onDeleteAccount,
+                        border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(100.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("profile_delete_account_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteForever,
+                            contentDescription = null,
+                            tint = OverdueTerracotta,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.profile_delete_account_cta),
+                            color = OverdueTerracotta
+                        )
                     }
                 }
             }

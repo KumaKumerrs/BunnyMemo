@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -40,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -204,7 +207,11 @@ fun AuthScreen(
                         Surface(
                             color = OverdueContainer,
                             shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+                                }
                         ) {
                             Text(
                                 text = errorMessage!!,
@@ -223,12 +230,12 @@ fun AuthScreen(
                         enabled = !isLoading && !isAutoChecking,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DeepBlue,
-                            contentColor = PureWhite
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         shape = RoundedCornerShape(100.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .heightIn(min = 52.dp)
                             .testTag("sign_in_later_button")
                     ) {
                         Text(
@@ -266,7 +273,7 @@ fun AuthScreen(
                         shape = RoundedCornerShape(100.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .heightIn(min = 52.dp)
                             .testTag("google_sign_in_button")
                     ) {
                         if (isLoading || isAutoChecking) {

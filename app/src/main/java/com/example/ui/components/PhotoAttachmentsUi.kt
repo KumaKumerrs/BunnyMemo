@@ -93,15 +93,18 @@ fun PhotoAttachmentPickerSection(
         if (uris.isNotEmpty()) {
             isImporting = true
             scope.launch {
-                val imported = PhotoAttachmentStore.importPickedUris(
-                    context = context,
-                    uris = uris,
-                    maxAllowed = remainingSlots
-                )
-                isImporting = false
-                if (imported.isNotEmpty()) {
-                    feedback.onPopOpen()
-                    onAddPaths(imported)
+                try {
+                    val imported = PhotoAttachmentStore.importPickedUris(
+                        context = context,
+                        uris = uris,
+                        maxAllowed = remainingSlots
+                    )
+                    if (imported.isNotEmpty()) {
+                        feedback.onPopOpen()
+                        onAddPaths(imported)
+                    }
+                } finally {
+                    isImporting = false
                 }
             }
         }
@@ -113,15 +116,18 @@ fun PhotoAttachmentPickerSection(
         if (uri != null) {
             isImporting = true
             scope.launch {
-                val imported = PhotoAttachmentStore.importPickedUris(
-                    context = context,
-                    uris = listOf(uri),
-                    maxAllowed = remainingSlots
-                )
-                isImporting = false
-                if (imported.isNotEmpty()) {
-                    feedback.onPopOpen()
-                    onAddPaths(imported)
+                try {
+                    val imported = PhotoAttachmentStore.importPickedUris(
+                        context = context,
+                        uris = listOf(uri),
+                        maxAllowed = remainingSlots
+                    )
+                    if (imported.isNotEmpty()) {
+                        feedback.onPopOpen()
+                        onAddPaths(imported)
+                    }
+                } finally {
+                    isImporting = false
                 }
             }
         }
@@ -146,7 +152,8 @@ fun PhotoAttachmentPickerSection(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.PhotoLibrary,
@@ -162,7 +169,7 @@ fun PhotoAttachmentPickerSection(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "${imagePaths.size}/${PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM} attached",
+                            text = "${imagePaths.size}/${PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM} attached · ${stringResource(R.string.saved_on_device_only)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MutedNavy
                         )
@@ -225,7 +232,7 @@ fun PhotoAttachmentPickerSection(
                     items(imagePaths, key = { it }) { path ->
                         Box(
                             modifier = Modifier
-                                .size(82.dp)
+                                .size(88.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .border(1.dp, SubtleBorder, RoundedCornerShape(14.dp))
                                 .background(PureWhite)
@@ -236,25 +243,30 @@ fun PhotoAttachmentPickerSection(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            Surface(
-                                onClick = {
-                                    feedback.onLightTick()
-                                    onRemovePath(path)
-                                },
-                                shape = CircleShape,
-                                color = Color.Black.copy(alpha = 0.62f),
+                            Box(
+                                contentAlignment = Alignment.TopEnd,
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(24.dp)
+                                    .size(44.dp)
+                                    .clickable(role = Role.Button) {
+                                        feedback.onLightTick()
+                                        onRemovePath(path)
+                                    }
+                                    .padding(5.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.photos_remove_desc),
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.68f),
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.photos_remove_desc),
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -287,15 +299,18 @@ fun PhotoThumbnailGalleryCard(
         if (uris.isNotEmpty()) {
             isImporting = true
             scope.launch {
-                val imported = PhotoAttachmentStore.importPickedUris(
-                    context = context,
-                    uris = uris,
-                    maxAllowed = remainingSlots
-                )
-                isImporting = false
-                if (imported.isNotEmpty()) {
-                    feedback.onPopOpen()
-                    onUpdatePhotos((imagePaths + imported).distinct().take(PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM))
+                try {
+                    val imported = PhotoAttachmentStore.importPickedUris(
+                        context = context,
+                        uris = uris,
+                        maxAllowed = remainingSlots
+                    )
+                    if (imported.isNotEmpty()) {
+                        feedback.onPopOpen()
+                        onUpdatePhotos((imagePaths + imported).distinct().take(PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM))
+                    }
+                } finally {
+                    isImporting = false
                 }
             }
         }
@@ -307,15 +322,18 @@ fun PhotoThumbnailGalleryCard(
         if (uri != null) {
             isImporting = true
             scope.launch {
-                val imported = PhotoAttachmentStore.importPickedUris(
-                    context = context,
-                    uris = listOf(uri),
-                    maxAllowed = remainingSlots
-                )
-                isImporting = false
-                if (imported.isNotEmpty()) {
-                    feedback.onPopOpen()
-                    onUpdatePhotos((imagePaths + imported).distinct().take(PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM))
+                try {
+                    val imported = PhotoAttachmentStore.importPickedUris(
+                        context = context,
+                        uris = listOf(uri),
+                        maxAllowed = remainingSlots
+                    )
+                    if (imported.isNotEmpty()) {
+                        feedback.onPopOpen()
+                        onUpdatePhotos((imagePaths + imported).distinct().take(PhotoAttachmentStore.MAX_PHOTOS_PER_ITEM))
+                    }
+                } finally {
+                    isImporting = false
                 }
             }
         }
@@ -340,7 +358,8 @@ fun PhotoThumbnailGalleryCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.PhotoLibrary,
@@ -348,11 +367,18 @@ fun PhotoThumbnailGalleryCard(
                         tint = DeepBlue,
                         modifier = Modifier.size(20.dp)
                     )
-                    Text(
-                        text = stringResource(R.string.photos_section_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MidnightNavy
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = stringResource(R.string.photos_section_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MidnightNavy
+                        )
+                        ModernPillBadge(
+                            text = stringResource(R.string.saved_on_device_only),
+                            containerColor = SoftIceSurface,
+                            contentColor = MutedNavy
+                        )
+                    }
                 }
 
                 if (remainingSlots > 0) {
@@ -484,6 +510,8 @@ fun PhotoLightboxModal(
     onRemove: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var confirmRemove by remember { mutableStateOf(false) }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -502,7 +530,7 @@ fun PhotoLightboxModal(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .aspectRatio(0.85f, matchHeightConstraintsFirst = false)
+                    .padding(vertical = 64.dp)
                     .clip(RoundedCornerShape(18.dp))
             )
 
@@ -513,7 +541,7 @@ fun PhotoLightboxModal(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 IconButton(
-                    onClick = onRemove,
+                    onClick = { confirmRemove = true },
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
@@ -540,5 +568,20 @@ fun PhotoLightboxModal(
                 }
             }
         }
+    }
+
+    if (confirmRemove) {
+        BunnyMemoConfirmModal(
+            title = "Remove photo?",
+            message = "This removes the photo from this item on your device.",
+            confirmLabel = "Remove",
+            cancelLabel = "Keep it",
+            isDestructive = true,
+            onConfirm = {
+                confirmRemove = false
+                onRemove()
+            },
+            onDismiss = { confirmRemove = false }
+        )
     }
 }

@@ -39,8 +39,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -111,6 +113,7 @@ fun BunnyMemoModalContainer(
     onDismiss: () -> Unit,
     maxWidth: Dp = 460.dp,
     showCloseButton: Boolean = true,
+    dismissable: Boolean = true,
     headerLeading: (@Composable () -> Unit)? = { ForgetMeNotFlower(bloomed = true, size = 24.dp) },
     content: @Composable ColumnScope.(requestDismiss: () -> Unit) -> Unit
 ) {
@@ -124,7 +127,7 @@ fun BunnyMemoModalContainer(
     }
 
     val requestDismiss: () -> Unit = {
-        if (!isDismissing) {
+        if (dismissable && !isDismissing) {
             isDismissing = true
             visible = false
             scope.launch {
@@ -137,6 +140,8 @@ fun BunnyMemoModalContainer(
     Dialog(
         onDismissRequest = requestDismiss,
         properties = DialogProperties(
+            dismissOnBackPress = dismissable,
+            dismissOnClickOutside = dismissable,
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false
         )
@@ -166,6 +171,7 @@ fun BunnyMemoModalContainer(
                         .fillMaxSize()
                         .background(com.example.ui.theme.MutedNavy.copy(alpha = 0.24f))
                         .clickable(
+                            enabled = dismissable,
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = requestDismiss
@@ -291,7 +297,7 @@ fun BunnyMemoModalContainer(
                                     }
                                 }
                             }
-                            if (showCloseButton) {
+                            if (showCloseButton && dismissable) {
                                 IconButton(
                                     onClick = requestDismiss,
                                     modifier = Modifier.testTag("modal_close_button")
@@ -329,6 +335,8 @@ fun BunnyMemoConfirmModal(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var hasConfirmed by remember { mutableStateOf(false) }
+
     BunnyMemoModalContainer(
         title = title,
         onDismiss = onDismiss,
@@ -341,18 +349,24 @@ fun BunnyMemoConfirmModal(
             )
         }
     ) { requestDismiss ->
-        Surface(
-            color = PureWhite,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, SubtleBorder),
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MidnightNavy,
-                modifier = Modifier.padding(16.dp)
-            )
+            Surface(
+                color = PureWhite,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, SubtleBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MidnightNavy,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(18.dp))
         Row(
@@ -361,6 +375,7 @@ fun BunnyMemoConfirmModal(
         ) {
             OutlinedButton(
                 onClick = requestDismiss,
+                enabled = !hasConfirmed,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
@@ -368,12 +383,16 @@ fun BunnyMemoConfirmModal(
             }
             Button(
                 onClick = {
-                    onConfirm()
-                    requestDismiss()
+                    if (!hasConfirmed) {
+                        hasConfirmed = true
+                        onConfirm()
+                        requestDismiss()
+                    }
                 },
+                enabled = !hasConfirmed,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isDestructive) OverdueTerracotta else DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = if (isDestructive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
@@ -403,6 +422,7 @@ fun BunnyMemoDatePickerModal(
         mutableStateOf(CalendarDate(initialDate.year, initialDate.month, 1))
     }
     var monthDirection by remember { mutableIntStateOf(1) }
+    var hasConfirmed by remember { mutableStateOf(false) }
     val reducedMotion = rememberReducedMotion()
 
     BunnyMemoModalContainer(
@@ -411,151 +431,157 @@ fun BunnyMemoDatePickerModal(
         onDismiss = onDismiss,
         maxWidth = 420.dp
     ) { requestDismiss ->
-        // Quick one-tap date chips
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
         ) {
-            val quickDates = listOf(
-                "Today" to today,
-                "Tomorrow" to today.plusDays(1),
-                "+3 days" to today.plusDays(3),
-                "Next week" to today.plusDays(7)
-            )
-            quickDates.forEach { (label, date) ->
-                FilterChip(
-                    selected = pickedDate == date,
-                    onClick = {
-                        pickedDate = date
-                        visibleMonth = CalendarDate(date.year, date.month, 1)
-                    },
-                    label = { Text(label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = SkyBlue,
-                        selectedLabelColor = MidnightNavy
-                    )
+            // Quick one-tap date chips
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val quickDates = listOf(
+                    "Today" to today,
+                    "Tomorrow" to today.plusDays(1),
+                    "+3 days" to today.plusDays(3),
+                    "Next week" to today.plusDays(7)
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Mini stationery calendar card
-        Surface(
-            color = PureWhite,
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, SubtleBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    IconButton(
+                quickDates.forEach { (label, date) ->
+                    FilterChip(
+                        selected = pickedDate == date,
                         onClick = {
-                            monthDirection = -1
-                            visibleMonth = visibleMonth.plusMonths(-1)
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "Previous month",
-                            tint = MidnightNavy
+                            pickedDate = date
+                            visibleMonth = CalendarDate(date.year, date.month, 1)
+                        },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = SkyBlue,
+                            selectedLabelColor = MidnightNavy
                         )
-                    }
-                    Text(
-                        text = PlannerDateUtils.formatMonthYear(visibleMonth),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MidnightNavy
                     )
-                    IconButton(
-                        onClick = {
-                            monthDirection = 1
-                            visibleMonth = visibleMonth.plusMonths(1)
-                        }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Mini stationery calendar card
+            Surface(
+                color = PureWhite,
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, SubtleBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Next month",
-                            tint = MidnightNavy
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf("S", "M", "T", "W", "T", "F", "S").forEach { d ->
-                        Text(
-                            text = d,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                AnimatedContent(
-                    targetState = visibleMonth,
-                    transitionSpec = {
-                        if (reducedMotion) {
-                            fadeIn(tween(140)) togetherWith fadeOut(tween(120))
-                        } else {
-                            (slideInHorizontally(tween(240)) { w -> monthDirection * w / 5 } + fadeIn(tween(220))) togetherWith
-                                (slideOutHorizontally(tween(200)) { w -> -monthDirection * w / 5 } + fadeOut(tween(180)))
+                        IconButton(
+                            onClick = {
+                                monthDirection = -1
+                                visibleMonth = visibleMonth.plusMonths(-1)
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = "Previous month",
+                                tint = MidnightNavy
+                            )
                         }
-                    },
-                    label = "modal_calendar_month"
-                ) { monthStart ->
-                    val cells = remember(monthStart) { PlannerDateUtils.buildMonthGrid(monthStart) }
-                    val weeks = remember(cells) { cells.chunked(7) }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        weeks.forEach { week ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                week.forEach { day ->
-                                    if (day == null) {
-                                        Spacer(modifier = Modifier.weight(1f).height(40.dp))
-                                    } else {
-                                        val isSelected = day == pickedDate
-                                        val isToday = day == today
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(40.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(
-                                                    when {
-                                                        isSelected -> DeepBlue
-                                                        isToday -> SkyBlue.copy(alpha = 0.6f)
-                                                        else -> Color.Transparent
-                                                    }
-                                                )
-                                                .clickable { pickedDate = day },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = day.day.toString(),
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = if (isSelected) PureWhite else MidnightNavy
-                                                )
-                                                if (isSelected) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(4.dp)
-                                                            .clip(CircleShape)
-                                                            .background(PollenYellow)
+                        Text(
+                            text = PlannerDateUtils.formatMonthYear(visibleMonth),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MidnightNavy
+                        )
+                        IconButton(
+                            onClick = {
+                                monthDirection = 1
+                                visibleMonth = visibleMonth.plusMonths(1)
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Next month",
+                                tint = MidnightNavy
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        listOf("S", "M", "T", "W", "T", "F", "S").forEach { d ->
+                            Text(
+                                text = d,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AnimatedContent(
+                        targetState = visibleMonth,
+                        transitionSpec = {
+                            if (reducedMotion) {
+                                fadeIn(tween(140)) togetherWith fadeOut(tween(120))
+                            } else {
+                                (slideInHorizontally(tween(240)) { w -> monthDirection * w / 5 } + fadeIn(tween(220))) togetherWith
+                                    (slideOutHorizontally(tween(200)) { w -> -monthDirection * w / 5 } + fadeOut(tween(180)))
+                            }
+                        },
+                        label = "modal_calendar_month"
+                    ) { monthStart ->
+                        val cells = remember(monthStart) { PlannerDateUtils.buildMonthGrid(monthStart) }
+                        val weeks = remember(cells) { cells.chunked(7) }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            weeks.forEach { week ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    week.forEach { day ->
+                                        if (day == null) {
+                                            Spacer(modifier = Modifier.weight(1f).height(40.dp))
+                                        } else {
+                                            val isSelected = day == pickedDate
+                                            val isToday = day == today
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(40.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(
+                                                        when {
+                                                            isSelected -> DeepBlue
+                                                            isToday -> SkyBlue.copy(alpha = 0.6f)
+                                                            else -> Color.Transparent
+                                                        }
                                                     )
+                                                    .clickable { pickedDate = day },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        text = day.day.toString(),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Normal,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MidnightNavy
+                                                    )
+                                                    if (isSelected) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(4.dp)
+                                                                .clip(CircleShape)
+                                                                .background(PollenYellow)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -576,6 +602,7 @@ fun BunnyMemoDatePickerModal(
         ) {
             OutlinedButton(
                 onClick = requestDismiss,
+                enabled = !hasConfirmed,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
@@ -583,12 +610,16 @@ fun BunnyMemoDatePickerModal(
             }
             Button(
                 onClick = {
-                    onDateSelected(pickedDate)
-                    requestDismiss()
+                    if (!hasConfirmed) {
+                        hasConfirmed = true
+                        onDateSelected(pickedDate)
+                        requestDismiss()
+                    }
                 },
+                enabled = !hasConfirmed,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
@@ -616,6 +647,8 @@ fun BunnyMemoTimePickerModal(
 ) {
     var hour24 by remember(initialHour) { mutableIntStateOf(initialHour.coerceIn(0, 23)) }
     var minute by remember(initialMinute) { mutableIntStateOf(initialMinute.coerceIn(0, 59)) }
+    var minuteStep by remember { mutableIntStateOf(5) }
+    var hasConfirmed by remember { mutableStateOf(false) }
 
     val isPm = hour24 >= 12
     val displayHour12 = when (val h = hour24 % 12) {
@@ -629,117 +662,152 @@ fun BunnyMemoTimePickerModal(
         onDismiss = onDismiss,
         maxWidth = 400.dp
     ) { requestDismiss ->
-        // Tactile Forget-Me-Not time dial card
-        Surface(
-            color = PureWhite,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, SubtleBorder),
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            // Tactile Forget-Me-Not time dial card
+            Surface(
+                color = PureWhite,
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, SubtleBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Hour stepper
-                TimeUnitStepper(
-                    valueText = displayHour12.toString().padStart(2, '0'),
-                    label = "Hour",
-                    onIncrement = {
-                        val next12 = if (displayHour12 == 12) 1 else displayHour12 + 1
-                        hour24 = (if (isPm) 12 else 0) + (next12 % 12)
-                    },
-                    onDecrement = {
-                        val prev12 = if (displayHour12 == 1) 12 else displayHour12 - 1
-                        hour24 = (if (isPm) 12 else 0) + (prev12 % 12)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        // Hour stepper
+                        TimeUnitStepper(
+                            valueText = displayHour12.toString().padStart(2, '0'),
+                            label = "Hour",
+                            onIncrement = {
+                                val next12 = if (displayHour12 == 12) 1 else displayHour12 + 1
+                                hour24 = (if (isPm) 12 else 0) + (next12 % 12)
+                            },
+                            onDecrement = {
+                                val prev12 = if (displayHour12 == 1) 12 else displayHour12 - 1
+                                hour24 = (if (isPm) 12 else 0) + (prev12 % 12)
+                            }
+                        )
+
+                        Text(
+                            text = ":",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = DeepBlue,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+
+                        // Minute stepper (supports both 5m quick and 1m exact stepping)
+                        TimeUnitStepper(
+                            valueText = minute.toString().padStart(2, '0'),
+                            label = "Min",
+                            onIncrement = { minute = (minute + minuteStep) % 60 },
+                            onDecrement = { minute = (minute + 60 - minuteStep) % 60 }
+                        )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        // AM / PM pill stack
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                onClick = { if (isPm) hour24 -= 12 },
+                                color = if (!isPm) DeepBlue else SoftIceSurface,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, if (!isPm) DeepBlue else SubtleBorder)
+                            ) {
+                                Text(
+                                    text = "AM",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (!isPm) MaterialTheme.colorScheme.onPrimary else MidnightNavy,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                )
+                            }
+                            Surface(
+                                onClick = { if (!isPm) hour24 += 12 },
+                                color = if (isPm) DeepBlue else SoftIceSurface,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, if (isPm) DeepBlue else SubtleBorder)
+                            ) {
+                                Text(
+                                    text = "PM",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (isPm) MaterialTheme.colorScheme.onPrimary else MidnightNavy,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                )
+                            }
+                        }
                     }
-                )
 
-                Text(
-                    text = ":",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = DeepBlue,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-
-                // Minute stepper (steps by 5 mins for quick friendly adjustment)
-                TimeUnitStepper(
-                    valueText = minute.toString().padStart(2, '0'),
-                    label = "Min",
-                    onIncrement = { minute = (minute + 5) % 60 },
-                    onDecrement = { minute = (minute + 55) % 60 }
-                )
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                // AM / PM pill stack
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        onClick = { if (isPm) hour24 -= 12 },
-                        color = if (!isPm) DeepBlue else SoftIceSurface,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, if (!isPm) DeepBlue else SubtleBorder)
+                    // Precision toggle: 1-minute or 5-minute stepping
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "AM",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (!isPm) PureWhite else MidnightNavy,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            text = "Minute step:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    Surface(
-                        onClick = { if (!isPm) hour24 += 12 },
-                        color = if (isPm) DeepBlue else SoftIceSurface,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, if (isPm) DeepBlue else SubtleBorder)
-                    ) {
-                        Text(
-                            text = "PM",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isPm) PureWhite else MidnightNavy,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                        )
+                        listOf(1, 5).forEach { step ->
+                            FilterChip(
+                                selected = minuteStep == step,
+                                onClick = { minuteStep = step },
+                                label = { Text("${step}m") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = SkyBlue,
+                                    selectedLabelColor = MidnightNavy
+                                )
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        // Gentle forget-me-not time presets
-        Text(
-            text = "Gentle presets",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            val presets = listOf(
-                Triple("8:00 AM · Morning", 8, 0),
-                Triple("9:00 AM · Desk", 9, 0),
-                Triple("12:30 PM · Midday", 12, 30),
-                Triple("6:00 PM · Evening", 18, 0),
-                Triple("8:30 PM · Wind-down", 20, 30)
+            // Gentle forget-me-not time presets
+            Text(
+                text = "Gentle presets",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            presets.forEach { (label, pH, pM) ->
-                FilterChip(
-                    selected = hour24 == pH && minute == pM,
-                    onClick = {
-                        hour24 = pH
-                        minute = pM
-                    },
-                    label = { Text(label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = PollenSoft,
-                        selectedLabelColor = MidnightNavy
-                    )
+            Spacer(modifier = Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val presets = listOf(
+                    Triple("8:00 AM · Morning", 8, 0),
+                    Triple("9:00 AM · Desk", 9, 0),
+                    Triple("12:30 PM · Midday", 12, 30),
+                    Triple("6:00 PM · Evening", 18, 0),
+                    Triple("8:30 PM · Wind-down", 20, 30)
                 )
+                presets.forEach { (label, pH, pM) ->
+                    FilterChip(
+                        selected = hour24 == pH && minute == pM,
+                        onClick = {
+                            hour24 = pH
+                            minute = pM
+                        },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PollenSoft,
+                            selectedLabelColor = MidnightNavy
+                        )
+                    )
+                }
             }
         }
 
@@ -751,6 +819,7 @@ fun BunnyMemoTimePickerModal(
         ) {
             OutlinedButton(
                 onClick = requestDismiss,
+                enabled = !hasConfirmed,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
@@ -758,12 +827,16 @@ fun BunnyMemoTimePickerModal(
             }
             Button(
                 onClick = {
-                    onTimeSelected(hour24, minute)
-                    requestDismiss()
+                    if (!hasConfirmed) {
+                        hasConfirmed = true
+                        onTimeSelected(hour24, minute)
+                        requestDismiss()
+                    }
                 },
+                enabled = !hasConfirmed,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
@@ -831,6 +904,8 @@ fun BunnyMemoCloudSyncModal(
         subtitle = "Keep your memos safe across devices",
         onDismiss = onDismiss,
         maxWidth = 420.dp,
+        showCloseButton = !isSigningIn,
+        dismissable = !isSigningIn,
         headerLeading = {
             SmallBunnyIllustration(
                 pose = BunnyPose.GREETING,
@@ -896,7 +971,7 @@ fun BunnyMemoCloudSyncModal(
                 enabled = !isSigningIn,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(100.dp),
                 modifier = Modifier

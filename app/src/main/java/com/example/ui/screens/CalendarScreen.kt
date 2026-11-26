@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -106,6 +108,7 @@ import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SharedInviteAccent
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
@@ -358,6 +361,16 @@ fun CalendarScreen(
                         item(key = "empty_selected_day") {
                             EmptyDayPanel(selectedDate = selectedDate)
                         }
+                    } else if (selectedCat != null && dayItems.isEmpty() && dayInvites.isEmpty()) {
+                        item(key = "filtered_empty_selected_day_wide") {
+                            FilteredEmptyDayPanel(
+                                filterLabel = categoryFilter.label,
+                                onClearFilter = {
+                                    feedback.onLightTick()
+                                    categoryFilter = TaskCategoryFilter.ALL
+                                }
+                            )
+                        }
                     } else {
                         if (dayInvites.isNotEmpty()) {
                             item(key = "calendar_shared_header_wide") {
@@ -496,6 +509,16 @@ fun CalendarScreen(
                 if (totalDayEntries == 0) {
                     item(key = "empty_selected_day") {
                         EmptyDayPanel(selectedDate = selectedDate)
+                    }
+                } else if (selectedCat != null && dayItems.isEmpty() && dayInvites.isEmpty()) {
+                    item(key = "filtered_empty_selected_day_compact") {
+                        FilteredEmptyDayPanel(
+                            filterLabel = categoryFilter.label,
+                            onClearFilter = {
+                                feedback.onLightTick()
+                                categoryFilter = TaskCategoryFilter.ALL
+                            }
+                        )
                     }
                 } else {
                     if (dayInvites.isNotEmpty()) {
@@ -723,15 +746,26 @@ private fun CalendarGridPanel(
                 tagPrefix = "calendar_mode"
             )
 
-            // Weekday headers
+            // Weekday headers with full day names for screen readers
             Row(modifier = Modifier.fillMaxWidth()) {
-                listOf("S", "M", "T", "W", "T", "F", "S").forEach { dayName ->
+                val weekdays = listOf(
+                    "S" to "Sunday",
+                    "M" to "Monday",
+                    "T" to "Tuesday",
+                    "W" to "Wednesday",
+                    "T" to "Thursday",
+                    "F" to "Friday",
+                    "S" to "Saturday"
+                )
+                weekdays.forEach { (shortName, fullName) ->
                     Text(
-                        text = dayName,
+                        text = shortName,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = MutedNavy,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = fullName }
                     )
                 }
             }
@@ -762,8 +796,8 @@ private fun CalendarGridPanel(
                     val gridCells = remember(anchorDate) {
                         PlannerDateUtils.buildMonthGrid(anchorDate)
                     }
-                    // Precompute ALL day buckets for this month ONCE (eliminates 42xN per-frame scans!)
-                    val monthBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds, invitesByDateIso) {
+                    // Precompute ALL day buckets for this month ONCE (including state.steps for accurate bloom dots)
+                    val monthBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso) {
                         gridCells.filterNotNull().associateWith { date ->
                             buildDayBucket(date, state, overdueItemIds, invitesByDateIso)
                         }
@@ -800,7 +834,7 @@ private fun CalendarGridPanel(
                     val weekDates = remember(anchorDate) {
                         PlannerDateUtils.buildWeekDates(anchorDate)
                     }
-                    val weekBuckets = remember(anchorDate, state.items, state.classSchedules, overdueItemIds, invitesByDateIso) {
+                    val weekBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso) {
                         weekDates.associateWith { date -> buildDayBucket(date, state, overdueItemIds, invitesByDateIso) }
                     }
                     Row(
@@ -822,13 +856,14 @@ private fun CalendarGridPanel(
                 }
             }
 
-            // Highlight color legend including forget-me-not bloom marker for completed daily tasks
-            Row(
+            // Highlight color legend including forget-me-not bloom marker & shared invites
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -845,6 +880,7 @@ private fun CalendarGridPanel(
                 CalendarLegendItem(color = ForgetMeNotBlue, fill = SkyBlue.copy(alpha = 0.30f), label = "Plan")
                 CalendarLegendItem(color = PollenYellow, fill = PollenSoft, label = "Task")
                 CalendarLegendItem(color = CalmSage, fill = CalmSageContainer, label = "Class")
+                CalendarLegendItem(color = SharedInviteAccent, fill = SharedInviteAccent.copy(alpha = 0.16f), label = "Shared")
             }
         }
     }
@@ -902,7 +938,7 @@ private fun SelectedDayHeaderRow(
             onClick = onAddForDate,
             colors = ButtonDefaults.buttonColors(
                 containerColor = DeepBlue,
-                contentColor = PureWhite
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ),
             shape = RoundedCornerShape(100.dp),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
@@ -935,6 +971,42 @@ private fun EmptyDayPanel(selectedDate: CalendarDate) {
     }
 }
 
+@Composable
+private fun FilteredEmptyDayPanel(
+    filterLabel: String,
+    onClearFilter: () -> Unit
+) {
+    ModernPanel(
+        shape = RoundedCornerShape(20.dp),
+        elevation = 2.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("calendar_filtered_empty_panel")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "No ${filterLabel.lowercase()} items on this day",
+                style = MaterialTheme.typography.titleSmall,
+                color = MidnightNavy
+            )
+            OutlinedButton(
+                onClick = onClearFilter,
+                border = BorderStroke(1.dp, SubtleBorder),
+                shape = RoundedCornerShape(100.dp),
+                modifier = Modifier.testTag("calendar_clear_filter_button")
+            ) {
+                Text("Clear filter", color = DeepBlue)
+            }
+        }
+    }
+}
+
 /**
  * Airy calendar cell with clear pastel date highlights whenever a date has an Event, Plan, Task, or Class.
  * Uses precomputed CalendarDayBucket for O(1) rendering during month transitions.
@@ -953,9 +1025,22 @@ private fun MonthDayCell(
     val hasPlan = bucket?.hasPlan == true
     val hasTask = bucket?.hasTask == true
     val hasClass = bucket?.hasClass == true
+    val hasSharedInvite = bucket?.hasSharedInvite == true
     val hasCompletedDailyTask = bucket?.hasCompletedDailyTask == true
     val hasOverdue = bucket?.hasOverdue == true
     val hasAny = bucket?.hasAny == true || hasCompletedDailyTask
+
+    val cellA11yLabel = remember(date, isToday, isSelected, bucket) {
+        buildString {
+            append(PlannerDateUtils.formatFullDateHeader(date))
+            if (isToday) append(", Today")
+            if (isSelected) append(", Selected")
+            val total = (bucket?.items?.size ?: 0) + (bucket?.classes?.size ?: 0) + (bucket?.invites?.size ?: 0)
+            if (total > 0) append(", $total scheduled")
+            if (hasOverdue) append(", has overdue items")
+            if (hasCompletedDailyTask) append(", completed bloom")
+        }
+    }
 
     val cellShape = RoundedCornerShape(12.dp)
     val highlightFill = when {
@@ -995,6 +1080,7 @@ private fun MonthDayCell(
                     Modifier
                 }
             )
+            .semantics { contentDescription = cellA11yLabel }
             .clickable(onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 4.dp)
             .testTag("calendar_cell_${date.toIsoString()}")
@@ -1016,19 +1102,20 @@ private fun MonthDayCell(
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = if (isToday || isSelected || hasAny) FontWeight.Bold else FontWeight.Medium
                     ),
-                    color = if (isToday) PureWhite else MidnightNavy
+                    color = if (isToday) MaterialTheme.colorScheme.onPrimary else MidnightNavy
                 )
             }
 
+            val previewLabel = bucket?.previewLabel
             if (hasCompletedDailyTask) {
                 ForgetMeNotFlower(
                     bloomed = true,
                     size = 15.dp,
                     contentDesc = "Daily task completed"
                 )
-            } else if (hasAny && bucket?.previewLabel != null) {
+            } else if (hasAny && previewLabel != null) {
                 Text(
-                    text = bucket.previewLabel,
+                    text = previewLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (hasOverdue) OverdueTerracotta else MidnightNavy.copy(alpha = 0.85f),
                     maxLines = 1,
@@ -1044,7 +1131,7 @@ private fun MonthDayCell(
                     if (hasPlan) CalendarDot(color = ForgetMeNotBlue)
                     if (hasTask && !hasCompletedDailyTask) CalendarDot(color = PollenYellow)
                     if (hasClass) CalendarDot(color = CalmSage)
-                    if (bucket?.hasSharedInvite == true) CalendarDot(color = Color(0xFF9368EB))
+                    if (hasSharedInvite) CalendarDot(color = SharedInviteAccent)
                 }
             }
         }
@@ -1107,8 +1194,19 @@ private fun WeekDayChip(
     val hasPlan = bucket?.hasPlan == true
     val hasTask = bucket?.hasTask == true
     val hasClass = bucket?.hasClass == true
+    val hasSharedInvite = bucket?.hasSharedInvite == true
     val hasCompletedDailyTask = bucket?.hasCompletedDailyTask == true
     val hasAny = bucket?.hasAny == true || hasCompletedDailyTask
+
+    val weekCellDesc = remember(date, isToday, isSelected, bucket) {
+        buildString {
+            append(PlannerDateUtils.formatFullDateHeader(date))
+            if (isToday) append(", Today")
+            if (isSelected) append(", Selected")
+            val total = (bucket?.items?.size ?: 0) + (bucket?.classes?.size ?: 0) + (bucket?.invites?.size ?: 0)
+            if (total > 0) append(", $total scheduled")
+        }
+    }
 
     val shape = RoundedCornerShape(14.dp)
     val bgColor = when {
@@ -1121,6 +1219,7 @@ private fun WeekDayChip(
         isSelected -> SkyBlue.copy(alpha = 0.5f)
         else -> SoftIceSurface
     }
+    val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
     Box(
         modifier = modifier
             .height(58.dp)
@@ -1131,6 +1230,7 @@ private fun WeekDayChip(
                 else if (hasAny && !isToday) Modifier.border(0.9.dp, ForgetMeNotBlue.copy(alpha = 0.5f), shape)
                 else Modifier
             )
+            .semantics { contentDescription = weekCellDesc }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -1143,7 +1243,7 @@ private fun WeekDayChip(
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = if (isToday || hasAny) FontWeight.Bold else FontWeight.Medium
                 ),
-                color = if (isToday) PureWhite else MidnightNavy
+                color = if (isToday) onPrimaryColor else MidnightNavy
             )
             if (hasCompletedDailyTask) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -1155,10 +1255,11 @@ private fun WeekDayChip(
             } else if (hasAny) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                    if (hasEvent) CalendarDot(if (isToday) PureWhite else DeepBlue)
-                    if (hasPlan) CalendarDot(if (isToday) PureWhite else ForgetMeNotBlue)
-                    if (hasTask) CalendarDot(if (isToday) PureWhite else PollenYellow)
-                    if (hasClass) CalendarDot(if (isToday) PureWhite else CalmSage)
+                    if (hasEvent) CalendarDot(if (isToday) onPrimaryColor else DeepBlue)
+                    if (hasPlan) CalendarDot(if (isToday) onPrimaryColor else ForgetMeNotBlue)
+                    if (hasTask) CalendarDot(if (isToday) onPrimaryColor else PollenYellow)
+                    if (hasClass) CalendarDot(if (isToday) onPrimaryColor else CalmSage)
+                    if (hasSharedInvite) CalendarDot(if (isToday) onPrimaryColor else SharedInviteAccent)
                 }
             }
         }
@@ -1244,6 +1345,7 @@ private fun CalendarClassAgendaCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CalendarAgendaCard(
     item: PlannerItem,
@@ -1275,26 +1377,20 @@ private fun CalendarAgendaCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MidnightNavy
-                    )
-                    Text(
-                        text = timingText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MutedNavy
-                    )
-                }
-                Row(
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MidnightNavy
+                )
+                Text(
+                    text = timingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MutedNavy
+                )
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     TaskCategoryBadge(
                         category = item.taskCategory(),

@@ -2,16 +2,20 @@ package com.example.data
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -119,17 +123,32 @@ data class DailyHabitSnapshot(
 
 /**
  * Room-backed repository for small, consistent daily habits and streak-driven Bunny Growth.
+ * Synchronizes habits and check-ins to Firestore via the Room outbox ([RoomFirestoreSyncService]).
  */
 class DailyHabitRepository private constructor(context: Context) {
 
     private val appContext = context.applicationContext
-    private val dao = LocalPlannerDatabase.getInstance(appContext).plannerDao()
+    private val database = LocalPlannerDatabase.getInstance(appContext)
+    private val dao = database.plannerDao()
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable !is CancellationException) {
             Log.w(TAG, "DailyHabitRepository background warning: ${throwable.message}")
         }
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
+    private val currentDateFlow = MutableStateFlow(CalendarDate.today())
+
+    init {
+        scope.launch {
+            while (isActive) {
+                delay(60_000L)
+                val today = CalendarDate.today()
+                if (today != currentDateFlow.value) {
+                    currentDateFlow.value = today
+                }
+            }
+        }
+    }
 
     val snapshot: StateFlow<DailyHabitSnapshot> = combine(
         dao.observeDailyHabits().catch { err ->
@@ -141,9 +160,10 @@ class DailyHabitRepository private constructor(context: Context) {
             if (err is CancellationException) throw err
             Log.w(TAG, "observeHabitCheckIns failed: ${err.message}")
             emit(emptyList())
-        }
-    ) { habitEntities, checkInEntities ->
-        buildSnapshot(habitEntities, checkInEntities, CalendarDate.today())
+        },
+        currentDateFlow
+    ) { habitEntities, checkInEntities, today ->
+        buildSnapshot(habitEntities, checkInEntities, today)
     }
         .catch { err ->
             if (err is CancellationException) throw err
@@ -152,7 +172,7 @@ class DailyHabitRepository private constructor(context: Context) {
         }
         .stateIn(
             scope = scope,
-            started = SharingStarted.Eagerly,
+            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = DailyHabitSnapshot()
         )
 
@@ -161,23 +181,30 @@ class DailyHabitRepository private constructor(context: Context) {
         iconKey: HabitIconKey = HabitIconKey.SPARKLE,
         colorKey: ClassColorKey = ClassColorKey.SKY
     ) {
-        val clean = title.trim().take(60)
+        val clean = title.trim().take(80)
         if (clean.isEmpty()) return
         scope.launch {
             try {
                 val now = System.currentTimeMillis()
-                val nextOrder = snapshot.value.habits.size
-                dao.upsertDailyHabit(
-                    LocalDailyHabitEntity(
-                        id = "hab_${UUID.randomUUID().toString().replace("-", "").take(12)}",
-                        title = clean,
-                        iconKey = iconKey.name,
-                        colorKey = colorKey.name,
-                        sortOrder = nextOrder,
-                        createdAtMillis = now,
-                        updatedAtMillis = now
+                val id = "hab_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+                database.withTransaction {
+                    val nextOrder = ((dao.getMaxHabitSortOrder() ?: -1) + 1).coerceIn(0, 500)
+                    dao.upsertDailyHabit(
+                        LocalDailyHabitEntity(
+                            id = id,
+                            title = clean,
+                            iconKey = iconKey.name,
+                            colorKey = colorKey.name,
+                            sortOrder = nextOrder,
+                            createdAtMillis = now,
+                            updatedAtMillis = now
+                        )
                     )
-                )
+                    dao.upsertPendingSyncOp(
+                        PendingSyncOperationEntity.upsert(SyncEntityType.DAILY_HABIT, id, now)
+                    )
+                }
+                RoomFirestoreSyncService.getInstance(appContext).requestSync()
                 com.example.widgets.WidgetUpdateManager.refreshAllWidgets(appContext)
             } catch (e: CancellationException) {
                 throw e
@@ -190,21 +217,31 @@ class DailyHabitRepository private constructor(context: Context) {
     fun toggleHabitForDate(habitId: String, date: CalendarDate = CalendarDate.today()) {
         scope.launch {
             try {
+                val now = System.currentTimeMillis()
                 val dateIso = date.toIsoString()
                 val key = "$habitId|$dateIso"
-                val existing = dao.getHabitCheckIn(key)
-                if (existing != null) {
-                    dao.deleteHabitCheckInByKey(key)
-                } else {
-                    dao.upsertHabitCheckIn(
-                        LocalHabitCheckInEntity(
-                            checkInKey = key,
-                            habitId = habitId,
-                            dateIso = dateIso,
-                            completedAtMillis = System.currentTimeMillis()
+                database.withTransaction {
+                    val existing = dao.getHabitCheckIn(key)
+                    if (existing != null) {
+                        dao.deleteHabitCheckInByKey(key)
+                        dao.upsertPendingSyncOp(
+                            PendingSyncOperationEntity.delete(SyncEntityType.HABIT_CHECKIN, key, now)
                         )
-                    )
+                    } else {
+                        dao.upsertHabitCheckIn(
+                            LocalHabitCheckInEntity(
+                                checkInKey = key,
+                                habitId = habitId,
+                                dateIso = dateIso,
+                                completedAtMillis = now
+                            )
+                        )
+                        dao.upsertPendingSyncOp(
+                            PendingSyncOperationEntity.upsert(SyncEntityType.HABIT_CHECKIN, key, now)
+                        )
+                    }
                 }
+                RoomFirestoreSyncService.getInstance(appContext).requestSync()
                 com.example.widgets.WidgetUpdateManager.refreshAllWidgets(appContext)
             } catch (e: CancellationException) {
                 throw e
@@ -217,7 +254,27 @@ class DailyHabitRepository private constructor(context: Context) {
     fun deleteHabit(habitId: String) {
         scope.launch {
             try {
-                dao.deleteDailyHabitCascade(habitId)
+                val now = System.currentTimeMillis()
+                database.withTransaction {
+                    val existingCheckIns = dao.getHabitCheckInsByHabitId(habitId)
+                    dao.deleteDailyHabitCascade(habitId)
+                    dao.upsertTombstone(
+                        DeletedTombstoneEntity(
+                            opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.DAILY_HABIT, habitId),
+                            entityType = SyncEntityType.DAILY_HABIT,
+                            entityId = habitId,
+                            deletedAtMillis = now
+                        )
+                    )
+                    val ops = buildList {
+                        existingCheckIns.forEach { ci ->
+                            add(PendingSyncOperationEntity.delete(SyncEntityType.HABIT_CHECKIN, ci.checkInKey, now))
+                        }
+                        add(PendingSyncOperationEntity.delete(SyncEntityType.DAILY_HABIT, habitId, now))
+                    }
+                    dao.upsertPendingSyncOps(ops)
+                }
+                RoomFirestoreSyncService.getInstance(appContext).requestSync()
                 com.example.widgets.WidgetUpdateManager.refreshAllWidgets(appContext)
             } catch (e: CancellationException) {
                 throw e
@@ -245,7 +302,7 @@ class DailyHabitRepository private constructor(context: Context) {
             }
         }
 
-        private fun buildSnapshot(
+        internal fun buildSnapshot(
             habitEntities: List<LocalDailyHabitEntity>,
             checkInEntities: List<LocalHabitCheckInEntity>,
             today: CalendarDate
@@ -300,9 +357,12 @@ class DailyHabitRepository private constructor(context: Context) {
             } else {
                 val span = (stage.nextStreakTarget - stage.minStreakDays).coerceAtLeast(1)
                 val gained = (overallStreak - stage.minStreakDays).coerceAtLeast(0)
-                // If user has 0-day streak yet completed something today, show gentle initial growth
-                val bonus = if (overallStreak == 0 && habits.any { it.completedToday }) 0.35f else 0f
-                ((gained.toFloat() / span.toFloat()) + bonus).coerceIn(0f, 1f)
+                val baseProgress = gained.toFloat() / span.toFloat()
+                if (overallStreak == 1 && habits.any { it.completedToday }) {
+                    maxOf(baseProgress, 0.5f).coerceIn(0f, 1f)
+                } else {
+                    baseProgress.coerceIn(0f, 1f)
+                }
             }
 
             return DailyHabitSnapshot(

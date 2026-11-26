@@ -270,4 +270,27 @@
     <string name="widget_bunny_pinch_btn">Pinch Cheeks</string>
     <string name="widget_bunny_talk_btn">8-Bit Talk</string>
     <string name="widget_bunny_default_greeting">Pat my head or pinch my cheeks! Little baby bunnies are hopping behind me~</string>
+
+    <!-- Focus Guard Overlay & Service Notifications -->
+    <string name="focus_guard_notif_pomodoro">Pomodoro Focus Session active · Blocking distracting apps.</string>
+    <string name="focus_guard_notif_watching">Bunny Focus Guard is watching your selected social apps.</string>
+    <string name="focus_guard_overlay_back_btn">Back to Bunny Memo</string>
+    <string name="focus_guard_overlay_pause_btn">Pause guard for 5 min</string>
+    <string name="focus_guard_overlay_focus_chip">Focus Session · %1$s left</string>
+    <string name="focus_guard_overlay_focus_headline">%1$s is paused during focus!</string>
+    <string name="focus_guard_overlay_focus_detail_task">Stay committed to “%1$s” — your bunny is cheering you on.</string>
+    <string name="focus_guard_overlay_focus_detail_generic">Your Pomodoro focus timer is running. Step back and finish strong!</string>
+    <string name="focus_guard_overlay_focus_back_btn">Return to Focus Timer</string>
+    <string name="focus_guard_overlay_focus_pause_btn">Pause Focus Session</string>
+    <string name="focus_guard_overlay_doomscroll_chip">%1$s on %2$s</string>
+    <string name="focus_guard_overlay_doomscroll_headline">Time to bloom, not doomscroll!</string>
+    <string name="focus_guard_overlay_doomscroll_detail">Your Bunny Memo guardian filled the screen so you can step back and finish today’s plans.</string>
+    <string name="focus_guard_overlay_peeking">%1$s · peeking</string>
+    <string name="focus_guard_overlay_growing">%1$d%% · bunny growing!</string>
+    <string name="focus_guard_overlay_almost">%1$d%% · almost full screen!</string>
+
+    <!-- Device-Only Media & Account Isolation Labels -->
+    <string name="saved_on_device_only">Saved on this device only</string>
+    <string name="profile_delete_account_cta">Delete account &amp; data</string>
+    <string name="open_app_settings_cta">Open settings</string>
 </resources>

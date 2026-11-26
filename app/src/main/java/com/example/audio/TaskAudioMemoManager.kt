@@ -2,6 +2,8 @@ package com.example.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Build
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -42,13 +45,19 @@ data class TaskAudioBunnyEvent(
 
 /**
  * Device-local manager for recording and playing short (.m4a) audio memos attached to tasks.
- * Coordinates with [BunnyFeedbackManager] so BGM pauses cleanly during mic capture/playback
- * and emits [TaskAudioBunnyEvent] so the bottom-left Month Bunny can listen and respond.
+ *
+ * Reliability design:
+ * - Offloads MediaRecorder / MediaPlayer prepare, stop, and release off the Main thread onto [Dispatchers.IO].
+ * - Records into a temporary `.tmp.m4a` file first and only replaces/deletes the previous memo
+ *   after the new recording stops cleanly and validates (> 128 bytes), preventing accidental data loss.
+ * - Acquires transient AudioFocus during recording & playback and stops cleanly on background pause.
  */
 class TaskAudioMemoManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val feedbackManager = BunnyFeedbackManager.getInstance(appContext)
+    private val audioManager: AudioManager? =
+        appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable !is CancellationException) {
             Log.w(TAG, "TaskAudioMemoManager warning: ${throwable.message}")
@@ -67,7 +76,9 @@ class TaskAudioMemoManager private constructor(context: Context) {
     val bunnyEvent: StateFlow<TaskAudioBunnyEvent?> = _bunnyEvent.asStateFlow()
 
     private var recorder: MediaRecorder? = null
-    private var recordingFile: File? = null
+    private var recordingTempFile: File? = null
+    private var recordingTargetFile: File? = null
+    private var pendingPreviousMemoPath: String? = null
     private var recordingItemTitle: String = ""
     private var recordingTaskCompleted: Boolean = false
     private var recordingStartedAtMs: Long = 0L
@@ -79,6 +90,32 @@ class TaskAudioMemoManager private constructor(context: Context) {
     private var playingTaskCompleted: Boolean = false
     private var playingDurationSec: Int = 0
     private var playbackTickerJob: Job? = null
+    private var activeFocusRequest: AudioFocusRequest? = null
+
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+            focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+        ) {
+            scope.launch {
+                if (_playbackState.value.playingItemId != null) {
+                    stopPlayback(emitFeedback = false)
+                }
+            }
+        }
+    }
+
+    /**
+     * Called from Activity lifecycle `ON_PAUSE` so microphone capture and voice playback
+     * never stay orphaned in the background.
+     */
+    fun onAppBackgrounded() {
+        if (_playbackState.value.recordingItemId != null) {
+            stopRecording()
+        }
+        if (_playbackState.value.playingItemId != null) {
+            stopPlayback(emitFeedback = false)
+        }
+    }
 
     fun startRecording(
         itemId: String,
@@ -92,86 +129,94 @@ class TaskAudioMemoManager private constructor(context: Context) {
             cancelRecording()
         }
 
-        val outFile = File(memoDir, "memo_${itemId.take(12)}_${UUID.randomUUID().toString().take(8)}.m4a")
-        val newRecorder = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(appContext)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }
-        }.getOrElse { err ->
-            Log.w(TAG, "MediaRecorder unavailable: ${err.message}")
-            _playbackState.value = _playbackState.value.copy(
-                errorMessage = "Audio recording is unavailable on this device."
-            )
-            return
-        }
+        val baseName = "memo_${itemId.take(12)}_${UUID.randomUUID().toString().take(8)}"
+        val finalFile = File(memoDir, "$baseName.m4a")
+        val tmpFile = File(memoDir, "$baseName.tmp.m4a")
 
-        val started = runCatching {
+        scope.launch {
             feedbackManager.pauseBgmForVoiceMemo()
-            newRecorder.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(22_050)
-                setAudioEncodingBitRate(64_000)
-                setMaxDuration(MAX_DURATION_MS)
-                setOutputFile(outFile.absolutePath)
-                setOnInfoListener { _, what, _ ->
-                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
-                        scope.launch { stopRecording() }
+            requestTransientAudioFocus()
+
+            val startedRecorder = withContext(Dispatchers.IO) {
+                val newRecorder = runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        MediaRecorder(appContext)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        MediaRecorder()
                     }
+                }.getOrElse { err ->
+                    Log.w(TAG, "MediaRecorder unavailable: ${err.message}")
+                    return@withContext null
                 }
-                prepare()
-                start()
+
+                runCatching {
+                    newRecorder.apply {
+                        setAudioSource(MediaRecorder.AudioSource.MIC)
+                        setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                        setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                        setAudioSamplingRate(22_050)
+                        setAudioEncodingBitRate(64_000)
+                        setMaxDuration(MAX_DURATION_MS)
+                        setOutputFile(tmpFile.absolutePath)
+                        setOnInfoListener { _, what, _ ->
+                            if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
+                                scope.launch { stopRecording() }
+                            }
+                        }
+                        prepare()
+                        start()
+                    }
+                    newRecorder
+                }.getOrElse { err ->
+                    Log.w(TAG, "Failed starting audio memo recording: ${err.message}")
+                    runCatching { newRecorder.release() }
+                    runCatching { tmpFile.delete() }
+                    null
+                }
             }
-            true
-        }.getOrElse { err ->
-            Log.w(TAG, "Failed starting audio memo recording: ${err.message}")
-            runCatching { newRecorder.release() }
-            runCatching { outFile.delete() }
-            feedbackManager.resumeBgmAfterVoiceMemo()
-            _playbackState.value = _playbackState.value.copy(
-                errorMessage = "Could not access microphone right now. Please check device audio settings."
+
+            if (startedRecorder == null) {
+                abandonTransientAudioFocus()
+                feedbackManager.resumeBgmAfterVoiceMemo()
+                _playbackState.value = _playbackState.value.copy(
+                    errorMessage = "Could not access microphone right now. Please check device audio settings."
+                )
+                return@launch
+            }
+
+            // Note: previousMemoPath is preserved until stopRecording() succeeds & validates > 128 bytes!
+            recorder = startedRecorder
+            recordingTempFile = tmpFile
+            recordingTargetFile = finalFile
+            pendingPreviousMemoPath = previousMemoPath
+            recordingItemTitle = itemTitle
+            recordingTaskCompleted = isTaskCompleted
+            recordingStartedAtMs = System.currentTimeMillis()
+            onRecordingSavedCallback = onSaved
+
+            feedbackManager.onLightTick()
+            _playbackState.value = TaskAudioPlaybackState(
+                recordingItemId = itemId,
+                recordingElapsedSeconds = 0,
+                isListeningForTaskTitle = itemTitle,
+                errorMessage = null
             )
-            false
-        }
 
-        if (!started) return
-
-        if (!previousMemoPath.isNullOrBlank()) {
-            deleteMemoFile(previousMemoPath)
-        }
-
-        recorder = newRecorder
-        recordingFile = outFile
-        recordingItemTitle = itemTitle
-        recordingTaskCompleted = isTaskCompleted
-        recordingStartedAtMs = System.currentTimeMillis()
-        onRecordingSavedCallback = onSaved
-
-        feedbackManager.onLightTick()
-        _playbackState.value = TaskAudioPlaybackState(
-            recordingItemId = itemId,
-            recordingElapsedSeconds = 0,
-            isListeningForTaskTitle = itemTitle,
-            errorMessage = null
-        )
-
-        recordingTickerJob?.cancel()
-        recordingTickerJob = scope.launch {
-            while (isActive && _playbackState.value.recordingItemId == itemId) {
-                delay(250L)
-                val elapsedSec = ((System.currentTimeMillis() - recordingStartedAtMs) / 1000L)
-                    .toInt()
-                    .coerceIn(0, MAX_DURATION_SEC)
-                if (_playbackState.value.recordingElapsedSeconds != elapsedSec) {
-                    _playbackState.value = _playbackState.value.copy(recordingElapsedSeconds = elapsedSec)
-                }
-                if (elapsedSec >= MAX_DURATION_SEC) {
-                    stopRecording()
-                    break
+            recordingTickerJob?.cancel()
+            recordingTickerJob = scope.launch {
+                while (isActive && _playbackState.value.recordingItemId == itemId) {
+                    delay(250L)
+                    val elapsedSec = ((System.currentTimeMillis() - recordingStartedAtMs) / 1000L)
+                        .toInt()
+                        .coerceIn(0, MAX_DURATION_SEC)
+                    if (_playbackState.value.recordingElapsedSeconds != elapsedSec) {
+                        _playbackState.value = _playbackState.value.copy(recordingElapsedSeconds = elapsedSec)
+                    }
+                    if (elapsedSec >= MAX_DURATION_SEC) {
+                        stopRecording()
+                        break
+                    }
                 }
             }
         }
@@ -180,7 +225,9 @@ class TaskAudioMemoManager private constructor(context: Context) {
     fun stopRecording() {
         val activeItemId = _playbackState.value.recordingItemId ?: return
         val activeRecorder = recorder
-        val outFile = recordingFile
+        val tmpFile = recordingTempFile
+        val finalFile = recordingTargetFile
+        val oldPathToDelete = pendingPreviousMemoPath
         val title = recordingItemTitle
         val completed = recordingTaskCompleted
         val callback = onRecordingSavedCallback
@@ -191,50 +238,91 @@ class TaskAudioMemoManager private constructor(context: Context) {
         recordingTickerJob?.cancel()
         recordingTickerJob = null
         recorder = null
-        recordingFile = null
+        recordingTempFile = null
+        recordingTargetFile = null
+        pendingPreviousMemoPath = null
         onRecordingSavedCallback = null
-
-        val stopOk = runCatching {
-            activeRecorder?.stop()
-            true
-        }.getOrDefault(false)
-        runCatching { activeRecorder?.release() }
-
-        feedbackManager.resumeBgmAfterVoiceMemo()
-
-        if (!stopOk || outFile == null || !outFile.exists() || outFile.length() <= 128L) {
-            runCatching { outFile?.delete() }
-            _playbackState.value = TaskAudioPlaybackState(
-                errorMessage = "Voice memo was too short to save — hold a tiny moment longer!"
-            )
-            return
-        }
-
         _playbackState.value = TaskAudioPlaybackState()
-        callback?.invoke(outFile.absolutePath, elapsedSec)
-        _bunnyEvent.value = TaskAudioBunnyEvent(
-            eventId = System.nanoTime(),
-            itemId = activeItemId,
-            itemTitle = title,
-            durationSeconds = elapsedSec,
-            isTaskCompleted = completed,
-            isNewRecording = true
-        )
+
+        scope.launch {
+            val savedPath = withContext(Dispatchers.IO) {
+                val stopOk = runCatching {
+                    activeRecorder?.stop()
+                    true
+                }.getOrDefault(false)
+                runCatching { activeRecorder?.release() }
+
+                if (!stopOk || tmpFile == null || finalFile == null || !tmpFile.exists() || tmpFile.length() <= 128L) {
+                    runCatching { tmpFile?.delete() }
+                    return@withContext null
+                }
+
+                val promoted = if (tmpFile.renameTo(finalFile)) {
+                    true
+                } else {
+                    runCatching {
+                        tmpFile.copyTo(finalFile, overwrite = true)
+                        tmpFile.delete()
+                        true
+                    }.getOrDefault(false)
+                }
+
+                if (!promoted || !finalFile.exists() || finalFile.length() <= 128L) {
+                    runCatching { tmpFile.delete() }
+                    runCatching { finalFile.delete() }
+                    return@withContext null
+                }
+
+                // Safe to remove previous voice memo ONLY after the new file is durably saved
+                if (!oldPathToDelete.isNullOrBlank() && oldPathToDelete != finalFile.absolutePath) {
+                    deleteMemoFile(oldPathToDelete)
+                }
+                finalFile.absolutePath
+            }
+
+            abandonTransientAudioFocus()
+            feedbackManager.resumeBgmAfterVoiceMemo()
+
+            if (savedPath == null) {
+                _playbackState.value = TaskAudioPlaybackState(
+                    errorMessage = "Voice memo was too short to save — hold a tiny moment longer!"
+                )
+                return@launch
+            }
+
+            callback?.invoke(savedPath, elapsedSec)
+            _bunnyEvent.value = TaskAudioBunnyEvent(
+                eventId = System.nanoTime(),
+                itemId = activeItemId,
+                itemTitle = title,
+                durationSeconds = elapsedSec,
+                isTaskCompleted = completed,
+                isNewRecording = true
+            )
+        }
     }
 
     fun cancelRecording() {
         recordingTickerJob?.cancel()
         recordingTickerJob = null
         val activeRecorder = recorder
-        val outFile = recordingFile
+        val tmpFile = recordingTempFile
         recorder = null
-        recordingFile = null
+        recordingTempFile = null
+        recordingTargetFile = null
+        pendingPreviousMemoPath = null
         onRecordingSavedCallback = null
-        runCatching { activeRecorder?.stop() }
-        runCatching { activeRecorder?.release() }
-        runCatching { outFile?.delete() }
-        feedbackManager.resumeBgmAfterVoiceMemo()
         _playbackState.value = TaskAudioPlaybackState()
+
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { activeRecorder?.stop() }
+                runCatching { activeRecorder?.release() }
+                runCatching { tmpFile?.delete() }
+            }
+            abandonTransientAudioFocus()
+            feedbackManager.resumeBgmAfterVoiceMemo()
+        }
     }
 
     fun togglePlayback(
@@ -254,74 +342,87 @@ class TaskAudioMemoManager private constructor(context: Context) {
         }
         stopPlayback(emitFeedback = false)
 
-        val file = File(filePath)
-        if (!file.exists() || file.length() <= 0L) {
-            _playbackState.value = _playbackState.value.copy(
-                errorMessage = "Voice memo file could not be found."
-            )
-            return
-        }
+        scope.launch {
+            val file = File(filePath)
+            val existsAndValid = withContext(Dispatchers.IO) { file.exists() && file.length() > 0L }
+            if (!existsAndValid) {
+                _playbackState.value = _playbackState.value.copy(
+                    errorMessage = "Voice memo file could not be found."
+                )
+                return@launch
+            }
 
-        val mp = MediaPlayer()
-        val prepared = runCatching {
             feedbackManager.pauseBgmForVoiceMemo()
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            mp.setDataSource(file.absolutePath)
-            mp.prepare()
-            val actualDurSec = (mp.duration / 1000).coerceAtLeast(knownDurationSeconds.coerceAtLeast(1))
+            requestTransientAudioFocus()
+
+            val preparedPair = withContext(Dispatchers.IO) {
+                val mp = MediaPlayer()
+                runCatching {
+                    mp.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    mp.setDataSource(file.absolutePath)
+                    mp.prepare()
+                    val actualDurSec = (mp.duration / 1000).coerceAtLeast(knownDurationSeconds.coerceAtLeast(1))
+                    mp.setOnCompletionListener {
+                        scope.launch {
+                            completePlayback(itemId = itemId, naturalFinish = true)
+                        }
+                    }
+                    mp.setOnErrorListener { _, _, _ ->
+                        scope.launch {
+                            stopPlayback(emitFeedback = false)
+                            _playbackState.value = _playbackState.value.copy(
+                                errorMessage = "Could not play this voice memo."
+                            )
+                        }
+                        true
+                    }
+                    mp.start()
+                    mp to actualDurSec
+                }.getOrElse { err ->
+                    Log.w(TAG, "Failed playing audio memo: ${err.message}")
+                    runCatching { mp.release() }
+                    null
+                }
+            }
+
+            if (preparedPair == null) {
+                abandonTransientAudioFocus()
+                feedbackManager.resumeBgmAfterVoiceMemo()
+                _playbackState.value = _playbackState.value.copy(
+                    errorMessage = "Could not play voice memo on this device."
+                )
+                return@launch
+            }
+
+            val (mp, actualDurSec) = preparedPair
             playingItemTitle = itemTitle
             playingTaskCompleted = isTaskCompleted
             playingDurationSec = actualDurSec
-            mp.setOnCompletionListener {
-                scope.launch {
-                    completePlayback(itemId = itemId, naturalFinish = true)
-                }
-            }
-            mp.setOnErrorListener { _, _, _ ->
-                scope.launch {
-                    stopPlayback(emitFeedback = false)
-                    _playbackState.value = _playbackState.value.copy(
-                        errorMessage = "Could not play this voice memo."
-                    )
-                }
-                true
-            }
-            mp.start()
-            actualDurSec
-        }.getOrElse { err ->
-            Log.w(TAG, "Failed playing audio memo: ${err.message}")
-            runCatching { mp.release() }
-            feedbackManager.resumeBgmAfterVoiceMemo()
-            _playbackState.value = _playbackState.value.copy(
-                errorMessage = "Could not play voice memo on this device."
+            player = mp
+            _playbackState.value = TaskAudioPlaybackState(
+                playingItemId = itemId,
+                playbackPositionSeconds = 0,
+                playbackDurationSeconds = actualDurSec,
+                isListeningForTaskTitle = itemTitle,
+                errorMessage = null
             )
-            return
-        }
 
-        player = mp
-        _playbackState.value = TaskAudioPlaybackState(
-            playingItemId = itemId,
-            playbackPositionSeconds = 0,
-            playbackDurationSeconds = prepared,
-            isListeningForTaskTitle = itemTitle,
-            errorMessage = null
-        )
-
-        playbackTickerJob?.cancel()
-        playbackTickerJob = scope.launch {
-            while (isActive && _playbackState.value.playingItemId == itemId) {
-                delay(200L)
-                val currentPlayer = player ?: break
-                val posSec = runCatching { currentPlayer.currentPosition / 1000 }
-                    .getOrDefault(_playbackState.value.playbackPositionSeconds)
-                    .coerceIn(0, prepared)
-                if (_playbackState.value.playbackPositionSeconds != posSec) {
-                    _playbackState.value = _playbackState.value.copy(playbackPositionSeconds = posSec)
+            playbackTickerJob?.cancel()
+            playbackTickerJob = scope.launch {
+                while (isActive && _playbackState.value.playingItemId == itemId) {
+                    delay(200L)
+                    val currentPlayer = player ?: break
+                    val posSec = runCatching { currentPlayer.currentPosition / 1000 }
+                        .getOrDefault(_playbackState.value.playbackPositionSeconds)
+                        .coerceIn(0, actualDurSec)
+                    if (_playbackState.value.playbackPositionSeconds != posSec) {
+                        _playbackState.value = _playbackState.value.copy(playbackPositionSeconds = posSec)
+                    }
                 }
             }
         }
@@ -347,10 +448,16 @@ class TaskAudioMemoManager private constructor(context: Context) {
         playbackTickerJob = null
         val mp = player
         player = null
-        runCatching { mp?.stop() }
-        runCatching { mp?.release() }
-        feedbackManager.resumeBgmAfterVoiceMemo()
         _playbackState.value = TaskAudioPlaybackState()
+
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { mp?.stop() }
+                runCatching { mp?.release() }
+            }
+            abandonTransientAudioFocus()
+            feedbackManager.resumeBgmAfterVoiceMemo()
+        }
 
         if (naturalFinish || listenedSec >= 1) {
             _bunnyEvent.value = TaskAudioBunnyEvent(
@@ -367,6 +474,45 @@ class TaskAudioMemoManager private constructor(context: Context) {
     fun clearError() {
         if (_playbackState.value.errorMessage != null) {
             _playbackState.value = _playbackState.value.copy(errorMessage = null)
+        }
+    }
+
+    private fun requestTransientAudioFocus() {
+        val am = audioManager ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener(audioFocusListener)
+                    .build()
+                activeFocusRequest = req
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    audioFocusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                )
+            }
+        }
+    }
+
+    private fun abandonTransientAudioFocus() {
+        val am = audioManager ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                activeFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+                activeFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusListener)
+            }
         }
     }
 

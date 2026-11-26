@@ -3,6 +3,7 @@ package com.example.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import com.example.R
 import com.example.data.PlannerDateUtils
@@ -23,6 +24,8 @@ class CalendarAppWidgetProvider : AppWidgetProvider() {
             try {
                 val snapshot = WidgetDataLoader.load(context)
                 updateWidgets(context, appWidgetManager, appWidgetIds, snapshot)
+            } catch (e: Exception) {
+                Log.w(TAG, "Calendar widget update failed: ${e.message}")
             } finally {
                 pendingResult.finish()
             }
@@ -30,6 +33,8 @@ class CalendarAppWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "CalWidgetProvider"
+
         fun updateWidgets(
             context: Context,
             appWidgetManager: AppWidgetManager,
@@ -52,10 +57,10 @@ class CalendarAppWidgetProvider : AppWidgetProvider() {
             val calendarBitmap = WidgetBitmapRenderer.renderMonthCalendarBitmap(
                 today = today,
                 scheduledDates = snapshot.scheduledDatesInMonth,
-                habitBloomDates = snapshot.habitBloomDates
+                habitBloomDates = snapshot.habitBloomDates,
+                isDark = WidgetBitmapRenderer.isDarkMode(context)
             )
 
-            // Build concise Today highlight lines
             val highlights = buildList {
                 snapshot.todayEvents.forEach { ev ->
                     val time = PlannerDateUtils.formatEventTimeRange(ev.startAtUtcMillis, ev.endAtUtcMillis)

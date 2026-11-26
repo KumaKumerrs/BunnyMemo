@@ -35,7 +35,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="Today's Tasks"
-                android:textColor="#2B4360"
+                android:textColor="@color/widget_text_primary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -46,7 +46,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="Tap circle to check off"
-                android:textColor="#6B85A3"
+                android:textColor="@color/widget_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -59,27 +59,27 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="3dp"
             android:text="0/0"
-            android:textColor="#3B82DC"
+            android:textColor="@color/widget_text_accent"
             android:textSize="11sp"
             android:textStyle="bold" />
 
         <ImageView
             android:id="@+id/widget_tasks_quick_note_btn"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:layout_marginEnd="6dp"
             android:background="@drawable/widget_pill_pollen"
             android:contentDescription="@string/action_quick_note"
-            android:padding="6dp"
+            android:padding="11dp"
             android:src="@drawable/ic_widget_quick_note" />
 
         <ImageView
             android:id="@+id/widget_tasks_add_btn"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="@drawable/widget_pill_deep_blue"
             android:contentDescription="@string/widget_cd_add_task"
-            android:padding="6dp"
+            android:padding="11dp"
             android:src="@drawable/ic_widget_add" />
     </LinearLayout>
 
@@ -105,10 +105,10 @@
 
             <ImageView
                 android:id="@+id/widget_task_check_0"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:contentDescription="@string/widget_cd_toggle_task"
-                android:padding="4dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_widget_check_unchecked" />
 
             <LinearLayout
@@ -126,7 +126,7 @@
                     android:ellipsize="end"
                     android:maxLines="1"
                     android:text="Review study notes"
-                    android:textColor="#2B4360"
+                    android:textColor="@color/widget_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -137,7 +137,7 @@
                     android:ellipsize="end"
                     android:maxLines="1"
                     android:text="Today · 5:00 PM"
-                    android:textColor="#6B85A3"
+                    android:textColor="@color/widget_text_secondary"
                     android:textSize="10sp" />
             </LinearLayout>
         </LinearLayout>
@@ -154,10 +154,10 @@
 
             <ImageView
                 android:id="@+id/widget_task_check_1"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:contentDescription="@string/widget_cd_toggle_task"
-                android:padding="4dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_widget_check_unchecked" />
 
             <LinearLayout
@@ -174,7 +174,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#2B4360"
+                    android:textColor="@color/widget_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -184,7 +184,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#6B85A3"
+                    android:textColor="@color/widget_text_secondary"
                     android:textSize="10sp" />
             </LinearLayout>
         </LinearLayout>
@@ -201,10 +201,10 @@
 
             <ImageView
                 android:id="@+id/widget_task_check_2"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:contentDescription="@string/widget_cd_toggle_task"
-                android:padding="4dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_widget_check_unchecked" />
 
             <LinearLayout
@@ -221,7 +221,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#2B4360"
+                    android:textColor="@color/widget_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -231,7 +231,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#6B85A3"
+                    android:textColor="@color/widget_text_secondary"
                     android:textSize="10sp" />
             </LinearLayout>
         </LinearLayout>
@@ -248,10 +248,10 @@
 
             <ImageView
                 android:id="@+id/widget_task_check_3"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:contentDescription="@string/widget_cd_toggle_task"
-                android:padding="4dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_widget_check_unchecked" />
 
             <LinearLayout
@@ -268,7 +268,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#2B4360"
+                    android:textColor="@color/widget_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -278,7 +278,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#6B85A3"
+                    android:textColor="@color/widget_text_secondary"
                     android:textSize="10sp" />
             </LinearLayout>
         </LinearLayout>
@@ -295,10 +295,10 @@
 
             <ImageView
                 android:id="@+id/widget_task_check_4"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:contentDescription="@string/widget_cd_toggle_task"
-                android:padding="4dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_widget_check_unchecked" />
 
             <LinearLayout
@@ -315,7 +315,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#2B4360"
+                    android:textColor="@color/widget_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -325,7 +325,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="#6B85A3"
+                    android:textColor="@color/widget_text_secondary"
                     android:textSize="10sp" />
             </LinearLayout>
         </LinearLayout>
@@ -347,7 +347,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="All clear for today"
-            android:textColor="#2B4360"
+            android:textColor="@color/widget_text_primary"
             android:textSize="13sp"
             android:textStyle="bold" />
 
@@ -357,7 +357,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
             android:text="Tap + to add a task or capture a Quick Note."
-            android:textColor="#6B85A3"
+            android:textColor="@color/widget_text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
 
@@ -367,7 +367,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:gravity="end"
-        android:textColor="#3B82DC"
+        android:textColor="@color/widget_text_accent"
         android:textSize="11sp"
         android:textStyle="bold"
         android:visibility="gone" />

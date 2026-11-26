@@ -34,12 +34,14 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -138,9 +141,10 @@ fun ItemDetailScreen(
         BackHandler(onBack = onBack)
     }
 
-    val progress = state.progressFor(item)
-    val steps = state.stepsFor(item)
-    val reminders = state.remindersFor(item.id)
+    val todayDate = state.todayDate()
+    val progress = remember(item, state.steps, state.items, todayDate) { state.progressFor(item) }
+    val steps = remember(item, state.steps, state.items) { state.stepsFor(item) }
+    val reminders = remember(item.id, state.reminders) { state.remindersFor(item.id) }
     val nowMillis = state.nowMillis
 
     var showAddStepField by remember(item.id) { mutableStateOf(false) }
@@ -148,6 +152,8 @@ fun ItemDetailScreen(
     var newStepDueDate by remember(item.id) { mutableStateOf<CalendarDate?>(null) }
     var showStepDatePicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var stepPendingDelete by remember { mutableStateOf<UnifiedStep?>(null) }
+    var reminderPendingDelete by remember { mutableStateOf<PlannerReminder?>(null) }
     var lightboxPhotoPath by remember { mutableStateOf<String?>(null) }
 
     val supportsChecklist = item.itemType() == ItemType.PLAN || item.itemType() == ItemType.EVENT
@@ -164,14 +170,17 @@ fun ItemDetailScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header action bar
+            // Header action bar — clean on 360dp widths (category & priority badges live inside the hero card FlowRow)
             item(key = "detail_top_bar") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         if (showBackButton) {
                             IconButton(
                                 onClick = onBack,
@@ -189,12 +198,6 @@ fun ItemDetailScreen(
                             containerColor = SoftIceSurface,
                             contentColor = MidnightNavy
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        TaskCategoryBadge(category = item.taskCategory())
-                        if (item.itemType() == ItemType.TASK) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            TaskPriorityBadge(priority = item.taskPriority())
-                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         IconButton(
@@ -314,6 +317,16 @@ fun ItemDetailScreen(
                         color = MidnightNavy
                     )
 
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TaskCategoryBadge(category = item.taskCategory())
+                        if (item.itemType() == ItemType.TASK) {
+                            TaskPriorityBadge(priority = item.taskPriority())
+                        }
+                    }
+
                     // Timing details
                     when (item.itemType()) {
                         ItemType.EVENT -> {
@@ -418,7 +431,8 @@ fun ItemDetailScreen(
                                             append(" · ${PlannerDateUtils.formatTimeOfDay(it)}")
                                         }
                                     },
-                                    style = MaterialTheme.typography.bodyMedium
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MidnightNavy
                                 )
                             }
                             if (parentTitle != null) {
@@ -444,18 +458,19 @@ fun ItemDetailScreen(
                                 },
                                 tagPrefix = "detail_priority"
                             )
-                            TaskCategorySelector(
-                                selected = item.taskCategory(),
-                                onSelect = { newCategory ->
-                                    if (newCategory != item.taskCategory()) {
-                                        feedback.onLightTick()
-                                        onUpdateCategory(item, newCategory)
-                                    }
-                                },
-                                tagPrefix = "detail_category"
-                            )
                         }
                     }
+
+                    TaskCategorySelector(
+                        selected = item.taskCategory(),
+                        onSelect = { newCategory ->
+                            if (newCategory != item.taskCategory()) {
+                                feedback.onLightTick()
+                                onUpdateCategory(item, newCategory)
+                            }
+                        },
+                        tagPrefix = "detail_category"
+                    )
 
                     if (!item.notes.isNullOrBlank()) {
                         TonalInsetPanel(
@@ -487,7 +502,7 @@ fun ItemDetailScreen(
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (item.completed) CalmSage else DeepBlue,
-                                    contentColor = PureWhite
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 shape = RoundedCornerShape(100.dp),
                                 modifier = Modifier
@@ -620,7 +635,7 @@ fun ItemDetailScreen(
                                 onClick = { showAddStepField = true },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = DeepBlue,
-                                    contentColor = PureWhite
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.testTag("add_first_step_button")
@@ -633,6 +648,15 @@ fun ItemDetailScreen(
 
                         // Inline step composer
                         if (showAddStepField || progress.totalCount > 0) {
+                            val submitInlineStep = {
+                                val clean = newStepTitle.trim()
+                                if (clean.isNotEmpty()) {
+                                    feedback.onSaveSuccess()
+                                    onAddStep(item.id, clean, newStepDueDate?.toIsoString())
+                                    newStepTitle = ""
+                                    newStepDueDate = null
+                                }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -643,6 +667,8 @@ fun ItemDetailScreen(
                                     onValueChange = { newStepTitle = it.take(200) },
                                     placeholder = { Text("Add a step...") },
                                     singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { submitInlineStep() }),
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("detail_new_step_input")
@@ -655,17 +681,11 @@ fun ItemDetailScreen(
                                     )
                                 }
                                 Button(
-                                    onClick = {
-                                        val clean = newStepTitle.trim()
-                                        if (clean.isNotEmpty()) {
-                                            onAddStep(item.id, clean, newStepDueDate?.toIsoString())
-                                            newStepTitle = ""
-                                            newStepDueDate = null
-                                        }
-                                    },
+                                    onClick = submitInlineStep,
+                                    enabled = newStepTitle.isNotBlank(),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = DeepBlue,
-                                        contentColor = PureWhite
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
                                     ),
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                                     modifier = Modifier.testTag("detail_add_step_submit")
@@ -715,7 +735,7 @@ fun ItemDetailScreen(
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = DeepBlue,
                                     uncheckedColor = ForgetMeNotBlue,
-                                    checkmarkColor = PureWhite
+                                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 modifier = Modifier.testTag("detail_step_checkbox_${step.id}")
                             )
@@ -733,7 +753,10 @@ fun ItemDetailScreen(
                                     ),
                                     color = if (step.completed) MaterialTheme.colorScheme.onSurfaceVariant else MidnightNavy
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
                                     step.dueDate?.let { raw ->
                                         CalendarDate.parse(raw)?.let { parsed ->
                                             Text(
@@ -767,8 +790,8 @@ fun ItemDetailScreen(
                                 }
                             }
                             IconButton(onClick = {
-                                feedback.onDeleteAction()
-                                onDeleteStep(step)
+                                feedback.onLightTick()
+                                stepPendingDelete = step
                             }) {
                                 Icon(
                                     imageVector = Icons.Outlined.DeleteOutline,
@@ -780,27 +803,32 @@ fun ItemDetailScreen(
                         }
 
                         if (!step.isLinkedTask) {
-                            Row(
+                            FlowRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 48.dp, end = 8.dp, bottom = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Timer,
-                                    contentDescription = null,
-                                    tint = MutedNavy,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = if (step.timeSpentMinutes > 0) "Time logged:" else "Log effort:",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MutedNavy
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Timer,
+                                        contentDescription = null,
+                                        tint = MutedNavy,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = if (step.timeSpentMinutes > 0) "Time logged:" else "Log effort:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MutedNavy
+                                    )
+                                }
                                 listOf(15, 30).forEach { mins ->
-                                    FilterChip(
-                                        selected = false,
+                                    AssistChip(
                                         onClick = {
                                             feedback.onSaveSuccess()
                                             onLogStepTime(step, mins)
@@ -877,7 +905,10 @@ fun ItemDetailScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    IconButton(onClick = { onDeleteReminder(rem) }) {
+                                    IconButton(onClick = {
+                                        feedback.onLightTick()
+                                        reminderPendingDelete = rem
+                                    }) {
                                         Icon(
                                             imageVector = Icons.Outlined.DeleteOutline,
                                             contentDescription = "Remove reminder",
@@ -899,20 +930,26 @@ fun ItemDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        FilterChip(
-                            selected = false,
-                            onClick = { onAddReminder(item, ReminderKind.ORDINARY, 60) },
+                        AssistChip(
+                            onClick = {
+                                feedback.onSaveSuccess()
+                                onAddReminder(item, ReminderKind.ORDINARY, 60)
+                            },
                             label = { Text("+ 1h before") }
                         )
-                        FilterChip(
-                            selected = false,
-                            onClick = { onAddReminder(item, ReminderKind.ORDINARY, 1440) },
+                        AssistChip(
+                            onClick = {
+                                feedback.onSaveSuccess()
+                                onAddReminder(item, ReminderKind.ORDINARY, 1440)
+                            },
                             label = { Text("+ 1 day before") }
                         )
                         if (supportsChecklist) {
-                            FilterChip(
-                                selected = false,
-                                onClick = { onAddReminder(item, ReminderKind.PROGRESS_CHECKIN, 1440) },
+                            AssistChip(
+                                onClick = {
+                                    feedback.onSaveSuccess()
+                                    onAddReminder(item, ReminderKind.PROGRESS_CHECKIN, 1440)
+                                },
                                 label = { Text("+ Progress check-in (1d)") }
                             )
                         }
@@ -949,6 +986,38 @@ fun ItemDetailScreen(
                 onDeleteItem(item)
             },
             onDismiss = { showDeleteConfirm = false }
+        )
+    }
+
+    stepPendingDelete?.let { stepToRemove ->
+        BunnyMemoConfirmModal(
+            title = "Remove step?",
+            message = "Remove “${stepToRemove.title}” from this checklist?",
+            confirmLabel = "Remove",
+            cancelLabel = "Keep it",
+            isDestructive = true,
+            onConfirm = {
+                feedback.onDeleteAction()
+                onDeleteStep(stepToRemove)
+                stepPendingDelete = null
+            },
+            onDismiss = { stepPendingDelete = null }
+        )
+    }
+
+    reminderPendingDelete?.let { reminderToRemove ->
+        BunnyMemoConfirmModal(
+            title = "Remove reminder?",
+            message = "Cancel the ${reminderToRemove.reminderKind().label.lowercase()} reminder scheduled for ${PlannerDateUtils.formatUtcMillisDateTime(reminderToRemove.effectiveTriggerMillis())}?",
+            confirmLabel = "Remove",
+            cancelLabel = "Keep it",
+            isDestructive = true,
+            onConfirm = {
+                feedback.onDeleteAction()
+                onDeleteReminder(reminderToRemove)
+                reminderPendingDelete = null
+            },
+            onDismiss = { reminderPendingDelete = null }
         )
     }
 

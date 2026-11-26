@@ -494,7 +494,7 @@ private fun HabitCalendarDayCell(
         append(PlannerDateUtils.formatShortDate(date))
         when {
             bloomed -> append(", ${status?.completedTasks ?: 1} daily task completed, marked with forget-me-not")
-            pendingOnly -> append(", ${status?.totalTasks ?: 1} daily task scheduled")
+            pendingOnly -> append(", ${status.totalTasks} daily task scheduled")
             else -> append(", no daily tasks")
         }
     }

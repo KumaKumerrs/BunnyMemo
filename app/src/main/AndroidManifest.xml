@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -61,6 +63,22 @@
             android:name=".notifications.ReminderBroadcastReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".notifications.BootAndTimeChangeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Internal non-exported receiver for sensitive widget actions (task toggle & bunny interactions) -->
+        <receiver
+            android:name=".widgets.WidgetActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".focus.DoomscrollGuardService"
             android:exported="false"
@@ -70,7 +88,7 @@
                 android:value="User-activated anti-doomscroll focus monitor displaying a growing bunny overlay over chosen social media apps" />
         </service>
 
-        <!-- Bunny Memo Home Screen Widgets -->
+        <!-- Bunny Memo Home Screen Widgets (only standard APPWIDGET_UPDATE exported) -->
         <receiver
             android:name=".widgets.CalendarAppWidgetProvider"
             android:exported="true"
@@ -113,7 +131,6 @@
             android:label="@string/widget_tasks_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.widgets.ACTION_TOGGLE_TASK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -138,11 +155,6 @@
             android:label="@string/widget_bunny_family_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.widgets.ACTION_BUNNY_PAT" />
-                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_LEFT" />
-                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_RIGHT" />
-                <action android:name="com.example.widgets.ACTION_BUNNY_PINCH_BOTH" />
-                <action android:name="com.example.widgets.ACTION_BUNNY_TALK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

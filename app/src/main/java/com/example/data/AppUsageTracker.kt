@@ -32,16 +32,16 @@ data class AppUsageSummary(
 
 /**
  * Lifecycle-aware foreground usage tracker for Bunny Memo.
- * Records real active time spent inside the app per calendar day into SharedPreferences
- * with zero special permissions required.
+ * Loads SharedPreferences asynchronously off the Main thread, prunes stale daily keys older
+ * than 365 days, and supports clean reset on sign-out.
  */
 class AppUsageTracker private constructor(context: Context) {
 
-    private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val appContext = context.applicationContext
+    private val prefs: SharedPreferences by lazy {
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val lock = Any()
     private var isForeground = false
@@ -56,8 +56,19 @@ class AppUsageTracker private constructor(context: Context) {
     private var cachedAllTimeStoredSeconds: Long = 0L
     private var tickerJob: Job? = null
 
-    private val _usageSummary = MutableStateFlow(buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L))
+    private val _usageSummary = MutableStateFlow(AppUsageSummary())
     val usageSummary: StateFlow<AppUsageSummary> = _usageSummary.asStateFlow()
+
+    init {
+        scope.launch {
+            val today = CalendarDate.today()
+            synchronized(lock) {
+                pruneOldKeysLocked(today)
+                refreshCacheFromPrefsLocked(today)
+                _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
+            }
+        }
+    }
 
     fun onForegroundResume() {
         val nowElapsed = SystemClock.elapsedRealtime()
@@ -67,24 +78,54 @@ class AppUsageTracker private constructor(context: Context) {
             sessionStartElapsedMs = nowElapsed
             lastFlushedElapsedMs = nowElapsed
             activeDateIso = CalendarDate.today().toIsoString()
-            refreshCacheFromPrefsLocked(CalendarDate.today())
-            _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
+        }
+        scope.launch {
+            val today = CalendarDate.today()
+            synchronized(lock) {
+                refreshCacheFromPrefsLocked(today)
+                val sessionSec = if (isForeground) {
+                    ((SystemClock.elapsedRealtime() - sessionStartElapsedMs) / 1_000L).coerceAtLeast(0L)
+                } else 0L
+                _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = sessionSec)
+            }
         }
         startTicker()
     }
 
     fun onForegroundPause() {
         val nowElapsed = SystemClock.elapsedRealtime()
-        synchronized(lock) {
-            if (!isForeground) return
-            flushLocked(nowElapsed)
-            isForeground = false
-            sessionStartElapsedMs = 0L
-            lastFlushedElapsedMs = 0L
-            _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
-        }
         tickerJob?.cancel()
         tickerJob = null
+        synchronized(lock) {
+            if (!isForeground) return
+            isForeground = false
+            val flushAnchor = lastFlushedElapsedMs
+            val dateToFlush = activeDateIso
+            sessionStartElapsedMs = 0L
+            lastFlushedElapsedMs = 0L
+            scope.launch {
+                synchronized(lock) {
+                    val deltaSec = ((nowElapsed - flushAnchor) / 1_000L).coerceAtLeast(0L)
+                    if (deltaSec > 0L) {
+                        persistDeltaLocked(dateToFlush, deltaSec)
+                    }
+                    _usageSummary.value = buildSnapshotLocked(unflushedSeconds = 0L, sessionSeconds = 0L)
+                }
+            }
+        }
+    }
+
+    fun resetAllUsage() {
+        synchronized(lock) {
+            prefs.edit().clear().apply()
+            cachedHistoryDateIso = ""
+            cachedPastSixDays = emptyList()
+            cachedPastSixTotalSeconds = 0L
+            cachedPastSixActiveDays = 0
+            cachedTodayStoredSeconds = 0L
+            cachedAllTimeStoredSeconds = 0L
+            _usageSummary.value = AppUsageSummary()
+        }
     }
 
     private fun startTicker() {
@@ -99,11 +140,11 @@ class AppUsageTracker private constructor(context: Context) {
                 synchronized(lock) {
                     if (!isForeground) return@launch
                     tickCount++
-                    // Flush on midnight boundary or every 10 seconds (2 ticks) to stay crash-safe
                     if (todayIso != activeDateIso || tickCount % 2 == 0) {
                         flushLocked(nowElapsed)
                         if (todayIso != activeDateIso) {
                             activeDateIso = todayIso
+                            pruneOldKeysLocked(today)
                             refreshCacheFromPrefsLocked(today)
                         }
                     }
@@ -121,7 +162,12 @@ class AppUsageTracker private constructor(context: Context) {
     private fun flushLocked(nowElapsed: Long) {
         val deltaSec = ((nowElapsed - lastFlushedElapsedMs) / 1_000L).coerceAtLeast(0L)
         if (deltaSec <= 0L) return
-        val dayKey = dayPrefKey(activeDateIso)
+        persistDeltaLocked(activeDateIso, deltaSec)
+        lastFlushedElapsedMs += deltaSec * 1_000L
+    }
+
+    private fun persistDeltaLocked(dateIso: String, deltaSec: Long) {
+        val dayKey = dayPrefKey(dateIso)
         val prevDay = prefs.getLong(dayKey, 0L)
         val prevTotal = prefs.getLong(KEY_ALL_TIME_SECONDS, 0L)
         val updatedDay = prevDay + deltaSec
@@ -130,11 +176,24 @@ class AppUsageTracker private constructor(context: Context) {
             .putLong(dayKey, updatedDay)
             .putLong(KEY_ALL_TIME_SECONDS, updatedAllTime)
             .apply()
-        if (activeDateIso == cachedHistoryDateIso) {
+        if (dateIso == cachedHistoryDateIso) {
             cachedTodayStoredSeconds = updatedDay
         }
         cachedAllTimeStoredSeconds = updatedAllTime
-        lastFlushedElapsedMs += deltaSec * 1_000L
+    }
+
+    private fun pruneOldKeysLocked(today: CalendarDate) {
+        val cutoff = today.plusDays(-RETENTION_DAYS)
+        val staleKeys = prefs.all.keys.filter { key ->
+            if (!key.startsWith("day_")) return@filter false
+            val parsed = CalendarDate.parse(key.removePrefix("day_")) ?: return@filter true
+            parsed < cutoff
+        }
+        if (staleKeys.isNotEmpty()) {
+            val editor = prefs.edit()
+            staleKeys.forEach { editor.remove(it) }
+            editor.apply()
+        }
     }
 
     private fun refreshCacheFromPrefsLocked(today: CalendarDate) {
@@ -205,6 +264,7 @@ class AppUsageTracker private constructor(context: Context) {
     companion object {
         private const val PREFS_NAME = "bunny_memo_app_usage_v1"
         private const val KEY_ALL_TIME_SECONDS = "all_time_seconds"
+        private const val RETENTION_DAYS = 365
 
         @Volatile
         private var instance: AppUsageTracker? = null

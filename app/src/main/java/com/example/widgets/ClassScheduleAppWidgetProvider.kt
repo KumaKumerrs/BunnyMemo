@@ -3,9 +3,10 @@ package com.example.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
-import android.graphics.Color
+import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.ClassColorKey
 import com.example.data.PlannerDateUtils
@@ -26,6 +27,8 @@ class ClassScheduleAppWidgetProvider : AppWidgetProvider() {
             try {
                 val snapshot = WidgetDataLoader.load(context)
                 updateWidgets(context, appWidgetManager, appWidgetIds, snapshot)
+            } catch (e: Exception) {
+                Log.w(TAG, "Class schedule widget update failed: ${e.message}")
             } finally {
                 pendingResult.finish()
             }
@@ -33,6 +36,8 @@ class ClassScheduleAppWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "ClassWidgetProvider"
+
         private val ROW_IDS = intArrayOf(
             R.id.widget_cls_row_0,
             R.id.widget_cls_row_1,
@@ -80,6 +85,9 @@ class ClassScheduleAppWidgetProvider : AppWidgetProvider() {
             val nowMin = snapshot.currentMinutesOfDay
             val classesToday = snapshot.todayClasses
 
+            val onAccentColor = ContextCompat.getColor(context, R.color.widget_text_on_accent)
+            val sageTextColor = ContextCompat.getColor(context, R.color.widget_text_sage)
+
             val openClassesIntent = WidgetIntents.openMainActivityPendingIntent(
                 context = context,
                 requestCode = 1201,
@@ -92,7 +100,6 @@ class ClassScheduleAppWidgetProvider : AppWidgetProvider() {
                 openAction = WidgetIntents.ACTION_OPEN_ADD_CLASS
             )
 
-            // Identify active (NOW) or soonest upcoming (NEXT) class index
             val nowIdx = classesToday.indexOfFirst { nowMin in it.startTimeMinutes until it.endTimeMinutes }
             val nextIdx = if (nowIdx < 0) {
                 classesToday.indexOfFirst { it.startTimeMinutes >= nowMin }
@@ -162,13 +169,13 @@ class ClassScheduleAppWidgetProvider : AppWidgetProvider() {
                                         setViewVisibility(TAG_IDS[i], View.VISIBLE)
                                         setTextViewText(TAG_IDS[i], "NOW")
                                         setInt(TAG_IDS[i], "setBackgroundResource", R.drawable.widget_pill_deep_blue)
-                                        setTextColor(TAG_IDS[i], Color.parseColor("#FCFEFF"))
+                                        setTextColor(TAG_IDS[i], onAccentColor)
                                     }
                                     nextIdx -> {
                                         setViewVisibility(TAG_IDS[i], View.VISIBLE)
                                         setTextViewText(TAG_IDS[i], "NEXT")
                                         setInt(TAG_IDS[i], "setBackgroundResource", R.drawable.widget_pill_sage)
-                                        setTextColor(TAG_IDS[i], Color.parseColor("#35917A"))
+                                        setTextColor(TAG_IDS[i], sageTextColor)
                                     }
                                     else -> {
                                         setViewVisibility(TAG_IDS[i], View.GONE)

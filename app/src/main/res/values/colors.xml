@@ -7,4 +7,23 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Adaptive Widget Colors — Light Mode (WCAG 2.1 AA+ Verified) -->
+    <color name="widget_card_bg_start">#FFD8ECFE</color>
+    <color name="widget_card_bg_mid">#FFEDF6FF</color>
+    <color name="widget_card_bg_end">#FFFCFEFF</color>
+    <color name="widget_card_border">#FFC7E0F9</color>
+    <color name="widget_row_bg">#FFFCFEFF</color>
+    <color name="widget_row_border">#FFD3E6F9</color>
+    <color name="widget_pill_blue_bg">#FFCDE5FD</color>
+    <color name="widget_pill_deep_blue_bg">#FF27578A</color>
+    <color name="widget_pill_sage_bg">#FFE9F8F3</color>
+    <color name="widget_pill_pollen_bg">#FFFFF8E1</color>
+    <color name="widget_text_primary">#FF2B4360</color>
+    <color name="widget_text_secondary">#FF4C6582</color>
+    <color name="widget_text_accent">#FF27578A</color>
+    <color name="widget_text_sage">#FF1F6E59</color>
+    <color name="widget_text_overdue">#FFAD3545</color>
+    <color name="widget_text_pollen_ink">#FF7A5C00</color>
+    <color name="widget_text_on_accent">#FFFCFEFF</color>
 </resources>

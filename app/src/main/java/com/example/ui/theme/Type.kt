@@ -9,90 +9,84 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 
 val NunitoFontFamily = FontFamily(
-    Font(R.font.nunito, FontWeight.Normal),
-    Font(R.font.nunito, FontWeight.Medium),
-    Font(R.font.nunito, FontWeight.SemiBold),
-    Font(R.font.nunito, FontWeight.Bold)
+    Font(R.font.nunito_regular, FontWeight.Normal),
+    Font(R.font.nunito_regular, FontWeight.Medium),
+    Font(R.font.nunito_semibold, FontWeight.SemiBold),
+    Font(R.font.nunito_bold, FontWeight.Bold)
 )
 
 val InterFontFamily = FontFamily(
-    Font(R.font.inter, FontWeight.Normal),
-    Font(R.font.inter, FontWeight.Medium),
-    Font(R.font.inter, FontWeight.SemiBold),
-    Font(R.font.inter, FontWeight.Bold)
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold)
 )
 
+/**
+ * Theme-adaptive Typography with ZERO hardcoded colors so every Text composable
+ * automatically inherits MaterialTheme's LocalContentColor across Light & Dark mode.
+ */
 val Typography = Typography(
     displaySmall = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 32.sp,
         lineHeight = 40.sp,
-        letterSpacing = (-0.25).sp,
-        color = MidnightNavy
+        letterSpacing = (-0.25).sp
     ),
     headlineLarge = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
-        lineHeight = 36.sp,
-        color = MidnightNavy
+        lineHeight = 36.sp
     ),
     headlineMedium = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
-        lineHeight = 32.sp,
-        color = MidnightNavy
+        lineHeight = 32.sp
     ),
     headlineSmall = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
-        lineHeight = 28.sp,
-        color = MidnightNavy
+        lineHeight = 28.sp
     ),
     titleLarge = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
-        lineHeight = 24.sp,
-        color = MidnightNavy
+        lineHeight = 24.sp
     ),
     titleMedium = TextStyle(
         fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
-        lineHeight = 22.sp,
-        color = MidnightNavy
+        lineHeight = 22.sp
     ),
     titleSmall = TextStyle(
         fontFamily = InterFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
-        lineHeight = 20.sp,
-        color = MidnightNavy
+        lineHeight = 20.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = InterFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
-        lineHeight = 22.sp,
-        color = MidnightNavy
+        lineHeight = 22.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = InterFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
-        lineHeight = 20.sp,
-        color = MidnightNavy
+        lineHeight = 20.sp
     ),
     bodySmall = TextStyle(
         fontFamily = InterFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
-        lineHeight = 16.sp,
-        color = MutedNavy
+        lineHeight = 16.sp
     ),
     labelLarge = TextStyle(
         fontFamily = InterFontFamily,

@@ -115,26 +115,28 @@ fun ItemEditorDialog(
     val context = LocalContext.current
     val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val isEditing = existingItem != null
-    var selectedType by remember { mutableStateOf(existingItem?.itemType() ?: ItemType.TASK) }
-    var selectedPriority by remember(existingItem?.id) {
+    val formKey = existingItem?.id
+    var selectedType by remember(formKey) { mutableStateOf(existingItem?.itemType() ?: ItemType.TASK) }
+    var selectedPriority by remember(formKey) {
         mutableStateOf(existingItem?.taskPriority() ?: TaskPriority.MEDIUM)
     }
-    var selectedCategory by remember(existingItem?.id) {
+    var selectedCategory by remember(formKey) {
         mutableStateOf(existingItem?.taskCategory() ?: TaskCategory.PERSONAL)
     }
-    var title by remember { mutableStateOf(existingItem?.title ?: "") }
-    var notes by remember { mutableStateOf(existingItem?.notes ?: "") }
-    var titleError by remember { mutableStateOf<String?>(null) }
+    var title by remember(formKey) { mutableStateOf(existingItem?.title ?: "") }
+    var notes by remember(formKey) { mutableStateOf(existingItem?.notes ?: "") }
+    var titleError by remember(formKey) { mutableStateOf<String?>(null) }
+    var dateTimeError by remember(formKey) { mutableStateOf<String?>(null) }
 
     // Date states
-    var startDate by remember {
+    var startDate by remember(formKey, prefillDate) {
         mutableStateOf(
             CalendarDate.parse(existingItem?.startDate)
                 ?: existingItem?.startAtUtcMillis?.let { CalendarDate.fromUtcMillis(it) }
                 ?: prefillDate
         )
     }
-    var dueDate by remember {
+    var dueDate by remember(formKey, prefillDate) {
         mutableStateOf(
             CalendarDate.parse(existingItem?.dueDate)
                 ?: existingItem?.startAtUtcMillis?.let { CalendarDate.fromUtcMillis(it) }
@@ -143,11 +145,11 @@ fun ItemEditorDialog(
     }
 
     // Time states
-    var hasDueTime by remember { mutableStateOf(existingItem?.dueTimeMinutes != null) }
-    var dueHour by remember { mutableIntStateOf((existingItem?.dueTimeMinutes ?: (17 * 60)) / 60) }
-    var dueMinute by remember { mutableIntStateOf((existingItem?.dueTimeMinutes ?: (17 * 60)) % 60) }
+    var hasDueTime by remember(formKey) { mutableStateOf(existingItem?.dueTimeMinutes != null) }
+    var dueHour by remember(formKey) { mutableIntStateOf((existingItem?.dueTimeMinutes ?: (17 * 60)) / 60) }
+    var dueMinute by remember(formKey) { mutableIntStateOf((existingItem?.dueTimeMinutes ?: (17 * 60)) % 60) }
 
-    val initialEventStartCal = remember(existingItem) {
+    val initialEventStartCal = remember(formKey) {
         Calendar.getInstance(TimeZone.getDefault()).apply {
             if (existingItem?.startAtUtcMillis != null) {
                 timeInMillis = existingItem.startAtUtcMillis
@@ -157,7 +159,7 @@ fun ItemEditorDialog(
             }
         }
     }
-    val initialEventEndCal = remember(existingItem) {
+    val initialEventEndCal = remember(formKey) {
         Calendar.getInstance(TimeZone.getDefault()).apply {
             if (existingItem?.endAtUtcMillis != null) {
                 timeInMillis = existingItem.endAtUtcMillis
@@ -167,28 +169,28 @@ fun ItemEditorDialog(
             }
         }
     }
-    var eventStartHour by remember { mutableIntStateOf(initialEventStartCal.get(Calendar.HOUR_OF_DAY)) }
-    var eventStartMinute by remember { mutableIntStateOf(initialEventStartCal.get(Calendar.MINUTE)) }
-    var eventEndHour by remember { mutableIntStateOf(initialEventEndCal.get(Calendar.HOUR_OF_DAY)) }
-    var eventEndMinute by remember { mutableIntStateOf(initialEventEndCal.get(Calendar.MINUTE)) }
+    var eventStartHour by remember(formKey) { mutableIntStateOf(initialEventStartCal.get(Calendar.HOUR_OF_DAY)) }
+    var eventStartMinute by remember(formKey) { mutableIntStateOf(initialEventStartCal.get(Calendar.MINUTE)) }
+    var eventEndHour by remember(formKey) { mutableIntStateOf(initialEventEndCal.get(Calendar.HOUR_OF_DAY)) }
+    var eventEndMinute by remember(formKey) { mutableIntStateOf(initialEventEndCal.get(Calendar.MINUTE)) }
 
     // Linked parent plan for Task
-    var parentPlanId by remember { mutableStateOf(existingItem?.parentPlanId) }
+    var parentPlanId by remember(formKey) { mutableStateOf(existingItem?.parentPlanId) }
 
     // Inline steps when creating a new Plan or Event
-    val draftSteps = remember { mutableStateListOf<StepDraft>() }
-    var newStepTitle by remember { mutableStateOf("") }
-    var newStepDueDate by remember { mutableStateOf<CalendarDate?>(null) }
+    val draftSteps = remember(formKey) { mutableStateListOf<StepDraft>() }
+    var newStepTitle by remember(formKey) { mutableStateOf("") }
+    var newStepDueDate by remember(formKey) { mutableStateOf<CalendarDate?>(null) }
 
     // Attached pictures for Tasks, Plans, and Events
-    val draftImagePaths = remember(existingItem?.id) {
+    val draftImagePaths = remember(formKey) {
         mutableStateListOf<String>().apply {
             existingItem?.imagePaths?.let { addAll(it) }
         }
     }
 
     // Reminder drafts
-    val draftReminders = remember {
+    val draftReminders = remember(formKey) {
         mutableStateListOf<ReminderDraft>().apply {
             if (existingItem != null) {
                 existingReminders.forEach {
@@ -213,12 +215,12 @@ fun ItemEditorDialog(
             }
         }
     }
-    var reminderLocalHour by remember {
+    var reminderLocalHour by remember(formKey) {
         mutableIntStateOf(
             existingReminders.firstOrNull()?.localHour ?: defaultReminderHour
         )
     }
-    var reminderLocalMinute by remember {
+    var reminderLocalMinute by remember(formKey) {
         mutableIntStateOf(
             existingReminders.firstOrNull()?.localMinute ?: defaultReminderMinute
         )
@@ -247,6 +249,7 @@ fun ItemEditorDialog(
                         selected = selectedType,
                         onSelect = { itemType ->
                             selectedType = itemType
+                            dateTimeError = null
                             if (!isEditing && itemType == ItemType.PLAN && dueDate == startDate) {
                                 dueDate = startDate.plusDays(3)
                             }
@@ -307,7 +310,13 @@ fun ItemEditorDialog(
                             ) {
                                 FilterChip(
                                     selected = hasDueTime,
-                                    onClick = { hasDueTime = !hasDueTime },
+                                    onClick = {
+                                        if (hasDueTime) {
+                                            hasDueTime = false
+                                        } else {
+                                            activeTimeTarget = "dueTime"
+                                        }
+                                    },
                                     label = { Text(if (hasDueTime) "Deadline time: ${PlannerDateUtils.formatTimeOfDay(dueHour * 60 + dueMinute)}" else "Add deadline time") }
                                 )
                                 if (hasDueTime) {
@@ -334,12 +343,17 @@ fun ItemEditorDialog(
                                     label = "Due time",
                                     value = if (hasDueTime) PlannerDateUtils.formatTimeOfDay(dueHour * 60 + dueMinute) else "Anytime",
                                     icon = Icons.Outlined.Schedule,
-                                    onClick = {
-                                        hasDueTime = true
-                                        activeTimeTarget = "dueTime"
-                                    },
+                                    onClick = { activeTimeTarget = "dueTime" },
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+                            if (hasDueTime) {
+                                TextButton(
+                                    onClick = { hasDueTime = false },
+                                    modifier = Modifier.testTag("editor_clear_due_time_button")
+                                ) {
+                                    Text("Clear due time (Anytime)")
+                                }
                             }
 
                             TaskPrioritySelector(
@@ -406,6 +420,23 @@ fun ItemEditorDialog(
                                     modifier = Modifier.weight(1f)
                                 )
                             }
+                        }
+                    }
+
+                    if (!dateTimeError.isNullOrBlank()) {
+                        Surface(
+                            color = com.example.ui.theme.OverdueContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("editor_datetime_error")
+                        ) {
+                            Text(
+                                text = dateTimeError.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = com.example.ui.theme.OverdueTerracotta,
+                                modifier = Modifier.padding(12.dp)
+                            )
                         }
                     }
 
@@ -639,15 +670,26 @@ fun ItemEditorDialog(
                                 titleError = "Please enter a title."
                                 return@Button
                             }
+                            if (selectedType == ItemType.PLAN && dueDate < startDate) {
+                                dateTimeError = "Deadline must be on or after the start date."
+                                return@Button
+                            }
+                            if (selectedType == ItemType.EVENT) {
+                                val startMins = eventStartHour * 60 + eventStartMinute
+                                val endMins = eventEndHour * 60 + eventEndMinute
+                                if (endMins <= startMins) {
+                                    dateTimeError = "Event end time must be after start time."
+                                    return@Button
+                                }
+                            }
+                            dateTimeError = null
+
                             val syncedReminders = draftReminders.map {
                                 it.copy(localHour = reminderLocalHour, localMinute = reminderLocalMinute)
                             }
                             val finalStartDate = if (selectedType == ItemType.PLAN) startDate.toIsoString() else null
                             val finalDueDate = when (selectedType) {
-                                ItemType.PLAN -> {
-                                    val safeDue = if (dueDate < startDate) startDate else dueDate
-                                    safeDue.toIsoString()
-                                }
+                                ItemType.PLAN -> dueDate.toIsoString()
                                 ItemType.TASK -> dueDate.toIsoString()
                                 ItemType.EVENT -> startDate.toIsoString()
                             }
@@ -659,11 +701,21 @@ fun ItemEditorDialog(
                                 startDate.toLocalEpochMillis(eventStartHour, eventStartMinute)
                             } else null
                             val finalEventEnd = if (selectedType == ItemType.EVENT) {
-                                val rawEnd = startDate.toLocalEpochMillis(eventEndHour, eventEndMinute)
-                                if (finalEventStart != null && rawEnd <= finalEventStart) {
-                                    finalEventStart + 3_600_000L
-                                } else rawEnd
+                                startDate.toLocalEpochMillis(eventEndHour, eventEndMinute)
                             } else null
+
+                            val pendingStepTitle = newStepTitle.trim()
+                            val finalSteps = buildList {
+                                addAll(draftSteps)
+                                if (pendingStepTitle.isNotEmpty()) {
+                                    add(
+                                        StepDraft(
+                                            title = pendingStepTitle,
+                                            dueDate = newStepDueDate?.toIsoString()
+                                        )
+                                    )
+                                }
+                            }
 
                             if (existingItem != null) {
                                 onSaveEdit(
@@ -693,7 +745,7 @@ fun ItemEditorDialog(
                                     finalEventStart,
                                     finalEventEnd,
                                     if (selectedType == ItemType.TASK) parentPlanId else null,
-                                    draftSteps.toList(),
+                                    finalSteps,
                                     syncedReminders,
                                     draftImagePaths.toList(),
                                     selectedPriority,
@@ -704,7 +756,7 @@ fun ItemEditorDialog(
                         enabled = !isSaving,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DeepBlue,
-                            contentColor = PureWhite
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -733,6 +785,7 @@ fun ItemEditorDialog(
             title = dateTitle,
             initialDate = initialDate,
             onDateSelected = { picked ->
+                dateTimeError = null
                 when (currentTarget) {
                     "start" -> {
                         startDate = picked
@@ -767,6 +820,7 @@ fun ItemEditorDialog(
             initialHour = initH,
             initialMinute = initM,
             onTimeSelected = { h, m ->
+                dateTimeError = null
                 when (currentTarget) {
                     "eventStart" -> {
                         eventStartHour = h
@@ -783,6 +837,7 @@ fun ItemEditorDialog(
                     else -> {
                         dueHour = h
                         dueMinute = m
+                        hasDueTime = true
                     }
                 }
                 activeTimeTarget = null

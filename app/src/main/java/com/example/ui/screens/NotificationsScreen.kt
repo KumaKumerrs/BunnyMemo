@@ -153,7 +153,10 @@ fun NotificationsScreen(
                         summary = state.dailyDigestSummary,
                         hasNotificationPermission = hasNotificationPermission,
                         onToggleEnabled = onToggleDailyDigest,
-                        onChangeTimeClick = { showDailyTimeModal = true },
+                        onChangeTimeClick = {
+                            feedback.onPopOpen()
+                            showDailyTimeModal = true
+                        },
                         onSendPreviewClick = onPreviewAction
                     )
                     if (!hasNotificationPermission) {
@@ -429,7 +432,7 @@ private fun NotificationsPermissionBanner(onRequestPermission: () -> Unit) {
                 onClick = onRequestPermission,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(100.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
@@ -545,7 +548,7 @@ private fun DailyForgetMeNotCard(
                     checked = config.enabled,
                     onCheckedChange = onToggleEnabled,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PureWhite,
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = DeepBlue,
                         uncheckedTrackColor = SoftIceSurface,
                         uncheckedBorderColor = SubtleBorder
@@ -615,7 +618,7 @@ private fun DailyForgetMeNotCard(
                             onClick = onSendPreviewClick,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DeepBlue,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(100.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

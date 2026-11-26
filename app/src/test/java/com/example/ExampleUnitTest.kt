@@ -27,8 +27,8 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun paperMorningBgm_synthesizesNonEmptyLoop() {
-    val samples = ChiptuneSynthesizer.synthesizePaperMorningBgmLoop()
+  fun meadow8BitBgm_synthesizesNonEmptyLoop() {
+    val samples = ChiptuneSynthesizer.synthesizeMeadow8BitBgmLoop()
     assertTrue(samples.size > ChiptuneSynthesizer.SAMPLE_RATE * 10)
     assertTrue(samples.any { it.toInt() != 0 })
   }

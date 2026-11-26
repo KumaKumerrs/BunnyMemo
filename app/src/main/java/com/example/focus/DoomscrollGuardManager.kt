@@ -149,6 +149,7 @@ object DoomscrollGuardManager {
         val current = _config.value.watchedPackages
         val updatedSet = if (clean in current) current - clean else current + clean
         saveConfig(context, _config.value.copy(watchedPackages = updatedSet))
+        syncServiceState(context)
     }
 
     fun addCustomPackage(context: Context, rawPackageName: String): Boolean {
@@ -162,6 +163,7 @@ object DoomscrollGuardManager {
             watchedPackages = _config.value.watchedPackages + clean
         )
         saveConfig(context, updated)
+        syncServiceState(context)
         return true
     }
 
@@ -172,6 +174,7 @@ object DoomscrollGuardManager {
             watchedPackages = _config.value.watchedPackages - packageName
         )
         saveConfig(context, updated)
+        syncServiceState(context)
     }
 
     fun setMaxScrollSeconds(context: Context, seconds: Int) {

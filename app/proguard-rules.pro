@@ -1,21 +1,34 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Project-specific R8 / ProGuard rules for Bunny Memo
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve source file & line numbers for crash diagnostics
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Keep Kotlin metadata & annotations used by Room, Compose, and Firestore serialization
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,Signature,InnerClasses,EnclosingMethod
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep planner data models, Room entities, enums, and Firestore DTOs
+-keep class com.example.data.** { *; }
+
+# Keep Android components declared in AndroidManifest.xml (widgets, receivers, services)
+-keep class com.example.widgets.** { *; }
+-keep class com.example.notifications.** { *; }
+-keep class com.example.focus.** { *; }
+
+# Firebase Firestore & Auth reflection safety
+-keepclassmembers class * {
+    @com.google.firebase.firestore.PropertyName *;
+}
+-dontwarn com.google.firebase.**
+-dontwarn com.google.android.gms.**
+
+# AndroidX Credentials / Google ID
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+
+# Kotlin Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembers class kotlinx.coroutines.** {
+    volatile <fields>;
+}

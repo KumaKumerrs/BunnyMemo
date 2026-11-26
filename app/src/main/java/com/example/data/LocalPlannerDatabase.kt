@@ -15,17 +15,34 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
+import androidx.room.Index
+import java.util.concurrent.atomic.AtomicLong
+
 object SyncEntityType {
     const val PROFILE = "PROFILE"
     const val ITEM = "ITEM"
     const val STEP = "STEP"
     const val REMINDER = "REMINDER"
     const val CLASS_SCHEDULE = "CLASS_SCHEDULE"
+    const val DAILY_HABIT = "DAILY_HABIT"
+    const val HABIT_CHECKIN = "HABIT_CHECKIN"
 }
 
 object SyncAction {
     const val UPSERT = "UPSERT"
     const val DELETE = "DELETE"
+}
+
+private object PendingSyncRevisionCounter {
+    private val lastRevision = AtomicLong(System.currentTimeMillis() * 1000L)
+
+    fun next(): Long {
+        while (true) {
+            val prev = lastRevision.get()
+            val candidate = maxOf(prev + 1L, System.currentTimeMillis() * 1000L)
+            if (lastRevision.compareAndSet(prev, candidate)) return candidate
+        }
+    }
 }
 
 @Entity(tableName = "pending_sync_ops")
@@ -36,7 +53,8 @@ data class PendingSyncOperationEntity(
     val action: String,
     val queuedAtMillis: Long,
     val retryCount: Int = 0,
-    val lastError: String? = null
+    val lastError: String? = null,
+    val revision: Long = PendingSyncRevisionCounter.next()
 ) {
     companion object {
         fun keyFor(entityType: String, entityId: String): String = "$entityType:$entityId"
@@ -49,7 +67,8 @@ data class PendingSyncOperationEntity(
                 action = SyncAction.UPSERT,
                 queuedAtMillis = nowMillis,
                 retryCount = 0,
-                lastError = null
+                lastError = null,
+                revision = PendingSyncRevisionCounter.next()
             )
         }
 
@@ -61,11 +80,20 @@ data class PendingSyncOperationEntity(
                 action = SyncAction.DELETE,
                 queuedAtMillis = nowMillis,
                 retryCount = 0,
-                lastError = null
+                lastError = null,
+                revision = PendingSyncRevisionCounter.next()
             )
         }
     }
 }
+
+@Entity(tableName = "deleted_tombstones")
+data class DeletedTombstoneEntity(
+    @PrimaryKey val opKey: String,
+    val entityType: String,
+    val entityId: String,
+    val deletedAtMillis: Long
+)
 
 @Entity(tableName = "local_profile")
 data class LocalProfileEntity(
@@ -75,10 +103,14 @@ data class LocalProfileEntity(
     val defaultReminderHour: Int,
     val defaultReminderMinute: Int,
     val createdAtMillis: Long,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val hasCustomLocalEdits: Boolean = false
 )
 
-@Entity(tableName = "local_items")
+@Entity(
+    tableName = "local_items",
+    indices = [Index(value = ["parentPlanId"])]
+)
 data class LocalItemEntity(
     @PrimaryKey val id: String,
     val type: String,
@@ -100,7 +132,10 @@ data class LocalItemEntity(
     val audioMemoDurationSeconds: Int = 0
 )
 
-@Entity(tableName = "local_steps")
+@Entity(
+    tableName = "local_steps",
+    indices = [Index(value = ["itemId"])]
+)
 data class LocalStepEntity(
     @PrimaryKey val id: String,
     val itemId: String,
@@ -114,7 +149,10 @@ data class LocalStepEntity(
     val timeSpentMinutes: Int = 0
 )
 
-@Entity(tableName = "local_reminders")
+@Entity(
+    tableName = "local_reminders",
+    indices = [Index(value = ["itemId"])]
+)
 data class LocalReminderEntity(
     @PrimaryKey val id: String,
     val itemId: String,
@@ -161,7 +199,10 @@ data class LocalDailyHabitEntity(
     val updatedAtMillis: Long
 )
 
-@Entity(tableName = "local_habit_checkins")
+@Entity(
+    tableName = "local_habit_checkins",
+    indices = [Index(value = ["habitId"])]
+)
 data class LocalHabitCheckInEntity(
     @PrimaryKey val checkInKey: String, // "$habitId|$dateIso"
     val habitId: String,
@@ -259,8 +300,32 @@ interface LocalPlannerDao {
     @Query("SELECT * FROM local_class_schedules WHERE id = :scheduleId LIMIT 1")
     suspend fun getClassScheduleById(scheduleId: String): LocalClassScheduleEntity?
 
+    @Query("SELECT * FROM local_daily_habits ORDER BY sortOrder ASC, createdAtMillis ASC")
+    suspend fun getAllDailyHabits(): List<LocalDailyHabitEntity>
+
+    @Query("SELECT * FROM local_daily_habits WHERE id = :habitId LIMIT 1")
+    suspend fun getDailyHabitById(habitId: String): LocalDailyHabitEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDailyHabits(habits: List<LocalDailyHabitEntity>)
+
+    @Query("SELECT * FROM local_habit_checkins ORDER BY dateIso DESC, completedAtMillis DESC")
+    suspend fun getAllHabitCheckIns(): List<LocalHabitCheckInEntity>
+
+    @Query("SELECT * FROM local_habit_checkins WHERE habitId = :habitId")
+    suspend fun getHabitCheckInsByHabitId(habitId: String): List<LocalHabitCheckInEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHabitCheckIns(checkIns: List<LocalHabitCheckInEntity>)
+
+    @Query("SELECT MAX(sortOrder) FROM local_daily_habits")
+    suspend fun getMaxHabitSortOrder(): Int?
+
     @Query("SELECT * FROM pending_sync_ops ORDER BY queuedAtMillis ASC")
     suspend fun getAllPendingSyncOps(): List<PendingSyncOperationEntity>
+
+    @Query("SELECT COUNT(*) FROM pending_sync_ops")
+    suspend fun getPendingSyncCount(): Int
 
     // Pending sync queue mutations
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -272,20 +337,36 @@ interface LocalPlannerDao {
     @Query("DELETE FROM pending_sync_ops WHERE opKey = :opKey")
     suspend fun deletePendingSyncOp(opKey: String)
 
+    @Query("DELETE FROM pending_sync_ops WHERE opKey = :opKey AND revision <= :pushedRevision")
+    suspend fun deletePendingSyncOpIfUnchanged(opKey: String, pushedRevision: Long)
+
     @Query("UPDATE pending_sync_ops SET retryCount = retryCount + 1, lastError = :error WHERE opKey = :opKey")
     suspend fun markPendingSyncFailed(opKey: String, error: String)
 
     @Query("DELETE FROM pending_sync_ops")
     suspend fun clearAllPendingSyncOps()
 
+    // Tombstone tracking (prevents offline edits from resurrecting remotely deleted docs)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTombstone(tombstone: DeletedTombstoneEntity)
+
+    @Query("SELECT * FROM deleted_tombstones WHERE opKey = :opKey LIMIT 1")
+    suspend fun getTombstone(opKey: String): DeletedTombstoneEntity?
+
+    @Query("DELETE FROM deleted_tombstones WHERE opKey = :opKey")
+    suspend fun deleteTombstone(opKey: String)
+
+    @Query("DELETE FROM deleted_tombstones")
+    suspend fun clearTombstones()
+
     // Profile writes
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertProfile(profile: LocalProfileEntity)
 
-    @Query("UPDATE local_profile SET dedicationText = :text, hasSeenDedication = :seen, updatedAtMillis = :now WHERE id = :profileId")
-    suspend fun updateDedication(profileId: String, text: String, seen: Boolean, now: Long)
+    @Query("UPDATE local_profile SET dedicationText = :text, hasSeenDedication = :seen, hasCustomLocalEdits = :customEdits, updatedAtMillis = :now WHERE id = :profileId")
+    suspend fun updateDedication(profileId: String, text: String, seen: Boolean, customEdits: Boolean, now: Long)
 
-    @Query("UPDATE local_profile SET defaultReminderHour = :hour, defaultReminderMinute = :minute, updatedAtMillis = :now WHERE id = :profileId")
+    @Query("UPDATE local_profile SET defaultReminderHour = :hour, defaultReminderMinute = :minute, hasCustomLocalEdits = 1, updatedAtMillis = :now WHERE id = :profileId")
     suspend fun updateDefaultReminderTime(profileId: String, hour: Int, minute: Int, now: Long)
 
     // Item writes
@@ -309,6 +390,12 @@ interface LocalPlannerDao {
 
     @Query("UPDATE local_items SET audioMemoPath = :audioMemoPath, audioMemoDurationSeconds = :durationSeconds, updatedAtMillis = :now WHERE id = :itemId")
     suspend fun updateItemAudioMemo(itemId: String, audioMemoPath: String?, durationSeconds: Int, now: Long)
+
+    @Query("SELECT * FROM local_items WHERE parentPlanId = :planId")
+    suspend fun getTasksLinkedToPlan(planId: String): List<LocalItemEntity>
+
+    @Query("UPDATE local_items SET parentPlanId = NULL, updatedAtMillis = :now WHERE parentPlanId = :planId")
+    suspend fun clearParentPlanId(planId: String, now: Long)
 
     @Query("DELETE FROM local_items WHERE id = :itemId")
     suspend fun deleteItemById(itemId: String)
@@ -383,9 +470,10 @@ interface LocalPlannerDao {
     /**
      * Reconciles a cloud snapshot of items into Room without clobbering any item
      * that currently has an unsynced pending local change in [pending_sync_ops].
+     * Returns the list of locally removed items so the caller can clean up orphaned media files.
      */
     @Transaction
-    suspend fun reconcileCloudItems(remoteItems: List<LocalItemEntity>) {
+    suspend fun reconcileCloudItems(remoteItems: List<LocalItemEntity>): List<LocalItemEntity> {
         val pendingIds = getAllPendingSyncOps()
             .filter { it.entityType == SyncEntityType.ITEM }
             .map { it.entityId }
@@ -406,11 +494,23 @@ interface LocalPlannerDao {
                 )
             }
         if (toUpsert.isNotEmpty()) upsertItems(toUpsert)
+        val removed = mutableListOf<LocalItemEntity>()
+        val now = System.currentTimeMillis()
         for (local in existingById.values) {
             if (local.id !in remoteIds && local.id !in pendingIds) {
                 deleteItemById(local.id)
+                upsertTombstone(
+                    DeletedTombstoneEntity(
+                        opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.ITEM, local.id),
+                        entityType = SyncEntityType.ITEM,
+                        entityId = local.id,
+                        deletedAtMillis = now
+                    )
+                )
+                removed.add(local)
             }
         }
+        return removed
     }
 
     @Transaction
@@ -423,9 +523,18 @@ interface LocalPlannerDao {
         val toUpsert = remoteSteps.filter { it.id !in pendingIds }
         if (toUpsert.isNotEmpty()) upsertSteps(toUpsert)
         val localSteps = getAllSteps()
+        val now = System.currentTimeMillis()
         for (local in localSteps) {
             if (local.id !in remoteIds && local.id !in pendingIds) {
                 deleteStepById(local.id)
+                upsertTombstone(
+                    DeletedTombstoneEntity(
+                        opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.STEP, local.id),
+                        entityType = SyncEntityType.STEP,
+                        entityId = local.id,
+                        deletedAtMillis = now
+                    )
+                )
             }
         }
     }
@@ -440,9 +549,18 @@ interface LocalPlannerDao {
         val toUpsert = remoteReminders.filter { it.id !in pendingIds }
         if (toUpsert.isNotEmpty()) upsertReminders(toUpsert)
         val localReminders = getAllReminders()
+        val now = System.currentTimeMillis()
         for (local in localReminders) {
             if (local.id !in remoteIds && local.id !in pendingIds) {
                 deleteReminderById(local.id)
+                upsertTombstone(
+                    DeletedTombstoneEntity(
+                        opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.REMINDER, local.id),
+                        entityType = SyncEntityType.REMINDER,
+                        entityId = local.id,
+                        deletedAtMillis = now
+                    )
+                )
             }
         }
     }
@@ -457,9 +575,61 @@ interface LocalPlannerDao {
         val toUpsert = remoteSchedules.filter { it.id !in pendingIds }
         if (toUpsert.isNotEmpty()) upsertClassSchedules(toUpsert)
         val localSchedules = getAllClassSchedules()
+        val now = System.currentTimeMillis()
         for (local in localSchedules) {
             if (local.id !in remoteIds && local.id !in pendingIds) {
                 deleteClassScheduleById(local.id)
+                upsertTombstone(
+                    DeletedTombstoneEntity(
+                        opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.CLASS_SCHEDULE, local.id),
+                        entityType = SyncEntityType.CLASS_SCHEDULE,
+                        entityId = local.id,
+                        deletedAtMillis = now
+                    )
+                )
+            }
+        }
+    }
+
+    @Transaction
+    suspend fun reconcileCloudDailyHabits(remoteHabits: List<LocalDailyHabitEntity>) {
+        val pendingIds = getAllPendingSyncOps()
+            .filter { it.entityType == SyncEntityType.DAILY_HABIT }
+            .map { it.entityId }
+            .toSet()
+        val remoteIds = remoteHabits.map { it.id }.toSet()
+        val toUpsert = remoteHabits.filter { it.id !in pendingIds }
+        if (toUpsert.isNotEmpty()) upsertDailyHabits(toUpsert)
+        val localHabits = getAllDailyHabits()
+        val now = System.currentTimeMillis()
+        for (local in localHabits) {
+            if (local.id !in remoteIds && local.id !in pendingIds) {
+                deleteDailyHabitById(local.id)
+                upsertTombstone(
+                    DeletedTombstoneEntity(
+                        opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.DAILY_HABIT, local.id),
+                        entityType = SyncEntityType.DAILY_HABIT,
+                        entityId = local.id,
+                        deletedAtMillis = now
+                    )
+                )
+            }
+        }
+    }
+
+    @Transaction
+    suspend fun reconcileCloudHabitCheckIns(remoteCheckIns: List<LocalHabitCheckInEntity>) {
+        val pendingIds = getAllPendingSyncOps()
+            .filter { it.entityType == SyncEntityType.HABIT_CHECKIN }
+            .map { it.entityId }
+            .toSet()
+        val remoteKeys = remoteCheckIns.map { it.checkInKey }.toSet()
+        val toUpsert = remoteCheckIns.filter { it.checkInKey !in pendingIds }
+        if (toUpsert.isNotEmpty()) upsertHabitCheckIns(toUpsert)
+        val localCheckIns = getAllHabitCheckIns()
+        for (local in localCheckIns) {
+            if (local.checkInKey !in remoteKeys && local.checkInKey !in pendingIds) {
+                deleteHabitCheckInByKey(local.checkInKey)
             }
         }
     }
@@ -476,6 +646,7 @@ interface LocalPlannerDao {
     @Transaction
     suspend fun clearAllLocalPlannerData() {
         clearAllPendingSyncOps()
+        clearTombstones()
         clearHabitCheckIns()
         clearDailyHabits()
         clearClassSchedules()
@@ -515,11 +686,12 @@ interface LocalPlannerDao {
         LocalReminderEntity::class,
         LocalClassScheduleEntity::class,
         PendingSyncOperationEntity::class,
+        DeletedTombstoneEntity::class,
         LocalDailyHabitEntity::class,
         LocalHabitCheckInEntity::class
     ],
-    version = 8,
-    exportSchema = false
+    version = 9,
+    exportSchema = true
 )
 abstract class LocalPlannerDatabase : RoomDatabase() {
     abstract fun plannerDao(): LocalPlannerDao
@@ -528,7 +700,7 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: LocalPlannerDatabase? = null
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """
@@ -554,7 +726,7 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """
@@ -595,13 +767,13 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "local_items", "imagePathsCsv", "TEXT")
             }
         }
 
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """
@@ -629,25 +801,57 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_5_6 = object : Migration(5, 6) {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "local_items", "priority", "TEXT NOT NULL DEFAULT 'MEDIUM'")
             }
         }
 
-        private val MIGRATION_6_7 = object : Migration(6, 7) {
+        val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "local_items", "category", "TEXT NOT NULL DEFAULT 'PERSONAL'")
                 addColumnIfMissing(db, "local_steps", "timeSpentMinutes", "INTEGER NOT NULL DEFAULT 0")
             }
         }
 
-        private val MIGRATION_7_8 = object : Migration(7, 8) {
+        val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "local_items", "audioMemoPath", "TEXT")
                 addColumnIfMissing(db, "local_items", "audioMemoDurationSeconds", "INTEGER NOT NULL DEFAULT 0")
             }
         }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "pending_sync_ops", "revision", "INTEGER NOT NULL DEFAULT 1")
+                addColumnIfMissing(db, "local_profile", "hasCustomLocalEdits", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS deleted_tombstones (
+                        opKey TEXT NOT NULL PRIMARY KEY,
+                        entityType TEXT NOT NULL,
+                        entityId TEXT NOT NULL,
+                        deletedAtMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_items_parentPlanId ON local_items(parentPlanId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_steps_itemId ON local_steps(itemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_reminders_itemId ON local_reminders(itemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_habit_checkins_habitId ON local_habit_checkins(habitId)")
+            }
+        }
+
+        fun allMigrations(): Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9
+        )
 
         fun getInstance(context: Context): LocalPlannerDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -656,17 +860,7 @@ abstract class LocalPlannerDatabase : RoomDatabase() {
                     LocalPlannerDatabase::class.java,
                     "bunny_memo_local.db"
                 )
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7,
-                        MIGRATION_7_8
-                    )
-                    .fallbackToDestructiveMigration(dropAllTables = true)
-                    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+                    .addMigrations(*allMigrations())
                     .build()
                     .also { INSTANCE = it }
             }

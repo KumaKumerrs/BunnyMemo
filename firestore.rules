@@ -27,10 +27,20 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isValidDateString(val) {
+      return val is string &&
+        val.matches('^(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
+    }
+
+    function isRecentServerTimestamp(ts) {
+      return ts is timestamp &&
+        ts <= request.time &&
+        ts >= request.time - duration.value(5, 'm');
+    }
+
     function isOptionalDateStr(data, field) {
       return !(field in data) || data[field] == null ||
-        (data[field] is string && data[field].size() <= 20 &&
-         (data[field].size() == 0 || data[field].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+        (data[field] is string && (data[field].size() == 0 || isValidDateString(data[field])));
     }
 
     function isOptionalMinutes(data, field) {
@@ -56,6 +66,14 @@ service cloud.firestore {
       return status is string && status in ['PENDING', 'GOING', 'MAYBE', 'DECLINED'];
     }
 
+    function isValidHabitIconKey(icon) {
+      return icon is string && icon in ['WATER', 'BOOK', 'STRETCH', 'SPARKLE', 'MEDITATE', 'LEAF', 'JOURNAL', 'HEART'];
+    }
+
+    function isValidColorKey(color) {
+      return color is string && color in ['SKY', 'CORNFLOWER', 'SAGE', 'POLLEN'];
+    }
+
     function isOptionalString(data, field, maxLen) {
       return !(field in data) || data[field] == null ||
         (data[field] is string && data[field].size() <= maxLen);
@@ -73,7 +91,7 @@ service cloud.firestore {
         data.defaultReminderHour is int && data.defaultReminderHour >= 0 && data.defaultReminderHour <= 23 &&
         data.defaultReminderMinute is int && data.defaultReminderMinute >= 0 && data.defaultReminderMinute <= 59 &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     function isValidPlannerItem(data, userId) {
@@ -91,7 +109,7 @@ service cloud.firestore {
         (!('priority' in data) || data.priority == null || (data.priority is string && data.priority in ['HIGH', 'MEDIUM', 'LOW'])) &&
         (!('category' in data) || data.category == null || isValidTaskCategory(data.category)) &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     function isValidPlannerStep(data, userId) {
@@ -105,7 +123,7 @@ service cloud.firestore {
         (!('timeSpentMinutes' in data) || data.timeSpentMinutes == null ||
           (data.timeSpentMinutes is int && data.timeSpentMinutes >= 0 && data.timeSpentMinutes <= 100000)) &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     function isValidPlannerReminder(data, userId) {
@@ -121,7 +139,7 @@ service cloud.firestore {
         data.dismissed is bool &&
         isOptionalEpochMillis(data, 'deliveredAtUtcMillis') &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     function isValidClassSchedule(data, userId) {
@@ -130,16 +148,36 @@ service cloud.firestore {
         (!('room' in data) || data.room == null || (data.room is string && data.room.size() <= 160)) &&
         data.repeatMode is string && data.repeatMode in ['WEEKLY', 'MONTHLY_DAY'] &&
         data.daysOfWeek is list && data.daysOfWeek.size() <= 7 &&
+        data.daysOfWeek.toSet().hasOnly([0, 1, 2, 3, 4, 5, 6]) &&
         data.dayOfMonth is int && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
         data.startTimeMinutes is int && data.startTimeMinutes >= 0 && data.startTimeMinutes <= 1439 &&
         data.endTimeMinutes is int && data.endTimeMinutes >= 0 && data.endTimeMinutes <= 1439 &&
-        data.semesterStartDate is string && data.semesterStartDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        isValidDateString(data.semesterStartDate) &&
         data.semesterMonths is int && data.semesterMonths >= 1 && data.semesterMonths <= 12 &&
         data.notifyEnabled is bool &&
         data.notifyOffsetMinutes is int && data.notifyOffsetMinutes >= 0 && data.notifyOffsetMinutes <= 10080 &&
-        data.colorKey is string && data.colorKey in ['SKY', 'CORNFLOWER', 'SAGE', 'POLLEN'] &&
+        isValidColorKey(data.colorKey) &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
+    }
+
+    function isValidDailyHabit(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 80 &&
+        isValidHabitIconKey(data.iconKey) &&
+        isValidColorKey(data.colorKey) &&
+        data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 500 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        isRecentServerTimestamp(data.updatedAt);
+    }
+
+    function isValidHabitCheckIn(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        isValidId(data.habitId) &&
+        isValidDateString(data.dateIso) &&
+        data.completedAtMillis is int && data.completedAtMillis >= 0 && data.completedAtMillis <= 8640000000000000 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     match /users/{userId} {
@@ -156,6 +194,7 @@ service cloud.firestore {
           'userId', 'dedicationText', 'hasSeenDedication',
           'defaultReminderHour', 'defaultReminderMinute', 'createdAt', 'updatedAt'
         ]) &&
+        isRecentServerTimestamp(incoming().createdAt) &&
         isValidUserProfile(incoming(), userId);
 
       allow update: if isOwner(userId) &&
@@ -186,6 +225,7 @@ service cloud.firestore {
             'startAtUtcMillis', 'endAtUtcMillis', 'parentPlanId', 'priority', 'category',
             'createdAt', 'updatedAt'
           ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
           isValidPlannerItem(incoming(), userId);
 
         allow update: if isOwner(userId) &&
@@ -226,6 +266,7 @@ service cloud.firestore {
             'userId', 'itemId', 'title', 'completed',
             'dueDate', 'dueTimeMinutes', 'sortOrder', 'timeSpentMinutes', 'createdAt', 'updatedAt'
           ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
           isValidPlannerStep(incoming(), userId) &&
           existsAfter(/databases/$(database)/documents/users/$(userId)/items/$(incoming().itemId));
 
@@ -266,6 +307,7 @@ service cloud.firestore {
             'scheduledAtUtcMillis', 'snoozedUntilUtcMillis', 'occurrenceKey',
             'dismissed', 'deliveredAtUtcMillis', 'createdAt', 'updatedAt'
           ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
           isValidPlannerReminder(incoming(), userId) &&
           existsAfter(/databases/$(database)/documents/users/$(userId)/items/$(incoming().itemId));
 
@@ -311,6 +353,7 @@ service cloud.firestore {
             'semesterMonths', 'notifyEnabled', 'notifyOffsetMinutes',
             'colorKey', 'createdAt', 'updatedAt'
           ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
           isValidClassSchedule(incoming(), userId);
 
         allow update: if isOwner(userId) &&
@@ -327,6 +370,65 @@ service cloud.firestore {
           ]);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(scheduleId);
+      }
+
+      match /dailyHabits/{habitId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(habitId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(habitId) &&
+          incoming().keys().hasAll([
+            'userId', 'title', 'iconKey', 'colorKey', 'sortOrder', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'title', 'iconKey', 'colorKey', 'sortOrder', 'createdAt', 'updatedAt'
+          ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
+          isValidDailyHabit(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(habitId) &&
+          isValidDailyHabit(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'iconKey', 'colorKey', 'sortOrder', 'updatedAt'
+          ]);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(habitId);
+      }
+
+      match /habitCheckIns/{checkInId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(checkInId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(checkInId) &&
+          incoming().keys().hasAll([
+            'userId', 'habitId', 'dateIso', 'completedAtMillis', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'habitId', 'dateIso', 'completedAtMillis', 'createdAt', 'updatedAt'
+          ]) &&
+          isRecentServerTimestamp(incoming().createdAt) &&
+          isValidHabitCheckIn(incoming(), userId) &&
+          existsAfter(/databases/$(database)/documents/users/$(userId)/dailyHabits/$(incoming().habitId));
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(checkInId) &&
+          isValidHabitCheckIn(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().habitId == existing().habitId &&
+          incoming().dateIso == existing().dateIso &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['completedAtMillis', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(checkInId);
       }
     }
 
@@ -347,11 +449,12 @@ service cloud.firestore {
       return data.ownerUid is string && isValidId(data.ownerUid) &&
         data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 80 &&
         data.ownerEmail is string && data.ownerEmail.size() >= 3 && data.ownerEmail.size() <= 160 &&
+        data.ownerEmail == data.ownerEmail.lower() &&
         isOptionalString(data, 'ownerPhotoUrl', 500) &&
         data.inviteeEmail is string && data.inviteeEmail.size() >= 3 && data.inviteeEmail.size() <= 160 &&
         data.inviteeEmail == data.inviteeEmail.lower() &&
         (!('inviteeUid' in data) || data.inviteeUid == null || isValidId(data.inviteeUid)) &&
-        data.plannedDate is string && data.plannedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        isValidDateString(data.plannedDate) &&
         isOptionalDateStr(data, 'endDate') &&
         isOptionalString(data, 'scheduleTimeLabel', 80) &&
         (!('itemId' in data) || data.itemId == null || isValidId(data.itemId)) &&
@@ -363,9 +466,10 @@ service cloud.firestore {
         data.replyCount is int && data.replyCount >= 0 && data.replyCount <= 500 &&
         isOptionalString(data, 'lastReplyText', 500) &&
         isOptionalString(data, 'lastReplyAuthorName', 80) &&
+        (!('lastReplyAuthorUid' in data) || data.lastReplyAuthorUid == null || isValidId(data.lastReplyAuthorUid)) &&
         isOptionalEpochMillis(data, 'lastReplyAtMillis') &&
         data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     function isValidCalendarReply(data, inviteId) {
@@ -375,12 +479,13 @@ service cloud.firestore {
         data.authorUid is string && data.authorUid == request.auth.uid &&
         data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
         data.authorEmail is string && data.authorEmail.size() >= 3 && data.authorEmail.size() <= 160 &&
+        data.authorEmail == data.authorEmail.lower() &&
         isOptionalString(data, 'authorPhotoUrl', 500) &&
-        data.plannedDate is string && data.plannedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        isValidDateString(data.plannedDate) &&
         isValidRsvpStatus(data.rsvpStatus) &&
         data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
-        data.updatedAt is timestamp && data.updatedAt <= request.time;
+        isRecentServerTimestamp(data.createdAt) &&
+        isRecentServerTimestamp(data.updatedAt);
     }
 
     match /calendarInvites/{inviteId} {
@@ -391,8 +496,9 @@ service cloud.firestore {
       );
 
       allow create: if isValidId(inviteId) &&
-        isSignedIn() &&
+        isVerifiedEmail() &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().ownerEmail == userEmailLower() &&
         incoming().rsvpStatus == 'PENDING' &&
         incoming().replyCount == 0 &&
         incoming().keys().hasAll([
@@ -404,6 +510,7 @@ service cloud.firestore {
           'plannedDate', 'endDate', 'scheduleTimeLabel', 'itemId', 'title', 'notes',
           'itemType', 'category', 'rsvpStatus', 'replyCount', 'createdAt', 'updatedAt'
         ]) &&
+        isRecentServerTimestamp(incoming().createdAt) &&
         isValidCalendarInvite(incoming());
 
       allow update: if isValidId(inviteId) &&
@@ -412,11 +519,13 @@ service cloud.firestore {
         incoming().ownerEmail == existing().ownerEmail &&
         incoming().inviteeEmail == existing().inviteeEmail &&
         incoming().createdAt == existing().createdAt &&
+        incoming().replyCount == existing().replyCount + 1 &&
+        (!('lastReplyAuthorUid' in incoming()) || incoming().lastReplyAuthorUid == null || incoming().lastReplyAuthorUid == request.auth.uid) &&
         (
           (
             isInviteOwner(existing()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'replyCount', 'lastReplyText', 'lastReplyAuthorName', 'lastReplyAtMillis', 'updatedAt'
+              'replyCount', 'lastReplyText', 'lastReplyAuthorName', 'lastReplyAuthorUid', 'lastReplyAtMillis', 'updatedAt'
             ])
           ) ||
           (
@@ -424,12 +533,12 @@ service cloud.firestore {
             incoming().inviteeUid == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'inviteeUid', 'rsvpStatus', 'replyCount', 'lastReplyText',
-              'lastReplyAuthorName', 'lastReplyAtMillis', 'updatedAt'
+              'lastReplyAuthorName', 'lastReplyAuthorUid', 'lastReplyAtMillis', 'updatedAt'
             ])
           )
         );
 
-      allow delete: if isValidId(inviteId) && isInviteOwner(existing());
+      allow delete: if isValidId(inviteId) && isInviteParticipant(existing());
 
       match /replies/{replyId} {
         allow get: if isValidId(inviteId) && isValidId(replyId) &&
@@ -440,7 +549,10 @@ service cloud.firestore {
 
         allow create: if isValidId(inviteId) &&
           isValidId(replyId) &&
+          isVerifiedEmail() &&
           isInviteParticipant(get(/databases/$(database)/documents/calendarInvites/$(inviteId)).data) &&
+          incoming().authorEmail == userEmailLower() &&
+          incoming().plannedDate == get(/databases/$(database)/documents/calendarInvites/$(inviteId)).data.plannedDate &&
           incoming().keys().hasAll([
             'inviteId', 'ownerUid', 'inviteeEmail', 'authorUid', 'authorName',
             'authorEmail', 'plannedDate', 'rsvpStatus', 'message', 'createdAt', 'updatedAt'
@@ -458,7 +570,7 @@ service cloud.firestore {
 
         allow delete: if isValidId(inviteId) &&
           isValidId(replyId) &&
-          isInviteOwner(get(/databases/$(database)/documents/calendarInvites/$(inviteId)).data);
+          isInviteParticipant(get(/databases/$(database)/documents/calendarInvites/$(inviteId)).data);
       }
     }
   }

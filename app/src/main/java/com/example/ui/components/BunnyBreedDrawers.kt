@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import com.example.ui.theme.PollenYellow
 import com.example.ui.theme.SkyBlue
 import kotlin.math.PI
@@ -28,7 +29,10 @@ internal fun DrawScope.drawBreedBunnyPose(
         BunnyPose.RESTING -> drawRestingBreedBunny(breed, palette, w, h, stroke)
         BunnyPose.ENVELOPE -> drawEnvelopeBreedBunny(breed, palette, w, h, stroke)
         BunnyPose.CELEBRATING -> {
-            drawGreetingBreedBunny(breed, palette, w * 0.84f, h, stroke)
+            // Scale uniformly (anchored bottom-left) so the bunny is not horizontally squashed.
+            scale(scale = 0.84f, pivot = Offset(0f, h)) {
+                drawGreetingBreedBunny(breed, palette, w, h, stroke)
+            }
             drawCircle(PollenYellow, radius = w * 0.035f, center = Offset(w * 0.80f, h * 0.22f))
             drawCircle(SkyBlue, radius = w * 0.028f, center = Offset(w * 0.90f, h * 0.34f))
             drawInlineForgetMeNot(Offset(w * 0.80f, h * 0.62f), w * 0.17f)

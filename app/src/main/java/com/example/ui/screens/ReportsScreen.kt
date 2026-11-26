@@ -69,6 +69,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -169,7 +171,9 @@ fun ReportsScreen(
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
         }
-        context.startActivity(Intent.createChooser(intent, "Share keepsake report"))
+        runCatching {
+            context.startActivity(Intent.createChooser(intent, "Share keepsake report"))
+        }
     }
 
     BoxWithConstraints(
@@ -323,7 +327,7 @@ fun ReportsScreen(
                                         Text(
                                             text = m.shortMonthName,
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = if (isSel) PureWhite else MidnightNavy
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimary else MidnightNavy
                                         )
                                     }
                                 }
@@ -681,7 +685,7 @@ private fun MonthlyHeroCard(
                 onClick = onShare,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(100.dp),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
@@ -837,7 +841,7 @@ private fun GrandYearEndHeroCard(
                 onClick = onShare,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(100.dp),
                 modifier = Modifier
@@ -1064,6 +1068,10 @@ private fun WeeklyBloomChartCard(
 ) {
     val maxVal = (weeklyBlooms.maxOrNull() ?: 0).coerceAtLeast(1)
     val labels = listOf("Wk 1", "Wk 2", "Wk 3", "Wk 4", "Wk 5")
+    val chartDesc = remember(monthName, weeklyBlooms) {
+        val summary = labels.mapIndexed { idx, lbl -> "$lbl: ${weeklyBlooms.getOrElse(idx) { 0 }}" }.joinToString(", ")
+        "$monthName weekly blooms bar chart. $summary"
+    }
 
     ModernPanel(
         shape = RoundedCornerShape(22.dp),
@@ -1083,8 +1091,10 @@ private fun WeeklyBloomChartCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(110.dp)
+                    .semantics { contentDescription = chartDesc }
             ) {
                 val count = weeklyBlooms.size
+                if (count == 0) return@Canvas
                 val slotW = size.width / count
                 val barW = (slotW * 0.46f).coerceAtMost(38.dp.toPx())
                 val chartH = size.height - 10.dp.toPx()
@@ -1142,6 +1152,10 @@ private fun WeeklyBloomChartCard(
 private fun YearBloomTimelineCard(report: YearEndAccomplishmentReport) {
     val values = report.monthlyReports.map { it.totalBlooms }
     val maxVal = (values.maxOrNull() ?: 0).coerceAtLeast(1)
+    val chartDesc = remember(report) {
+        val summary = report.monthlyReports.joinToString(", ") { "${it.shortMonthName}: ${it.totalBlooms}" }
+        "${report.year} blooms across all 12 months bar chart. $summary"
+    }
 
     ModernPanel(
         shape = RoundedCornerShape(22.dp),
@@ -1161,8 +1175,10 @@ private fun YearBloomTimelineCard(report: YearEndAccomplishmentReport) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(126.dp)
+                    .semantics { contentDescription = chartDesc }
             ) {
                 val count = values.size
+                if (count == 0) return@Canvas
                 val slotW = size.width / count
                 val barW = (slotW * 0.56f).coerceAtMost(22.dp.toPx())
                 val chartH = size.height - 14.dp.toPx()

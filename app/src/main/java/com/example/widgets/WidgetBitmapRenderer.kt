@@ -1,5 +1,7 @@
 package com.example.widgets
 
+import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -12,51 +14,99 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * Renders anti-aliased Forget-Me-Not visual components (Month Calendar Grid and 7-Day Habit Bloom Strip)
- * into compact bitmaps suitable for Android AppWidget RemoteViews.
+ * Renders anti-aliased Forget-Me-Not visual components (Month Calendar Grid, Current Week Strip,
+ * 7-Day Habit Bloom Strip, and Interactive Bunny Family) into IPC-safe (< 380 KB) bitmaps
+ * with full Light & Dark Mode contrast support.
  */
 object WidgetBitmapRenderer {
 
-    private val COLOR_DEEP_BLUE = Color.parseColor("#3B82DC")
+    private const val MAX_WIDGET_BITMAP_BYTES = 380_000
+
+    private val COLOR_DEEP_BLUE = Color.parseColor("#27578A")
     private val COLOR_FORGET_ME_NOT = Color.parseColor("#7CB6F9")
     private val COLOR_SKY_FILL = Color.parseColor("#DDEEFF")
     private val COLOR_POLLEN = Color.parseColor("#F7D56E")
     private val COLOR_MIDNIGHT = Color.parseColor("#2B4360")
-    private val COLOR_MUTED = Color.parseColor("#6B85A3")
+    private val COLOR_MUTED = Color.parseColor("#4C6582")
     private val COLOR_PURE_WHITE = Color.parseColor("#FCFEFF")
     private val COLOR_BUD_OUTLINE = Color.parseColor("#C7DFF8")
+
+    // Moonlit Dark Mode widget canvas palette
+    private val DARK_DEEP_BLUE = Color.parseColor("#69A9F8")
+    private val DARK_FORGET_ME_NOT = Color.parseColor("#8CC3FF")
+    private val DARK_SKY_FILL = Color.parseColor("#274268")
+    private val DARK_POLLEN = Color.parseColor("#FAD976")
+    private val DARK_MIDNIGHT = Color.parseColor("#EAF2FF")
+    private val DARK_MUTED = Color.parseColor("#97AECB")
+    private val DARK_ON_ACCENT = Color.parseColor("#0F172A")
+    private val DARK_CARD_BG = Color.parseColor("#223048")
+    private val DARK_BUD_OUTLINE = Color.parseColor("#3B5278")
+
+    fun isDarkMode(context: Context): Boolean {
+        val uiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        return uiMode == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    /**
+     * Scales requested bitmap dimensions proportionally so total byte size never exceeds
+     * [MAX_WIDGET_BITMAP_BYTES] (~380 KB), preventing Android RemoteViews Binder IPC crashes.
+     */
+    internal fun scaleToSafeWidgetBudget(
+        widthPx: Int,
+        heightPx: Int,
+        bytesPerPixel: Int = 4
+    ): Pair<Int, Int> {
+        val safeW = widthPx.coerceAtLeast(120)
+        val safeH = heightPx.coerceAtLeast(80)
+        val totalBytes = safeW.toLong() * safeH.toLong() * bytesPerPixel.toLong()
+        if (totalBytes <= MAX_WIDGET_BITMAP_BYTES) return safeW to safeH
+        val ratio = sqrt(MAX_WIDGET_BITMAP_BYTES.toDouble() / totalBytes.toDouble())
+        val scaledW = (safeW * ratio).toInt().coerceAtLeast(120)
+        val scaledH = (safeH * ratio).toInt().coerceAtLeast(80)
+        return scaledW to scaledH
+    }
 
     fun renderMonthCalendarBitmap(
         today: CalendarDate,
         scheduledDates: Set<CalendarDate>,
         habitBloomDates: Set<CalendarDate>,
-        widthPx: Int = 720,
-        heightPx: Int = 460
+        widthPx: Int = 360,
+        heightPx: Int = 240,
+        isDark: Boolean = false
     ): Bitmap {
+        val (wPx, hPx) = scaleToSafeWidgetBudget(widthPx, heightPx, bytesPerPixel = 4)
         val monthStart = CalendarDate(today.year, today.month, 1)
         val cells = PlannerDateUtils.buildMonthGrid(monthStart)
         val weeks = cells.chunked(7)
         val rowCount = weeks.size.coerceAtLeast(5)
 
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val headerHeight = heightPx * 0.14f
-        val gridHeight = heightPx - headerHeight - 8f
-        val colWidth = widthPx / 7f
+        val accentColor = if (isDark) DARK_DEEP_BLUE else COLOR_DEEP_BLUE
+        val skyFill = if (isDark) DARK_SKY_FILL else COLOR_SKY_FILL
+        val primaryInk = if (isDark) DARK_MIDNIGHT else COLOR_MIDNIGHT
+        val mutedInk = if (isDark) DARK_MUTED else COLOR_MUTED
+        val onAccentInk = if (isDark) DARK_ON_ACCENT else COLOR_PURE_WHITE
+        val pollenColor = if (isDark) DARK_POLLEN else COLOR_POLLEN
+
+        val headerHeight = hPx * 0.14f
+        val gridHeight = hPx - headerHeight - 4f
+        val colWidth = wPx / 7f
         val rowHeight = gridHeight / rowCount
 
         val weekdayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = COLOR_MUTED
-            textSize = (colWidth * 0.24f).coerceIn(18f, 26f)
+            color = mutedInk
+            textSize = (colWidth * 0.26f).coerceIn(11f, 18f)
             textAlign = Paint.Align.CENTER
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
         val dayTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = (min(colWidth, rowHeight) * 0.36f).coerceIn(20f, 30f)
+            textSize = (min(colWidth, rowHeight) * 0.38f).coerceIn(11f, 20f)
             textAlign = Paint.Align.CENTER
         }
 
@@ -64,7 +114,7 @@ object WidgetBitmapRenderer {
 
         // Weekday headers
         val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
-        val headerBaseline = headerHeight * 0.68f
+        val headerBaseline = headerHeight * 0.70f
         weekdays.forEachIndexed { col, label ->
             canvas.drawText(label, colWidth * col + colWidth / 2f, headerBaseline, weekdayPaint)
         }
@@ -72,7 +122,7 @@ object WidgetBitmapRenderer {
         // Month day cells
         weeks.forEachIndexed { rowIdx, week ->
             val top = headerHeight + rowIdx * rowHeight
-            val centerY = top + rowHeight * 0.46f
+            val centerY = top + rowHeight * 0.45f
 
             week.forEachIndexed { colIdx, day ->
                 if (day != null) {
@@ -83,14 +133,14 @@ object WidgetBitmapRenderer {
 
                     val pillRadius = min(colWidth, rowHeight) * 0.36f
                     if (isToday) {
-                        circlePaint.color = COLOR_DEEP_BLUE
+                        circlePaint.color = accentColor
                         canvas.drawCircle(centerX, centerY, pillRadius, circlePaint)
                     } else if (isScheduled) {
-                        circlePaint.color = COLOR_SKY_FILL
+                        circlePaint.color = skyFill
                         canvas.drawCircle(centerX, centerY, pillRadius * 0.92f, circlePaint)
                     }
 
-                    dayTextPaint.color = if (isToday) COLOR_PURE_WHITE else COLOR_MIDNIGHT
+                    dayTextPaint.color = if (isToday) onAccentInk else primaryInk
                     dayTextPaint.typeface = if (isToday || isScheduled) {
                         Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                     } else {
@@ -99,19 +149,19 @@ object WidgetBitmapRenderer {
                     val textOffset = (dayTextPaint.descent() + dayTextPaint.ascent()) / 2f
                     canvas.drawText(day.day.toString(), centerX, centerY - textOffset, dayTextPaint)
 
-                    // Bottom indicator: mini forget-me-not flower for completed habit day, or dot for scheduled day
                     val indicatorY = top + rowHeight * 0.87f
                     if (isBloomed) {
                         drawMiniForgetMeNot(
                             canvas = canvas,
                             cx = centerX,
                             cy = indicatorY,
-                            radius = (min(colWidth, rowHeight) * 0.12f).coerceIn(6f, 10f),
-                            bloomed = true
+                            radius = (min(colWidth, rowHeight) * 0.13f).coerceIn(3.5f, 7f),
+                            bloomed = true,
+                            isDark = isDark
                         )
                     } else if (isScheduled) {
-                        circlePaint.color = if (isToday) COLOR_POLLEN else COLOR_DEEP_BLUE
-                        canvas.drawCircle(centerX, indicatorY, 4.2f, circlePaint)
+                        circlePaint.color = if (isToday) pollenColor else accentColor
+                        canvas.drawCircle(centerX, indicatorY, (min(colWidth, rowHeight) * 0.07f).coerceIn(2.2f, 3.8f), circlePaint)
                     }
                 }
             }
@@ -123,16 +173,22 @@ object WidgetBitmapRenderer {
     fun renderWeeklyHabitStripBitmap(
         today: CalendarDate,
         habitBloomDates: Set<CalendarDate>,
-        widthPx: Int = 700,
-        heightPx: Int = 124
+        widthPx: Int = 560,
+        heightPx: Int = 110,
+        isDark: Boolean = false
     ): Bitmap {
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val (wPx, hPx) = scaleToSafeWidgetBudget(widthPx, heightPx, bytesPerPixel = 4)
+        val bitmap = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val colWidth = widthPx / 7f
+        val accentColor = if (isDark) DARK_DEEP_BLUE else COLOR_DEEP_BLUE
+        val skyFill = if (isDark) DARK_SKY_FILL else COLOR_SKY_FILL
+        val mutedInk = if (isDark) DARK_MUTED else COLOR_MUTED
+
+        val colWidth = wPx / 7f
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 22f
+            textSize = (colWidth * 0.24f).coerceIn(13f, 20f)
             textAlign = Paint.Align.CENTER
         }
 
@@ -143,32 +199,33 @@ object WidgetBitmapRenderer {
             val cx = i * colWidth + colWidth / 2f
 
             if (isToday) {
-                bgPaint.color = COLOR_SKY_FILL
+                bgPaint.color = skyFill
                 val rect = RectF(
                     cx - colWidth * 0.42f,
-                    6f,
+                    4f,
                     cx + colWidth * 0.42f,
-                    heightPx - 6f
+                    hPx - 4f
                 )
-                canvas.drawRoundRect(rect, 22f, 22f, bgPaint)
+                canvas.drawRoundRect(rect, 18f, 18f, bgPaint)
             }
 
             drawMiniForgetMeNot(
                 canvas = canvas,
                 cx = cx,
-                cy = heightPx * 0.39f,
-                radius = 22f,
-                bloomed = isBloomed
+                cy = hPx * 0.39f,
+                radius = (hPx * 0.19f).coerceIn(12f, 20f),
+                bloomed = isBloomed,
+                isDark = isDark
             )
 
-            labelPaint.color = if (isToday) COLOR_DEEP_BLUE else COLOR_MUTED
+            labelPaint.color = if (isToday) accentColor else mutedInk
             labelPaint.typeface = if (isToday) {
                 Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             } else {
                 Typeface.DEFAULT
             }
             val label = PlannerDateUtils.weekdayShortLabel(day.dayOfWeekIndex()).take(3)
-            canvas.drawText(label, cx, heightPx * 0.85f, labelPaint)
+            canvas.drawText(label, cx, hPx * 0.85f, labelPaint)
         }
 
         return bitmap
@@ -184,22 +241,35 @@ object WidgetBitmapRenderer {
         scheduledDates: Set<CalendarDate>,
         habitBloomDates: Set<CalendarDate>,
         itemCountByDate: Map<CalendarDate, Int>,
-        widthPx: Int = 760,
-        heightPx: Int = 216
+        widthPx: Int = 560,
+        heightPx: Int = 156,
+        isDark: Boolean = false
     ): Bitmap {
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val (wPx, hPx) = scaleToSafeWidgetBudget(widthPx, heightPx, bytesPerPixel = 4)
+        val bitmap = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (weekDates.isEmpty()) return bitmap
 
-        val colWidth = widthPx / 7f
+        val accentColor = if (isDark) DARK_DEEP_BLUE else COLOR_DEEP_BLUE
+        val forgetMeNot = if (isDark) DARK_FORGET_ME_NOT else COLOR_FORGET_ME_NOT
+        val skyFill = if (isDark) DARK_SKY_FILL else COLOR_SKY_FILL
+        val cardDefaultBg = if (isDark) DARK_CARD_BG else Color.parseColor("#F5FAFF")
+        val outlineDefault = if (isDark) DARK_BUD_OUTLINE else COLOR_BUD_OUTLINE
+        val primaryInk = if (isDark) DARK_MIDNIGHT else COLOR_MIDNIGHT
+        val mutedInk = if (isDark) DARK_MUTED else COLOR_MUTED
+        val onAccentInk = if (isDark) DARK_ON_ACCENT else COLOR_PURE_WHITE
+        val onAccentSub = if (isDark) DARK_ON_ACCENT else Color.parseColor("#DCECFD")
+        val pollenColor = if (isDark) DARK_POLLEN else COLOR_POLLEN
+
+        val colWidth = wPx / 7f
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         val weekdayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = (colWidth * 0.22f).coerceIn(19f, 25f)
+            textSize = (colWidth * 0.22f).coerceIn(13f, 20f)
             textAlign = Paint.Align.CENTER
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val dayNumPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = (colWidth * 0.34f).coerceIn(28f, 38f)
+            textSize = (colWidth * 0.34f).coerceIn(18f, 30f)
             textAlign = Paint.Align.CENTER
         }
 
@@ -213,58 +283,55 @@ object WidgetBitmapRenderer {
             val cardMarginX = colWidth * 0.08f
             val cardRect = RectF(
                 idx * colWidth + cardMarginX,
-                8f,
+                6f,
                 (idx + 1) * colWidth - cardMarginX,
-                heightPx - 8f
+                hPx - 6f
             )
 
-            // Column card background
             bgPaint.style = Paint.Style.FILL
             bgPaint.color = when {
-                isToday -> COLOR_DEEP_BLUE
-                isScheduled -> COLOR_SKY_FILL
-                else -> Color.parseColor("#F5FAFF")
+                isToday -> accentColor
+                isScheduled -> skyFill
+                else -> cardDefaultBg
             }
-            canvas.drawRoundRect(cardRect, 24f, 24f, bgPaint)
+            canvas.drawRoundRect(cardRect, 18f, 18f, bgPaint)
 
             if (!isToday) {
                 bgPaint.style = Paint.Style.STROKE
-                bgPaint.strokeWidth = 2f
-                bgPaint.color = if (isScheduled) COLOR_FORGET_ME_NOT else COLOR_BUD_OUTLINE
-                canvas.drawRoundRect(cardRect, 24f, 24f, bgPaint)
+                bgPaint.strokeWidth = 1.5f
+                bgPaint.color = if (isScheduled) forgetMeNot else outlineDefault
+                canvas.drawRoundRect(cardRect, 18f, 18f, bgPaint)
                 bgPaint.style = Paint.Style.FILL
             }
 
-            // Weekday label (Sun..Sat)
-            weekdayPaint.color = if (isToday) Color.parseColor("#DCECFD") else COLOR_MUTED
+            weekdayPaint.color = if (isToday) onAccentSub else mutedInk
             val dayLabel = PlannerDateUtils.weekdayShortLabel(day.dayOfWeekIndex()).take(3).uppercase()
-            canvas.drawText(dayLabel, cx, heightPx * 0.25f, weekdayPaint)
+            canvas.drawText(dayLabel, cx, hPx * 0.25f, weekdayPaint)
 
-            // Day number
-            dayNumPaint.color = if (isToday) COLOR_PURE_WHITE else COLOR_MIDNIGHT
+            dayNumPaint.color = if (isToday) onAccentInk else primaryInk
             dayNumPaint.typeface = Typeface.create(
                 Typeface.DEFAULT,
                 if (isToday || isScheduled) Typeface.BOLD else Typeface.NORMAL
             )
             val numOffset = (dayNumPaint.descent() + dayNumPaint.ascent()) / 2f
-            canvas.drawText(day.day.toString(), cx, heightPx * 0.54f - numOffset, dayNumPaint)
+            canvas.drawText(day.day.toString(), cx, hPx * 0.54f - numOffset, dayNumPaint)
 
-            // Bottom indicator: forget-me-not bloom or scheduled dots
-            val indicatorY = heightPx * 0.80f
+            val indicatorY = hPx * 0.80f
             if (isBloomed) {
                 drawMiniForgetMeNot(
                     canvas = canvas,
                     cx = cx,
                     cy = indicatorY,
-                    radius = 15f,
-                    bloomed = true
+                    radius = (hPx * 0.075f).coerceIn(9f, 13f),
+                    bloomed = true,
+                    isDark = isDark
                 )
             } else if (count > 0) {
                 val dotCount = count.coerceAtMost(3)
-                val dotRadius = 5f
-                val spacing = 14f
+                val dotRadius = 3.6f
+                val spacing = 10f
                 val startX = cx - ((dotCount - 1) * spacing) / 2f
-                bgPaint.color = if (isToday) COLOR_POLLEN else COLOR_DEEP_BLUE
+                bgPaint.color = if (isToday) pollenColor else accentColor
                 for (d in 0 until dotCount) {
                     canvas.drawCircle(startX + d * spacing, indicatorY, dotRadius, bgPaint)
                 }
@@ -279,41 +346,41 @@ object WidgetBitmapRenderer {
         cx: Float,
         cy: Float,
         radius: Float,
-        bloomed: Boolean
+        bloomed: Boolean,
+        isDark: Boolean = false
     ) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val petalDist = radius * 0.50f
         val petalRadius = radius * 0.38f
 
         if (bloomed) {
+            val petalA = if (isDark) DARK_DEEP_BLUE else COLOR_DEEP_BLUE
+            val petalB = if (isDark) DARK_FORGET_ME_NOT else COLOR_FORGET_ME_NOT
             for (i in 0 until 5) {
                 val rad = ((-90.0 + i * 72.0) * PI / 180.0)
                 val px = cx + (petalDist * cos(rad)).toFloat()
                 val py = cy + (petalDist * sin(rad)).toFloat()
-                paint.color = if (i % 2 == 0) COLOR_DEEP_BLUE else COLOR_FORGET_ME_NOT
+                paint.color = if (i % 2 == 0) petalA else petalB
                 canvas.drawCircle(px, py, petalRadius, paint)
             }
             paint.color = COLOR_PURE_WHITE
             canvas.drawCircle(cx, cy, radius * 0.32f, paint)
-            paint.color = COLOR_POLLEN
+            paint.color = if (isDark) DARK_POLLEN else COLOR_POLLEN
             canvas.drawCircle(cx, cy, radius * 0.21f, paint)
         } else {
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = (radius * 0.13f).coerceAtLeast(2f)
-            paint.color = COLOR_BUD_OUTLINE
+            paint.strokeWidth = (radius * 0.13f).coerceAtLeast(1.5f)
+            paint.color = if (isDark) DARK_BUD_OUTLINE else COLOR_BUD_OUTLINE
             canvas.drawCircle(cx, cy, radius * 0.52f, paint)
             paint.style = Paint.Style.FILL
-            paint.color = COLOR_SKY_FILL
+            paint.color = if (isDark) DARK_SKY_FILL else COLOR_SKY_FILL
             canvas.drawCircle(cx, cy, radius * 0.20f, paint)
         }
     }
 
     /**
-     * Renders the Resizable Interactive Bunny Family widget illustration:
-     * - Scales the Big Monthly Breed Bunny dynamically to fill the widget's resized dimensions
-     * - Draws 3..5 adorable widget-exclusive baby bunnies peeking & hopping behind the big bunny
-     * - Reflects live expression states: PATTED (squished + floating hearts), CHEEK_PINCHED (stretched cheeks + squeak sparks),
-     *   HAPPY (sparkles + flower crown on all-habits-done), SAD (droopy ears + teardrop on missed task), or NEUTRAL.
+     * Renders the Resizable Interactive Bunny Family widget illustration strictly within the
+     * Android RemoteViews Binder IPC budget (< 380 KB) with Light & Dark Mode support.
      */
     fun renderInteractiveBunnyWidgetBitmap(
         month: Int,
@@ -321,16 +388,20 @@ object WidgetBitmapRenderer {
         pinchSide: Int = 0, // -1 left, +1 right, 0 both
         babyBunnyCount: Int = 3,
         allHabitsDoneToday: Boolean = false,
-        widthPx: Int = 640,
-        heightPx: Int = 460
+        widthPx: Int = 360,
+        heightPx: Int = 256,
+        isDark: Boolean = false
     ): Bitmap {
-        val safeW = widthPx.coerceIn(280, 1400)
-        val safeH = heightPx.coerceIn(200, 1400)
+        val (safeW, safeH) = scaleToSafeWidgetBudget(
+            widthPx = widthPx.coerceIn(200, 440),
+            heightPx = heightPx.coerceIn(150, 320),
+            bytesPerPixel = 4
+        )
         val bitmap = Bitmap.createBitmap(safeW, safeH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         val breed = com.example.ui.components.BunnyBreed.forMonth(month)
-        val composePalette = breed.palette(isDarkTheme = false)
+        val composePalette = breed.palette(isDarkTheme = isDark)
         fun androidx.compose.ui.graphics.Color.toAndroidColor(): Int =
             Color.argb(
                 (alpha * 255).toInt().coerceIn(0, 255),
@@ -352,19 +423,19 @@ object WidgetBitmapRenderer {
         val h = safeH.toFloat()
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Cozy sky-meadow backdrop hill
+        // Cozy sky-meadow backdrop hill (adapts to Light & Moonlit Dark mode)
         paint.style = Paint.Style.FILL
-        paint.color = Color.parseColor("#E6F3FF")
+        paint.color = if (isDark) Color.parseColor("#1D2E4A") else Color.parseColor("#E6F3FF")
         canvas.drawOval(RectF(-w * 0.15f, h * 0.64f, w * 1.15f, h * 1.24f), paint)
-        paint.color = Color.parseColor("#D6ECFF")
+        paint.color = if (isDark) Color.parseColor("#243A5E") else Color.parseColor("#D6ECFF")
         canvas.drawOval(RectF(w * 0.05f, h * 0.72f, w * 0.95f, h * 1.15f), paint)
 
         // Scatter tiny forget-me-not flowers across the meadow hill
-        drawMiniForgetMeNot(canvas, w * 0.11f, h * 0.84f, min(w, h) * 0.036f, true)
-        drawMiniForgetMeNot(canvas, w * 0.89f, h * 0.82f, min(w, h) * 0.038f, true)
+        drawMiniForgetMeNot(canvas, w * 0.11f, h * 0.84f, min(w, h) * 0.036f, true, isDark)
+        drawMiniForgetMeNot(canvas, w * 0.89f, h * 0.82f, min(w, h) * 0.038f, true, isDark)
         if (allHabitsDoneToday) {
-            drawMiniForgetMeNot(canvas, w * 0.22f, h * 0.90f, min(w, h) * 0.032f, true)
-            drawMiniForgetMeNot(canvas, w * 0.78f, h * 0.89f, min(w, h) * 0.032f, true)
+            drawMiniForgetMeNot(canvas, w * 0.22f, h * 0.90f, min(w, h) * 0.032f, true, isDark)
+            drawMiniForgetMeNot(canvas, w * 0.78f, h * 0.89f, min(w, h) * 0.032f, true, isDark)
         }
 
         val unit = min(w * 0.84f, h * 0.94f)

@@ -58,10 +58,18 @@ object WidgetDataLoader {
         val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val currentMinutesOfDay = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
-        val dao = LocalPlannerDatabase.getInstance(context.applicationContext).plannerDao()
+        val db = LocalPlannerDatabase.getInstance(context.applicationContext)
+        val dao = db.plannerDao()
         val items = dao.getAllItems().map { it.toModel() }
         val steps = dao.getAllSteps().map { it.toModel() }
         val classes = dao.getAllClassSchedules().map { it.toModel() }
+        val habitEntities = dao.getAllDailyHabits()
+        val checkInEntities = dao.getAllHabitCheckIns()
+        val dailyHabitSnap = DailyHabitRepository.buildSnapshot(
+            habitEntities = habitEntities,
+            checkInEntities = checkInEntities,
+            today = today
+        )
 
         val todayClasses = classes
             .filter { it.occursOnDate(today) }
@@ -139,10 +147,12 @@ object WidgetDataLoader {
             }
         }
 
-        // Habit bloom dates (matching HabitTrackerCalendar logic: any completed task or step on that date)
-        val bloomDates = computeHabitBloomDates(items, steps)
+        // Unified habit bloom dates: completed tasks/steps + Daily Habit check-ins
+        val habitCheckInDates = dailyHabitSnap.checkInCountByDate
+            .filterValues { it > 0 }
+            .keys
+        val bloomDates = computeHabitBloomDates(items, steps) + habitCheckInDates
         val streak = computeHabitStreak(bloomDates, today)
-        val dailyHabitSnap = DailyHabitRepository.getInstance(context.applicationContext).snapshot.value
 
         WidgetSnapshot(
             nowMillis = nowMillis,

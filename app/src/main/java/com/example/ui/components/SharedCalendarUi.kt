@@ -92,7 +92,7 @@ fun FriendProfileIconButton(
     name: String,
     email: String,
     photoUrl: String?,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
     tagSuffix: String = "friend"
@@ -107,6 +107,7 @@ fun FriendProfileIconButton(
         }
     }
     val cd = stringResource(R.string.cd_friend_profile_icon, name.ifBlank { email })
+    val targetSize = if (onClick != null) maxOf(size, 48.dp) else size
 
     Surface(
         shape = CircleShape,
@@ -114,27 +115,33 @@ fun FriendProfileIconButton(
         border = BorderStroke(1.5.dp, DeepBlue.copy(alpha = 0.65f)),
         shadowElevation = 2.dp,
         modifier = modifier
-            .size(maxOf(size, 48.dp))
+            .size(targetSize)
             .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = cd }
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .clickable(onClick = onClick)
+                        .semantics { contentDescription = cd }
+                } else {
+                    Modifier
+                }
+            )
             .testTag("friend_profile_icon_$tagSuffix")
     ) {
         Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = initials,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = DeepBlue
+            )
             if (!photoUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = photoUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(size)
+                        .size(targetSize)
                         .clip(CircleShape)
-                )
-            } else {
-                Text(
-                    text = initials,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = DeepBlue
                 )
             }
         }
@@ -289,15 +296,15 @@ fun InviteFriendToCalendarDialog(
     ) -> Unit
 ) {
     var friendEmail by rememberSaveable { mutableStateOf("") }
-    var scheduleTitle by rememberSaveable(initialTitle) { mutableStateOf(initialTitle) }
+    var scheduleTitle by rememberSaveable(initialTitle) { mutableStateOf(initialTitle.take(140)) }
     var plannedDateIso by rememberSaveable(initialDateIso) { mutableStateOf(initialDateIso) }
-    var timeLabel by rememberSaveable(initialTimeLabel) { mutableStateOf(initialTimeLabel.orEmpty()) }
-    var noteText by rememberSaveable(initialNotes) { mutableStateOf(initialNotes.orEmpty()) }
+    var timeLabel by rememberSaveable(initialTimeLabel) { mutableStateOf(initialTimeLabel.orEmpty().take(40)) }
+    var noteText by rememberSaveable(initialNotes) { mutableStateOf(initialNotes.orEmpty().take(600)) }
     var openEmailApp by rememberSaveable { mutableStateOf(true) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
     val parsedDate = CalendarDate.parse(plannedDateIso) ?: CalendarDate.today()
-    val emailValid = friendEmail.trim().contains("@") && friendEmail.trim().contains(".")
+    val emailValid = com.example.data.SharedCalendarRepository.isValidEmailAddress(friendEmail)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -380,9 +387,13 @@ fun InviteFriendToCalendarDialog(
 
                 OutlinedTextField(
                     value = friendEmail,
-                    onValueChange = { friendEmail = it },
+                    onValueChange = { friendEmail = it.take(254) },
                     label = { Text(stringResource(R.string.invite_email_label)) },
                     placeholder = { Text("friend@example.com") },
+                    isError = friendEmail.isNotBlank() && !emailValid,
+                    supportingText = if (friendEmail.isNotBlank() && !emailValid) {
+                        { Text("Please enter a valid email address.") }
+                    } else null,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     leadingIcon = {
@@ -396,7 +407,7 @@ fun InviteFriendToCalendarDialog(
 
                 OutlinedTextField(
                     value = scheduleTitle,
-                    onValueChange = { scheduleTitle = it },
+                    onValueChange = { scheduleTitle = it.take(140) },
                     label = { Text(stringResource(R.string.invite_schedule_title_label)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
@@ -434,7 +445,7 @@ fun InviteFriendToCalendarDialog(
 
                     OutlinedTextField(
                         value = timeLabel,
-                        onValueChange = { timeLabel = it },
+                        onValueChange = { timeLabel = it.take(40) },
                         label = { Text("Time (optional)") },
                         placeholder = { Text("3:00 PM") },
                         singleLine = true,
@@ -445,7 +456,7 @@ fun InviteFriendToCalendarDialog(
 
                 OutlinedTextField(
                     value = noteText,
-                    onValueChange = { noteText = it },
+                    onValueChange = { noteText = it.take(600) },
                     label = { Text("Message or location note") },
                     minLines = 2,
                     maxLines = 3,
@@ -498,7 +509,7 @@ fun InviteFriendToCalendarDialog(
                         enabled = isSignedIn && emailValid && scheduleTitle.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DeepBlue,
-                            contentColor = PureWhite
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         shape = RoundedCornerShape(100.dp),
                         modifier = Modifier
@@ -554,6 +565,7 @@ fun FriendScheduleDetailModal(
         )
     }
     var replyText by rememberSaveable(invite.id) { mutableStateOf("") }
+    var confirmDeleteInvite by remember { mutableStateOf(false) }
     val plannedDate = CalendarDate.parse(invite.plannedDate)
 
     Dialog(
@@ -585,7 +597,7 @@ fun FriendScheduleDetailModal(
                         name = invite.ownerName,
                         email = invite.ownerEmail,
                         photoUrl = invite.ownerPhotoUrl,
-                        onClick = {},
+                        onClick = null,
                         size = 46.dp,
                         tagSuffix = "modal_${invite.id}"
                     )
@@ -682,7 +694,7 @@ fun FriendScheduleDetailModal(
                                         name = reply.authorName,
                                         email = reply.authorEmail,
                                         photoUrl = reply.authorPhotoUrl,
-                                        onClick = {},
+                                        onClick = null,
                                         size = 32.dp,
                                         tagSuffix = "reply_${reply.id}"
                                     )
@@ -756,7 +768,7 @@ fun FriendScheduleDetailModal(
 
                 OutlinedTextField(
                     value = replyText,
-                    onValueChange = { replyText = it },
+                    onValueChange = { replyText = it.take(600) },
                     placeholder = { Text(stringResource(R.string.invite_reply_placeholder)) },
                     minLines = 2,
                     maxLines = 3,
@@ -773,7 +785,7 @@ fun FriendScheduleDetailModal(
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     modifier = Modifier
@@ -808,7 +820,7 @@ fun FriendScheduleDetailModal(
                             Text("Email invite", color = MidnightNavy)
                         }
                         OutlinedButton(
-                            onClick = onDeleteInvite,
+                            onClick = { confirmDeleteInvite = true },
                             border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.45f)),
                             shape = RoundedCornerShape(100.dp),
                             modifier = Modifier
@@ -823,5 +835,20 @@ fun FriendScheduleDetailModal(
                 }
             }
         }
+    }
+
+    if (confirmDeleteInvite) {
+        BunnyMemoConfirmModal(
+            title = "Remove shared invite?",
+            message = "Remove “${invite.title}” and its replies for both you and ${invite.inviteeEmail}?",
+            confirmLabel = "Remove",
+            cancelLabel = "Keep it",
+            isDestructive = true,
+            onConfirm = {
+                confirmDeleteInvite = false
+                onDeleteInvite()
+            },
+            onDismiss = { confirmDeleteInvite = false }
+        )
     }
 }

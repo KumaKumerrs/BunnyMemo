@@ -39,7 +39,7 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.LocalFlorist
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.SelfImprovement
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.Button
@@ -580,7 +580,7 @@ private fun DailyHabitRow(
                 color = if (habit.completedToday) CalmSage else accent.copy(alpha = 0.6f)
             ),
             modifier = Modifier
-                .size(38.dp)
+                .size(48.dp)
                 .testTag("daily_habit_check_${habit.id}")
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -588,15 +588,15 @@ private fun DailyHabitRow(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Completed today",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(22.dp)
                     )
                 } else {
                     Icon(
                         imageVector = habitIconVector(habit.iconKey),
                         contentDescription = null,
                         tint = accent,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -776,7 +776,7 @@ private fun AddDailyHabitModal(
                     enabled = title.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     modifier = Modifier
@@ -792,7 +792,7 @@ private fun AddDailyHabitModal(
 
 private fun habitIconVector(key: HabitIconKey): ImageVector = when (key) {
     HabitIconKey.WATER -> Icons.Outlined.WaterDrop
-    HabitIconKey.BOOK -> Icons.Outlined.MenuBook
+    HabitIconKey.BOOK -> Icons.AutoMirrored.Outlined.MenuBook
     HabitIconKey.STRETCH -> Icons.Outlined.FitnessCenter
     HabitIconKey.SPARKLE -> Icons.Outlined.AutoAwesome
     HabitIconKey.MEDITATE -> Icons.Outlined.SelfImprovement
@@ -1048,7 +1048,7 @@ private fun DrawScope.drawTinyForgetMeNot(
     cx: Float,
     cy: Float,
     radius: Float,
-    petalColor: Color = BunnyFlowerCrown
+    petalColor: Color = ForgetMeNotBlue
 ) {
     val petalDist = radius * 0.46f
     val petalR = radius * 0.38f

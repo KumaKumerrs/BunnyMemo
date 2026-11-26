@@ -365,7 +365,7 @@ fun YearBouquetCard(
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     modifier = Modifier
@@ -402,7 +402,7 @@ fun YearBouquetCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isClaimed) "Revisit Your $year Bouquet Keepsake" else "Inspect Bouquet & Year-End Hand-Out",
+                        text = if (isClaimed) "Revisit Your $year Bouquet Keepsake" else "Preview Bouquet Keepsake",
                         color = DeepBlue,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -419,8 +419,10 @@ fun YearBouquetCard(
             isOfficialYearEnd = isPastOrYearEnd,
             alreadyClaimed = isClaimed,
             onClaimBouquet = {
-                feedback.onCelebrateBloom()
-                BouquetArchiveManager.markYearHandedOut(context, year, flowerCount)
+                if (isPastOrYearEnd) {
+                    feedback.onCelebrateBloom()
+                    BouquetArchiveManager.markYearHandedOut(context, year, flowerCount)
+                }
                 showCeremony = false
             },
             onDismiss = { showCeremony = false }
@@ -596,7 +598,7 @@ fun BouquetHandoutCeremonyDialog(
                                 modifier = Modifier.size(15.dp)
                             )
                             Text(
-                                text = if (isOfficialYearEnd) "$year YEAR-END BOUQUET HAND-OUT" else "$year BOUQUET IN PROGRESS",
+                                text = if (isOfficialYearEnd) "$year YEAR-END BOUQUET HAND-OUT" else "$year BOUQUET PREVIEW",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MidnightNavy
                             )
@@ -610,7 +612,7 @@ fun BouquetHandoutCeremonyDialog(
                     ) {
                         ForgetMeNotBouquetIllustration(
                             flowerCount = flowerCount,
-                            isRibbonGifted = true,
+                            isRibbonGifted = isOfficialYearEnd || alreadyClaimed,
                             modifier = Modifier.size(204.dp)
                         )
                         Surface(
@@ -671,7 +673,7 @@ fun BouquetHandoutCeremonyDialog(
                             onClick = onClaimBouquet,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DeepBlue,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(100.dp),
                             modifier = Modifier
@@ -687,21 +689,13 @@ fun BouquetHandoutCeremonyDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Accept & Save $year Bouquet")
                         }
-                    } else if (!alreadyClaimed && flowerCount > 0) {
-                        Button(
-                            onClick = onClaimBouquet,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = DeepBlue,
-                                contentColor = PureWhite
-                            ),
-                            shape = RoundedCornerShape(100.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("claim_bouquet_early_button")
-                        ) {
-                            Text("Tie Ribbon & Save Snapshot")
-                        }
+                    } else if (!alreadyClaimed && !isOfficialYearEnd) {
+                        Text(
+                            text = "Your bouquet keeps growing all year — official hand-out unlocks Dec 25.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DeepBlue,
+                            textAlign = TextAlign.Center
+                        )
                     }
 
                     Row(
@@ -716,7 +710,9 @@ fun BouquetHandoutCeremonyDialog(
                                     putExtra(Intent.EXTRA_SUBJECT, "My $year Forget-Me-Not Bouquet")
                                     putExtra(Intent.EXTRA_TEXT, text)
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share bouquet keepsake"))
+                                runCatching {
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share bouquet keepsake"))
+                                }
                             },
                             shape = RoundedCornerShape(100.dp),
                             modifier = Modifier.weight(1f)
@@ -755,40 +751,46 @@ fun ForgetMeNotBouquetIllustration(
     modifier: Modifier = Modifier
 ) {
     val reducedMotion = rememberReducedMotion()
-    val animatedBloomPop by animateFloatAsState(
+    val animatedBloomPopState = animateFloatAsState(
         targetValue = if (flowerCount > 0) 1f else 0.92f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "bouquet_pop"
     )
-    val infinite = rememberInfiniteTransition(label = "bouquet_breeze")
-    val sway by infinite.animateFloat(
-        initialValue = -1f,
-        targetValue = if (reducedMotion) -1f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bouquet_sway"
-    )
+    val swayState = if (reducedMotion) {
+        remember { mutableStateOf(0f) }
+    } else {
+        val infinite = rememberInfiniteTransition(label = "bouquet_breeze")
+        infinite.animateFloat(
+            initialValue = -1f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bouquet_sway"
+        )
+    }
+    val backWrap = remember { Path() }
+    val frontWrap = remember { Path() }
 
     Canvas(modifier = modifier) {
         val s = size.minDimension
         if (s <= 6f) return@Canvas
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val swayPx = sway * s * 0.012f
+        val swayPx = swayState.value * s * 0.012f
+        val animatedBloomPop = animatedBloomPopState.value
         val strokeW = (s * 0.018f).coerceIn(1.3f, 3.2f)
         val outline = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
         // Back stationery wrapping cone (soft linen cream)
-        val backWrap = Path().apply {
-            moveTo(cx - s * 0.34f, cy - s * 0.04f)
-            lineTo(cx, cy - s * 0.24f)
-            lineTo(cx + s * 0.34f, cy - s * 0.04f)
-            lineTo(cx + s * 0.10f, cy + s * 0.43f)
-            lineTo(cx - s * 0.10f, cy + s * 0.43f)
-            close()
-        }
+        backWrap.reset()
+        backWrap.moveTo(cx - s * 0.34f, cy - s * 0.04f)
+        backWrap.lineTo(cx, cy - s * 0.24f)
+        backWrap.lineTo(cx + s * 0.34f, cy - s * 0.04f)
+        backWrap.lineTo(cx + s * 0.10f, cy + s * 0.43f)
+        backWrap.lineTo(cx - s * 0.10f, cy + s * 0.43f)
+        backWrap.close()
         drawPath(backWrap, color = Color(0xFFF3EFE6))
         drawPath(backWrap, color = BunnyOutlineInk.copy(alpha = 0.32f), style = outline)
 
@@ -875,14 +877,13 @@ fun ForgetMeNotBouquetIllustration(
         }
 
         // Front pastel wrapper flaps cradling the stems
-        val frontWrap = Path().apply {
-            moveTo(cx - s * 0.28f, cy + s * 0.04f)
-            lineTo(cx, cy + s * 0.16f)
-            lineTo(cx + s * 0.28f, cy + s * 0.04f)
-            lineTo(cx + s * 0.11f, cy + s * 0.43f)
-            lineTo(cx - s * 0.11f, cy + s * 0.43f)
-            close()
-        }
+        frontWrap.reset()
+        frontWrap.moveTo(cx - s * 0.28f, cy + s * 0.04f)
+        frontWrap.lineTo(cx, cy + s * 0.16f)
+        frontWrap.lineTo(cx + s * 0.28f, cy + s * 0.04f)
+        frontWrap.lineTo(cx + s * 0.11f, cy + s * 0.43f)
+        frontWrap.lineTo(cx - s * 0.11f, cy + s * 0.43f)
+        frontWrap.close()
         drawPath(frontWrap, color = Color(0xFFFCFAF4))
         drawPath(frontWrap, color = BunnyOutlineInk.copy(alpha = 0.30f), style = outline)
 

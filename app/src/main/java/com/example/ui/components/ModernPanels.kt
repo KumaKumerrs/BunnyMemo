@@ -54,12 +54,14 @@ fun ModernPanel(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
+    val shadowTint = if (isDark) Color.Black.copy(alpha = 0.34f) else MidnightNavy.copy(alpha = 0.08f)
     val shadowModifier = modifier.shadow(
         elevation = elevation,
         shape = shape,
         clip = false,
-        ambientColor = MidnightNavy.copy(alpha = 0.08f),
-        spotColor = MidnightNavy.copy(alpha = 0.08f)
+        ambientColor = shadowTint,
+        spotColor = shadowTint
     )
     if (onClick != null) {
         Surface(
@@ -114,6 +116,8 @@ fun <T> ModernSegmentedToggle(
     modifier: Modifier = Modifier,
     tagPrefix: String = "segment"
 ) {
+    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
+    val pillShadowTint = if (isDark) Color.Black.copy(alpha = 0.36f) else MidnightNavy.copy(alpha = 0.10f)
     Surface(
         color = SoftIceSurface,
         shape = RoundedCornerShape(14.dp),
@@ -141,14 +145,14 @@ fun <T> ModernSegmentedToggle(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 38.dp)
+                        .heightIn(min = 44.dp)
                         .then(
                             if (isSelected) {
                                 Modifier.shadow(
                                     elevation = 2.dp,
                                     shape = pillShape,
-                                    ambientColor = MidnightNavy.copy(alpha = 0.10f),
-                                    spotColor = MidnightNavy.copy(alpha = 0.10f)
+                                    ambientColor = pillShadowTint,
+                                    spotColor = pillShadowTint
                                 )
                             } else {
                                 Modifier

@@ -2,7 +2,6 @@ package com.example.data
 
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -34,6 +33,7 @@ data class MonthlyAccomplishmentReport(
     val monthName: String,
     val shortMonthName: String,
     val totalBlooms: Int,
+    val totalTrackableUnits: Int = 0,
     val plansCompleted: Int,
     val plansTotal: Int,
     val milestonesCompleted: Int,
@@ -79,6 +79,37 @@ data class YearEndAccomplishmentReport(
 
 object AccomplishmentReportEngine {
 
+    private class IndexedPlannerData(
+        val allItems: List<PlannerItem>,
+        val allSteps: List<PlannerStep>,
+        val itemMap: Map<String, PlannerItem>,
+        val stepsByItemId: Map<String, List<PlannerStep>>,
+        val linkedTasksByPlanId: Map<String, List<PlannerItem>>
+    ) {
+        private val progressCache = HashMap<String, ItemProgress>()
+
+        fun progressFor(item: PlannerItem, nowMillis: Long): ItemProgress {
+            return progressCache.getOrPut(item.id) {
+                val ownSteps = stepsByItemId[item.id].orEmpty()
+                val linked = if (item.itemType() == ItemType.PLAN) {
+                    linkedTasksByPlanId[item.id].orEmpty()
+                } else {
+                    emptyList()
+                }
+                PlannerLogic.computeProgress(item, ownSteps, linked, nowMillis)
+            }
+        }
+    }
+
+    private fun indexData(allItems: List<PlannerItem>, allSteps: List<PlannerStep>): IndexedPlannerData {
+        val itemMap = allItems.associateBy { it.id }
+        val stepsByItemId = allSteps.groupBy { it.itemId }
+        val linkedTasksByPlanId = allItems
+            .filter { it.itemType() == ItemType.TASK && !it.parentPlanId.isNullOrBlank() }
+            .groupBy { it.parentPlanId!! }
+        return IndexedPlannerData(allItems, allSteps, itemMap, stepsByItemId, linkedTasksByPlanId)
+    }
+
     private fun monthNames(year: Int, month: Int): Pair<String, String> {
         val cal = Calendar.getInstance().apply {
             set(Calendar.YEAR, year)
@@ -92,16 +123,16 @@ object AccomplishmentReportEngine {
 
     private fun dateForItem(item: PlannerItem): CalendarDate {
         return item.primaryCalendarDate()
-            ?: item.updatedAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
             ?: item.createdAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
+            ?: item.updatedAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
             ?: CalendarDate.today()
     }
 
     private fun dateForStep(step: PlannerStep, parent: PlannerItem?): CalendarDate {
         return CalendarDate.parse(step.dueDate)
             ?: parent?.let { dateForItem(it) }
-            ?: step.updatedAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
             ?: step.createdAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
+            ?: step.updatedAt?.let { CalendarDate.fromUtcMillis(it.toDate().time) }
             ?: CalendarDate.today()
     }
 
@@ -123,10 +154,20 @@ object AccomplishmentReportEngine {
         allSteps: List<PlannerStep>,
         nowMillis: Long
     ): MonthlyAccomplishmentReport {
-        val (fullMonth, shortMonth) = monthNames(year, month)
-        val itemMap = allItems.associateBy { it.id }
+        val indexed = indexData(allItems, allSteps)
+        return buildMonthlyReportIndexed(year, month, indexed, nowMillis)
+    }
 
-        val monthItems = allItems.filter { item ->
+    private fun buildMonthlyReportIndexed(
+        year: Int,
+        month: Int,
+        indexed: IndexedPlannerData,
+        nowMillis: Long
+    ): MonthlyAccomplishmentReport {
+        val (fullMonth, shortMonth) = monthNames(year, month)
+        val itemMap = indexed.itemMap
+
+        val monthItems = indexed.allItems.filter { item ->
             val d = dateForItem(item)
             d.year == year && d.month == month
         }
@@ -135,17 +176,17 @@ object AccomplishmentReportEngine {
         val tasks = monthItems.filter { it.itemType() == ItemType.TASK }
         val events = monthItems.filter { it.itemType() == ItemType.EVENT }
 
-        val monthSteps = allSteps.filter { step ->
+        val monthSteps = indexed.allSteps.filter { step ->
             val d = dateForStep(step, itemMap[step.itemId])
             d.year == year && d.month == month
         }
 
         val completedPlans = plans.filter { plan ->
-            PlannerLogic.computeProgress(plan, allSteps, allItems, nowMillis).allStepsDone
+            indexed.progressFor(plan, nowMillis).allStepsDone
         }
         val completedTasks = tasks.filter { it.completed }
         val completedEvents = events.filter { ev ->
-            val prog = PlannerLogic.computeProgress(ev, allSteps, allItems, nowMillis)
+            val prog = indexed.progressFor(ev, nowMillis)
             isEventAccomplished(ev, prog, nowMillis)
         }
         val completedSteps = monthSteps.filter { it.completed }
@@ -170,12 +211,10 @@ object AccomplishmentReportEngine {
             weeklyCompletedTaskBuckets[idx] = weeklyCompletedTaskBuckets[idx] + 1
         }
         completedPlans.forEach { plan ->
-            val prog = PlannerLogic.computeProgress(plan, allSteps, allItems, nowMillis)
-            if (prog.totalCount == 0) addToWeek(dateForItem(plan))
+            if (indexed.progressFor(plan, nowMillis).totalCount == 0) addToWeek(dateForItem(plan))
         }
         completedEvents.forEach { ev ->
-            val prog = PlannerLogic.computeProgress(ev, allSteps, allItems, nowMillis)
-            if (prog.totalCount == 0) addToWeek(dateForItem(ev))
+            if (indexed.progressFor(ev, nowMillis).totalCount == 0) addToWeek(dateForItem(ev))
         }
 
         monthSteps.forEach { step ->
@@ -209,9 +248,9 @@ object AccomplishmentReportEngine {
             } else {
                 val doneCount = inCat.count { item ->
                     when (item.itemType()) {
-                        ItemType.PLAN -> PlannerLogic.computeProgress(item, allSteps, allItems, nowMillis).allStepsDone
+                        ItemType.PLAN -> indexed.progressFor(item, nowMillis).allStepsDone
                         ItemType.EVENT -> {
-                            val prog = PlannerLogic.computeProgress(item, allSteps, allItems, nowMillis)
+                            val prog = indexed.progressFor(item, nowMillis)
                             isEventAccomplished(item, prog, nowMillis)
                         }
                         ItemType.TASK -> item.completed
@@ -227,10 +266,10 @@ object AccomplishmentReportEngine {
 
         val totalBlooms = weeklyBuckets.sum()
 
-        // Overall completion rate across trackable units in this month
+        // Exact trackable unit count (never double-counts Plans/Events that have child steps)
         val trackableTotal = monthSteps.size + tasks.size +
-            plans.count { PlannerLogic.computeProgress(it, allSteps, allItems, nowMillis).totalCount == 0 } +
-            events.count { PlannerLogic.computeProgress(it, allSteps, allItems, nowMillis).totalCount == 0 }
+            plans.count { indexed.progressFor(it, nowMillis).totalCount == 0 } +
+            events.count { indexed.progressFor(it, nowMillis).totalCount == 0 }
 
         val completionPercent = if (trackableTotal == 0) {
             0
@@ -238,10 +277,9 @@ object AccomplishmentReportEngine {
             ((totalBlooms.toDouble() / trackableTotal.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
         }
 
-        // Highlights: completed plans first, then events, then standalone tasks
         val highlights = buildList {
             completedPlans.forEach { plan ->
-                val prog = PlannerLogic.computeProgress(plan, allSteps, allItems, nowMillis)
+                val prog = indexed.progressFor(plan, nowMillis)
                 add(
                     AccomplishmentHighlight(
                         itemId = plan.id,
@@ -257,7 +295,7 @@ object AccomplishmentReportEngine {
                 )
             }
             completedEvents.forEach { ev ->
-                val prog = PlannerLogic.computeProgress(ev, allSteps, allItems, nowMillis)
+                val prog = indexed.progressFor(ev, nowMillis)
                 add(
                     AccomplishmentHighlight(
                         itemId = ev.id,
@@ -304,6 +342,7 @@ object AccomplishmentReportEngine {
             monthName = fullMonth,
             shortMonthName = shortMonth,
             totalBlooms = totalBlooms,
+            totalTrackableUnits = trackableTotal,
             plansCompleted = completedPlans.size,
             plansTotal = plans.size,
             milestonesCompleted = completedSteps.size,
@@ -330,11 +369,13 @@ object AccomplishmentReportEngine {
         allSteps: List<PlannerStep>,
         nowMillis: Long
     ): YearEndAccomplishmentReport {
+        val indexed = indexData(allItems, allSteps)
         val months = (1..12).map { m ->
-            buildMonthlyReport(year, m, allItems, allSteps, nowMillis)
+            buildMonthlyReportIndexed(year, m, indexed, nowMillis)
         }
 
         val totalBlooms = months.sumOf { it.totalBlooms }
+        val totalPossible = months.sumOf { it.totalTrackableUnits }
         val plansCompleted = months.sumOf { it.plansCompleted }
         val plansTotal = months.sumOf { it.plansTotal }
         val milestonesCompleted = months.sumOf { it.milestonesCompleted }
@@ -347,7 +388,6 @@ object AccomplishmentReportEngine {
 
         val activeMonthsCount = months.count { it.totalBlooms > 0 }
 
-        // Longest consecutive streak of months with >= 1 bloom
         var bestStreak = 0
         var currentStreak = 0
         months.forEach { report ->
@@ -361,18 +401,9 @@ object AccomplishmentReportEngine {
 
         val peakMonth = months.filter { it.totalBlooms > 0 }.maxByOrNull { it.totalBlooms }
 
-        val totalPossible = months.sumOf { m ->
-            val pctDenom = if (m.completionPercent > 0) {
-                ((m.totalBlooms * 100.0) / m.completionPercent).roundToInt()
-            } else {
-                m.milestonesTotal + m.tasksTotal + m.plansTotal + m.eventsTotal
-            }
-            pctDenom.coerceAtLeast(m.totalBlooms)
-        }
         val overallPercent = if (totalPossible == 0) 0
         else ((totalBlooms.toDouble() / totalPossible.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
 
-        // Curate grand highlights across all 12 months (plans & events first)
         val grandHighlights = months
             .flatMap { m -> m.highlights }
             .sortedBy {

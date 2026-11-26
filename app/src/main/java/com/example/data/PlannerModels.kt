@@ -547,13 +547,15 @@ object PlannerLogic {
         nowMillis: Long
     ): List<InboxNotificationEntry> {
         val itemMap = items.associateBy { it.id }
+        val horizonMillis = nowMillis + 86_400_000L
         return reminders
             .filter { !it.dismissed }
             .mapNotNull { reminder ->
                 val item = itemMap[reminder.itemId] ?: return@mapNotNull null
                 val trigger = reminder.effectiveTriggerMillis()
-                // Show triggered reminders and reminders coming due within the next 24h in dated inbox
-                // so the user can inspect, finish a step, snooze, or reschedule easily.
+                val isSnoozed = reminder.snoozedUntilUtcMillis != null && reminder.snoozedUntilUtcMillis > nowMillis
+                // Show triggered reminders, snoozed occurrences, and reminders coming due within 24h
+                if (!isSnoozed && trigger > horizonMillis) return@mapNotNull null
                 val msgPair = buildReminderMessage(reminder, item, steps, items, nowMillis)
                     ?: return@mapNotNull null
                 InboxNotificationEntry(
@@ -567,7 +569,7 @@ object PlannerLogic {
                     },
                     message = msgPair.first,
                     remainingSteps = msgPair.second,
-                    isSnoozed = reminder.snoozedUntilUtcMillis != null && reminder.snoozedUntilUtcMillis > nowMillis
+                    isSnoozed = isSnoozed
                 )
             }
             .sortedBy { it.triggerUtcMillis }
@@ -609,6 +611,7 @@ data class CalendarInvite(
     val replyCount: Int = 0,
     val lastReplyText: String? = null,
     val lastReplyAuthorName: String? = null,
+    val lastReplyAuthorUid: String? = null,
     val lastReplyAtMillis: Long? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null

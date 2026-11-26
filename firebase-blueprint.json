@@ -123,6 +123,7 @@
         "replyCount": { "type": "integer", "description": "Total number of replies on this planned date." },
         "lastReplyText": { "type": "string", "description": "Preview of the most recent reply message." },
         "lastReplyAuthorName": { "type": "string", "description": "Display name of the author of the most recent reply." },
+        "lastReplyAuthorUid": { "type": "string", "description": "Firebase Auth UID of the author of the most recent reply." },
         "lastReplyAtMillis": { "type": "integer", "description": "Epoch milliseconds when the last reply was sent." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
@@ -148,6 +149,35 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
       },
       "required": ["inviteId", "ownerUid", "inviteeEmail", "authorUid", "authorName", "authorEmail", "plannedDate", "rsvpStatus", "message", "createdAt", "updatedAt"]
+    },
+    "DailyHabit": {
+      "title": "DailyHabit",
+      "description": "Owner's recurring daily habit driving streaks and Bunny Growth.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "title": { "type": "string", "description": "Daily habit title (1-80 chars)." },
+        "iconKey": { "type": "string", "enum": ["WATER", "BOOK", "STRETCH", "SPARKLE", "MEDITATE", "LEAF", "JOURNAL", "HEART"], "description": "Icon identifier." },
+        "colorKey": { "type": "string", "enum": ["SKY", "CORNFLOWER", "SAGE", "POLLEN"], "description": "Pastel accent color key." },
+        "sortOrder": { "type": "integer", "description": "Display ordering index (0-500)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "title", "iconKey", "colorKey", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "HabitCheckIn": {
+      "title": "HabitCheckIn",
+      "description": "Completion record for a DailyHabit on a specific calendar date.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "habitId": { "type": "string", "description": "Parent DailyHabit document ID." },
+        "dateIso": { "type": "string", "description": "Completion date in YYYY-MM-DD format." },
+        "completedAtMillis": { "type": "integer", "description": "Epoch milliseconds when completed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "habitId", "dateIso", "completedAtMillis", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -171,13 +201,21 @@
       "schema": { "$ref": "#/entities/ClassSchedule" },
       "description": "Owner's customizable semester class schedule entries."
     },
+    "/users/{userId}/dailyHabits/{habitId}": {
+      "schema": { "$ref": "#/entities/DailyHabit" },
+      "description": "Owner's private daily habits synced across devices."
+    },
+    "/users/{userId}/habitCheckIns/{checkInId}": {
+      "schema": { "$ref": "#/entities/HabitCheckIn" },
+      "description": "Owner's daily habit completion check-ins linked to parent dailyHabits."
+    },
     "/calendarInvites/{inviteId}": {
       "schema": { "$ref": "#/entities/CalendarInvite" },
-      "description": "Shared schedule invitations visible only to the creator and verified-email invitee."
+      "description": "Shared schedule invitations visible only to the verified creator and verified-email invitee."
     },
     "/calendarInvites/{inviteId}/replies/{replyId}": {
       "schema": { "$ref": "#/entities/CalendarScheduleReply" },
-      "description": "Replies on a shared planned date accessible only to the creator and verified-email invitee."
+      "description": "Replies on a shared planned date accessible only to the verified creator and verified-email invitee."
     }
   }
 }

@@ -35,8 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -139,7 +139,6 @@ fun MonthlyBunnyAlmanacModal(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(20.dp))
-                                .semantics { contentDescription = cardDesc }
                                 .then(
                                     if (onSelectMonth != null) {
                                         Modifier.clickable {
@@ -150,6 +149,7 @@ fun MonthlyBunnyAlmanacModal(
                                         Modifier
                                     }
                                 )
+                                .clearAndSetSemantics { contentDescription = cardDesc }
                                 .testTag("almanac_breed_month_${breed.month}")
                         ) {
                             Column(
@@ -234,7 +234,7 @@ fun MonthlyBunnyAlmanacModal(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     modifier = Modifier

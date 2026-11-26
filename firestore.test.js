@@ -708,12 +708,204 @@ test("Shared calendar invites and replies enforce creator/verified-invitee isola
   });
   await assertSucceeds(aliceBatch.commit());
 
-  // Invitee cannot delete invite; owner can batch-delete replies + invite
-  await assertFails(bobInviteRef.delete());
+  // Owner can batch-delete replies + invite
   const delBatch = aliceDb.batch();
   delBatch.delete(aliceReplyRef);
   delBatch.delete(aliceInviteRef.collection("replies").doc("rep_bob_1"));
   delBatch.delete(aliceInviteRef);
   await assertSucceeds(delBatch.commit());
 });
+
+test("Hardened calendarInvites rules block ownerEmail/authorEmail spoofing, replyCount forgery, and allow invitee removal", async () => {
+  const aliceDb = testEnv
+    .authenticatedContext(ALICE_UID, {
+      email: "alice@example.com",
+      email_verified: true,
+    })
+    .firestore();
+  const unverifiedAliceDb = testEnv
+    .authenticatedContext(ALICE_UID, {
+      email: "alice@example.com",
+      email_verified: false,
+    })
+    .firestore();
+  const bobDb = testEnv
+    .authenticatedContext(BOB_UID, {
+      email: "bob@example.com",
+      email_verified: true,
+    })
+    .firestore();
+
+  const created = pastDate(5000);
+  const baseInvite = {
+    ownerUid: ALICE_UID,
+    ownerName: "Alice",
+    ownerEmail: "alice@example.com",
+    inviteeEmail: "bob@example.com",
+    plannedDate: "2026-11-28",
+    title: "Study session",
+    itemType: "EVENT",
+    category: "STUDY",
+    rsvpStatus: "PENDING",
+    replyCount: 0,
+    createdAt: created,
+    updatedAt: created,
+  };
+
+  // Unverified creator cannot send invites
+  await assertFails(
+    unverifiedAliceDb.collection("calendarInvites").doc("inv_unverified").set(baseInvite)
+  );
+
+  // Spoofed ownerEmail denied
+  await assertFails(
+    aliceDb.collection("calendarInvites").doc("inv_spoof").set({
+      ...baseInvite,
+      ownerEmail: "ceo@company.com",
+    })
+  );
+
+  // Valid invite succeeds
+  const inviteRef = aliceDb.collection("calendarInvites").doc("inv_valid");
+  await assertSucceeds(inviteRef.set(baseInvite));
+
+  // Forged replyCount jump (0 -> 50) denied
+  const bobInviteRef = bobDb.collection("calendarInvites").doc("inv_valid");
+  await assertFails(
+    bobInviteRef.update({
+      inviteeUid: BOB_UID,
+      rsvpStatus: "GOING",
+      replyCount: 50,
+      lastReplyText: "Forged",
+      lastReplyAuthorName: "Bob",
+      lastReplyAuthorUid: BOB_UID,
+      lastReplyAtMillis: Date.now() - 1000,
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Spoofed authorEmail or mismatched plannedDate on reply denied
+  await assertFails(
+    bobInviteRef.collection("replies").doc("rep_bad_email").set({
+      inviteId: "inv_valid",
+      ownerUid: ALICE_UID,
+      inviteeEmail: "bob@example.com",
+      authorUid: BOB_UID,
+      authorName: "Bob",
+      authorEmail: "alice@example.com",
+      plannedDate: "2026-11-28",
+      rsvpStatus: "GOING",
+      message: "Impersonated",
+      createdAt: pastDate(1000),
+      updatedAt: pastDate(1000),
+    })
+  );
+  await assertFails(
+    bobInviteRef.collection("replies").doc("rep_bad_date").set({
+      inviteId: "inv_valid",
+      ownerUid: ALICE_UID,
+      inviteeEmail: "bob@example.com",
+      authorUid: BOB_UID,
+      authorName: "Bob",
+      authorEmail: "bob@example.com",
+      plannedDate: "2026-12-01",
+      rsvpStatus: "GOING",
+      message: "Wrong date",
+      createdAt: pastDate(1000),
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Invitee can delete unwanted invites
+  await assertSucceeds(bobInviteRef.delete());
+});
+
+test("Daily habits and check-ins enforce owner isolation, parent existence, and strict class daysOfWeek/date validation", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const aliceUser = aliceDb.collection("users").doc(ALICE_UID);
+  const created = pastDate(5000);
+
+  // Orphan habit check-in before parent habit exists is denied
+  await assertFails(
+    aliceUser.collection("habitCheckIns").doc("hab_1_2026-11-26").set({
+      userId: ALICE_UID,
+      habitId: "hab_1",
+      dateIso: "2026-11-26",
+      completedAtMillis: Date.now() - 1000,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Owner creates daily habit + check-in
+  await assertSucceeds(
+    aliceUser.collection("dailyHabits").doc("hab_1").set({
+      userId: ALICE_UID,
+      title: "Drink water",
+      iconKey: "WATER",
+      colorKey: "SKY",
+      sortOrder: 0,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+  await assertSucceeds(
+    aliceUser.collection("habitCheckIns").doc("hab_1_2026-11-26").set({
+      userId: ALICE_UID,
+      habitId: "hab_1",
+      dateIso: "2026-11-26",
+      completedAtMillis: Date.now() - 1000,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Bob cannot read or write Alice's habits or check-ins
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("dailyHabits").doc("hab_1").get()
+  );
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("habitCheckIns").doc("hab_1_2026-11-26").get()
+  );
+
+  // Invalid daysOfWeek element or impossible month rejected on classSchedules
+  await assertFails(
+    aliceUser.collection("classSchedules").doc("cls_bad_day").set({
+      userId: ALICE_UID,
+      subject: "Biology",
+      repeatMode: "WEEKLY",
+      daysOfWeek: [1, 99],
+      dayOfMonth: 1,
+      startTimeMinutes: 540,
+      endTimeMinutes: 600,
+      semesterStartDate: "2026-09-01",
+      semesterMonths: 4,
+      notifyEnabled: true,
+      notifyOffsetMinutes: 15,
+      colorKey: "SAGE",
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+  await assertFails(
+    aliceUser.collection("classSchedules").doc("cls_bad_month").set({
+      userId: ALICE_UID,
+      subject: "Biology",
+      repeatMode: "WEEKLY",
+      daysOfWeek: [1, 3],
+      dayOfMonth: 1,
+      startTimeMinutes: 540,
+      endTimeMinutes: 600,
+      semesterStartDate: "2026-99-99",
+      semesterMonths: 4,
+      notifyEnabled: true,
+      notifyOffsetMinutes: 15,
+      colorKey: "SAGE",
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+});
+
 

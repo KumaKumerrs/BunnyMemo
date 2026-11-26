@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
@@ -39,6 +42,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -109,6 +113,7 @@ import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(
     state: PlannerUiState.Ready,
@@ -233,13 +238,21 @@ fun TodayScreen(
     }
 
     val selectedCat = categoryFilter.category
-    val categoryCounts = remember(allTodayEvents, allTodayTasks, allApproachingPlans, allQuickNotes) {
-        val relevant = allTodayEvents + allTodayTasks + allApproachingPlans + allQuickNotes
+    val categoryCounts = remember(allTodayEvents, allTodayTasks, allDueTodaySteps, allApproachingPlans, allQuickNotes, itemCategoryById) {
+        val relevantCats = buildList {
+            allTodayEvents.forEach { add(it.taskCategory()) }
+            allTodayTasks.forEach { add(it.taskCategory()) }
+            allDueTodaySteps.forEach { (_, parent, _) ->
+                add(itemCategoryById[parent.id] ?: parent.taskCategory())
+            }
+            allApproachingPlans.forEach { add(it.taskCategory()) }
+            allQuickNotes.forEach { add(it.taskCategory()) }
+        }
         buildMap {
-            put(TaskCategoryFilter.ALL, relevant.size)
+            put(TaskCategoryFilter.ALL, relevantCats.size)
             TaskCategory.entries.forEach { cat ->
                 TaskCategoryFilter.entries.firstOrNull { it.category == cat }?.let { key ->
-                    put(key, relevant.count { it.taskCategory() == cat })
+                    put(key, relevantCats.count { it == cat })
                 }
             }
         }
@@ -261,6 +274,8 @@ fun TodayScreen(
     }
 
     val isQuietDay = todayClasses.isEmpty() && allTodayEvents.isEmpty() && allTodayTasks.isEmpty() && allDueTodaySteps.isEmpty() && allApproachingPlans.isEmpty() && todaySharedInvites.isEmpty()
+    val hasFilteredItems = todayEvents.isNotEmpty() || todayTasks.isNotEmpty() || dueTodaySteps.isNotEmpty() || approachingPlans.isNotEmpty() || quickNotes.isNotEmpty()
+    val isFilteredEmpty = !isQuietDay && categoryFilter != TaskCategoryFilter.ALL && !hasFilteredItems
     val totalDueCount = todayTasks.size + dueTodaySteps.size
 
     BoxWithConstraints(
@@ -362,7 +377,7 @@ fun TodayScreen(
                 }
             }
 
-            if (allTodayEvents.isNotEmpty() || allTodayTasks.isNotEmpty() || allApproachingPlans.isNotEmpty() || allQuickNotes.isNotEmpty()) {
+            if (allTodayEvents.isNotEmpty() || allTodayTasks.isNotEmpty() || allDueTodaySteps.isNotEmpty() || allApproachingPlans.isNotEmpty() || allQuickNotes.isNotEmpty()) {
                 item(key = "today_category_filter_bar") {
                     TaskCategoryFilterBar(
                         selectedFilter = categoryFilter,
@@ -378,10 +393,33 @@ fun TodayScreen(
 
             if (todaySharedInvites.isNotEmpty()) {
                 item(key = "today_shared_invites_header") {
-                    ModernSectionHeader(
-                        title = "Shared schedules today",
-                        count = todaySharedInvites.size
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            ModernSectionHeader(
+                                title = "Shared schedules today",
+                                count = todaySharedInvites.size
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                feedback.onPopOpen()
+                                onInviteFriendClick()
+                            },
+                            modifier = Modifier.testTag("today_invite_friend_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.GroupAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Invite")
+                        }
+                    }
                 }
                 items(todaySharedInvites, key = { "today_invite_${it.id}" }) { invite ->
                     SharedScheduleCard(
@@ -398,7 +436,6 @@ fun TodayScreen(
                     )
                 }
             }
-
 
         if (isQuietDay) {
             // Calm elevated empty state card
@@ -439,7 +476,7 @@ fun TodayScreen(
                             onClick = { onAddClick(today) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DeepBlue,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(100.dp),
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
@@ -452,6 +489,46 @@ fun TodayScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.action_add))
+                        }
+                    }
+                }
+            }
+        } else if (isFilteredEmpty) {
+            item(key = "today_filtered_empty_card") {
+                ModernPanel(
+                    shape = RoundedCornerShape(22.dp),
+                    elevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("today_filtered_empty_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "No ${categoryFilter.label.lowercase()} items due today",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MidnightNavy
+                        )
+                        Text(
+                            text = "Your other categories or classes are still scheduled for today.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MutedNavy
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                feedback.onLightTick()
+                                categoryFilter = TaskCategoryFilter.ALL
+                            },
+                            border = BorderStroke(1.dp, SubtleBorder),
+                            shape = RoundedCornerShape(100.dp),
+                            modifier = Modifier.testTag("today_clear_filter_button")
+                        ) {
+                            Text("Clear filter", color = DeepBlue)
                         }
                     }
                 }
@@ -609,8 +686,29 @@ fun TodayScreen(
             }
 
             item(key = "activity_toggle") {
-                TextButton(onClick = { showActivity = !showActivity }) {
-                    Text(if (showActivity) "Hide activity & habit garden" else "Show activity & habit garden")
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TextButton(onClick = { showActivity = !showActivity }) {
+                        Text(if (showActivity) "Hide activity & habit garden" else "Show activity & habit garden")
+                    }
+                    TextButton(
+                        onClick = {
+                            feedback.onPopOpen()
+                            onInviteFriendClick()
+                        },
+                        modifier = Modifier.testTag("today_quick_invite_friend_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.GroupAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.profile_invite_friend_cta))
+                    }
                 }
             }
             if (showActivity) {
@@ -673,7 +771,7 @@ private fun QuickNotesGroupedPanel(
                     colors = CheckboxDefaults.colors(
                         checkedColor = DeepBlue,
                         uncheckedColor = MutedNavy.copy(alpha = 0.55f),
-                        checkmarkColor = PureWhite
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.testTag("today_quick_note_checkbox_${note.id}")
                 )
@@ -863,6 +961,7 @@ private fun DueTodayGroupedPanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EventTodayCard(
     event: PlannerItem,
@@ -936,21 +1035,26 @@ private fun EventTodayCard(
                     )
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Schedule,
-                        contentDescription = null,
-                        tint = MutedNavy,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = PlannerDateUtils.formatEventTimeRange(event.startAtUtcMillis, event.endAtUtcMillis),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MutedNavy
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Schedule,
+                            contentDescription = null,
+                            tint = MutedNavy,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = PlannerDateUtils.formatEventTimeRange(event.startAtUtcMillis, event.endAtUtcMillis),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MutedNavy
+                        )
+                    }
                     TaskCategoryBadge(category = event.taskCategory(), compact = true)
                     if (event.hasAudioMemo()) {
                         AudioMemoMiniTag(durationSeconds = event.audioMemoDurationSeconds)
@@ -1000,6 +1104,7 @@ private fun AudioMemoMiniTag(durationSeconds: Int) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TaskRowItem(
     task: PlannerItem,
@@ -1024,7 +1129,7 @@ private fun TaskRowItem(
             colors = CheckboxDefaults.colors(
                 checkedColor = DeepBlue,
                 uncheckedColor = MutedNavy.copy(alpha = 0.55f),
-                checkmarkColor = PureWhite
+                checkmarkColor = MaterialTheme.colorScheme.onPrimary
             ),
             modifier = Modifier.testTag("today_task_checkbox_${task.id}")
         )
@@ -1039,9 +1144,9 @@ private fun TaskRowItem(
                 ),
                 color = if (task.completed) MutedNavy else MidnightNavy
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 TaskCategoryBadge(category = task.taskCategory(), compact = true)
                 if (parentPlanTitle != null) {
@@ -1100,7 +1205,7 @@ private fun DueStepRowItem(
             colors = CheckboxDefaults.colors(
                 checkedColor = DeepBlue,
                 uncheckedColor = MutedNavy.copy(alpha = 0.55f),
-                checkmarkColor = PureWhite
+                checkmarkColor = MaterialTheme.colorScheme.onPrimary
             ),
             modifier = Modifier.testTag("today_step_checkbox_${step.id}")
         )
@@ -1136,6 +1241,7 @@ private fun DueStepRowItem(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlanTodayCard(
     plan: PlannerItem,
@@ -1191,9 +1297,9 @@ private fun PlanTodayCard(
                             style = MaterialTheme.typography.titleMedium,
                             color = MidnightNavy
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             TaskCategoryBadge(category = plan.taskCategory(), compact = true)
                             if (dueDate != null) {

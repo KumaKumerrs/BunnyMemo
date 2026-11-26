@@ -3,46 +3,20 @@ package com.example.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
-import android.content.Intent
-import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.CalendarDate
-import com.example.data.LocalPlannerRepository
 import com.example.data.PlannerDateUtils
-import com.example.data.RoomFirestoreSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class TasksAppWidgetProvider : AppWidgetProvider() {
-
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetIntents.ACTION_TOGGLE_TASK) {
-            val taskId = intent.getStringExtra(WidgetIntents.EXTRA_TASK_ID) ?: return
-            val newCompleted = intent.getBooleanExtra(WidgetIntents.EXTRA_TASK_COMPLETED, true)
-            val pendingResult = goAsync()
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                try {
-                    val dataSource = RoomFirestoreSyncService
-                        .getInstance(context.applicationContext)
-                        .createOfflineFirstDataSource()
-                    dataSource.toggleItemCompleted(
-                        userId = LocalPlannerRepository.LOCAL_USER_ID,
-                        itemId = taskId,
-                        completed = newCompleted
-                    )
-                    WidgetUpdateManager.refreshAllWidgets(context.applicationContext)
-                } finally {
-                    pendingResult.finish()
-                }
-            }
-        }
-    }
 
     override fun onUpdate(
         context: Context,
@@ -54,6 +28,8 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
             try {
                 val snapshot = WidgetDataLoader.load(context)
                 updateWidgets(context, appWidgetManager, appWidgetIds, snapshot)
+            } catch (e: Exception) {
+                Log.w(TAG, "Tasks widget update failed: ${e.message}")
             } finally {
                 pendingResult.finish()
             }
@@ -61,6 +37,10 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "TasksWidgetProvider"
+        private const val TOGGLE_REQUEST_CODE_BASE = 200_000
+        private const val OPEN_ITEM_REQUEST_CODE_BASE = 500_000
+
         private val ROW_IDS = intArrayOf(
             R.id.widget_task_row_0,
             R.id.widget_task_row_1,
@@ -97,10 +77,6 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
             R.id.widget_task_meta_4
         )
 
-        private val COLOR_ACTIVE_TEXT = Color.parseColor("#2B4360")
-        private val COLOR_DONE_TEXT = Color.parseColor("#6B85A3")
-        private val COLOR_OVERDUE_TEXT = Color.parseColor("#D65A6A")
-
         fun updateWidgets(
             context: Context,
             appWidgetManager: AppWidgetManager,
@@ -109,6 +85,10 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
         ) {
             val today = snapshot.today
             val tasks = snapshot.todayActionableTasks
+
+            val activeTextColor = ContextCompat.getColor(context, R.color.widget_text_primary)
+            val doneTextColor = ContextCompat.getColor(context, R.color.widget_text_secondary)
+            val overdueTextColor = ContextCompat.getColor(context, R.color.widget_text_overdue)
 
             val openTodayIntent = WidgetIntents.openMainActivityPendingIntent(
                 context = context,
@@ -170,7 +150,7 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
                                 setTextViewText(TITLE_IDS[i], task.title)
                                 setTextColor(
                                     TITLE_IDS[i],
-                                    if (task.completed) COLOR_DONE_TEXT else COLOR_ACTIVE_TEXT
+                                    if (task.completed) doneTextColor else activeTextColor
                                 )
                                 setInt(
                                     TITLE_IDS[i],
@@ -185,25 +165,26 @@ class TasksAppWidgetProvider : AppWidgetProvider() {
                                 val priorityLabel = task.taskPriority().label
                                 val metaText = when {
                                     isQuickNote -> "$priorityLabel · Quick Note"
-                                    isOverdue -> "$priorityLabel · Overdue · ${PlannerDateUtils.formatCompactDate(due!!)}"
+                                    isOverdue && due != null -> "$priorityLabel · Overdue · ${PlannerDateUtils.formatCompactDate(due)}"
                                     task.dueTimeMinutes != null -> "$priorityLabel · Today · ${PlannerDateUtils.formatTimeOfDay(task.dueTimeMinutes)}"
                                     else -> "$priorityLabel · Due today"
                                 }
                                 setTextViewText(META_IDS[i], metaText)
                                 setTextColor(
                                     META_IDS[i],
-                                    if (isOverdue) COLOR_OVERDUE_TEXT else COLOR_DONE_TEXT
+                                    if (isOverdue) overdueTextColor else doneTextColor
                                 )
 
+                                // Disjoint requestCode bases prevent PendingIntent collisions for widgetId >= 100
                                 val toggleIntent = WidgetIntents.toggleTaskBroadcastPendingIntent(
                                     context = context,
-                                    requestCode = 2000 + widgetId * 10 + i,
+                                    requestCode = TOGGLE_REQUEST_CODE_BASE + (widgetId % 20_000) * 10 + i,
                                     taskId = task.id,
                                     newCompleted = !task.completed
                                 )
                                 val openItemIntent = WidgetIntents.openMainActivityPendingIntent(
                                     context = context,
-                                    requestCode = 3000 + widgetId * 10 + i,
+                                    requestCode = OPEN_ITEM_REQUEST_CODE_BASE + (widgetId % 20_000) * 10 + i,
                                     tab = WidgetIntents.TAB_TODAY,
                                     itemId = task.id
                                 )

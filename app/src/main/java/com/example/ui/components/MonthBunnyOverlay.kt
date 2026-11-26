@@ -29,8 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -534,7 +536,7 @@ fun MonthBunnyOverlay(
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.VolumeUp,
+                                imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
                                 contentDescription = null,
                                 tint = when (activeExpression) {
                                     BunnyCompanionExpression.SAD -> OverdueTerracotta
@@ -658,6 +660,11 @@ fun MonthBunnyOverlay(
             }
         }
 
+        // Keep pointer gestures always invoking latest lambdas/state without restarting gesture detector
+        val latestPatReaction by rememberUpdatedState(::triggerPatReaction)
+        val latestPinchReaction by rememberUpdatedState(::triggerPinchReaction)
+        val latestCycleChat by rememberUpdatedState(::cycleChatOrReminder)
+
         // Larger bottom-left Month Bunny (direct pat & cheek-pinch touch gestures on the rabbit itself)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -671,8 +678,12 @@ fun MonthBunnyOverlay(
                         contentDescription =
                             "${monthBreed.monthName} bunny ${monthBreed.breedName}. $moodLabel. Pat head, pinch cheeks, or tap to talk."
                         role = Role.Button
+                        onClick(label = "Talk to ${monthBreed.breedName} bunny") {
+                            latestCycleChat()
+                            true
+                        }
                     }
-                    .pointerInput(monthBreed, summary.missedCount) {
+                    .pointerInput(Unit) {
                         awaitEachGesture {
                             val firstDown = awaitFirstDown(requireUnconsumed = false)
                             val w = size.width.toFloat().coerceAtLeast(1f)
@@ -692,11 +703,11 @@ fun MonthBunnyOverlay(
                             if (inLeftCheekZone) {
                                 leftCheekPull = 0.85f
                                 cheekTriggered = true
-                                triggerPinchReaction(side = -1, livePullAmount = 0.85f)
+                                latestPinchReaction(-1, 0.85f)
                             } else if (inRightCheekZone) {
                                 rightCheekPull = 0.85f
                                 cheekTriggered = true
-                                triggerPinchReaction(side = 1, livePullAmount = 0.85f)
+                                latestPinchReaction(1, 0.85f)
                             }
 
                             while (true) {
@@ -713,7 +724,7 @@ fun MonthBunnyOverlay(
                                     if (!isTwoFingerPinch || abs(dist - initialPinchDist) > 8f) {
                                         isTwoFingerPinch = true
                                         val delta = abs(initialPinchDist - dist) / (w * 0.42f)
-                                        triggerPinchReaction(side = 0, livePullAmount = 0.9f + delta)
+                                        latestPinchReaction(0, 0.9f + delta)
                                     }
                                     activePointers.forEach { it.consume() }
                                 } else if (activePointers.size == 1) {
@@ -727,7 +738,7 @@ fun MonthBunnyOverlay(
                                         patPulse = 0.95f
                                         if (rubAccumulator >= 16f) {
                                             rubAccumulator = 0f
-                                            triggerPatReaction(fromRub = true)
+                                            latestPatReaction(true)
                                         }
                                         change.consume()
                                     } else if (inLeftCheekZone || inRightCheekZone) {
@@ -736,9 +747,9 @@ fun MonthBunnyOverlay(
                                         if (inLeftCheekZone) leftCheekPull = pull else rightCheekPull = pull
                                         if (!cheekTriggered) {
                                             cheekTriggered = true
-                                            triggerPinchReaction(
-                                                side = if (inLeftCheekZone) -1 else 1,
-                                                livePullAmount = pull
+                                            latestPinchReaction(
+                                                if (inLeftCheekZone) -1 else 1,
+                                                pull
                                             )
                                         }
                                         change.consume()
@@ -748,11 +759,11 @@ fun MonthBunnyOverlay(
                                     patPulse = 0f
                                     if (!isTwoFingerPinch && !cheekTriggered && totalMoveDist < 18f) {
                                         if (inHeadZone) {
-                                            triggerPatReaction(fromRub = false)
+                                            latestPatReaction(false)
                                         } else if (elapsed > 350L) {
-                                            triggerPinchReaction(side = 0, livePullAmount = 1.0f)
+                                            latestPinchReaction(0, 1.0f)
                                         } else {
-                                            cycleChatOrReminder()
+                                            latestCycleChat()
                                         }
                                     }
                                     break
@@ -785,7 +796,7 @@ fun MonthBunnyOverlay(
                             text = "!",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onError
                         )
                     }
                 }

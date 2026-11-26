@@ -8,10 +8,13 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.example.R
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -37,17 +40,19 @@ class BunnyOverlayView(
     private val detailText: TextView
     private val timerChipText: TextView
     private val compactBadgeText: TextView
-    private val backButton: TextView
-    private val secondaryActionButton: TextView
+    private val backButton: Button
+    private val secondaryActionButton: Button
 
     private var currentProgress: Float = 0f
     private var currentAppName: String = "Social Media"
     private var currentElapsedSec: Int = 0
     private var currentMaxSec: Int = 180
     private var isFocusSessionMode: Boolean = false
+    private var isTakeoverActive: Boolean = false
 
     init {
         setBackgroundColor(Color.TRANSPARENT)
+        isFocusableInTouchMode = true
 
         // Growing bunny illustration canvas
         addView(
@@ -102,30 +107,29 @@ class BunnyOverlayView(
             setPadding(0, 0, 0, dp(20))
         }
 
-        backButton = TextView(context).apply {
-            text = "Back to Bunny Memo"
+        backButton = Button(context).apply {
+            isAllCaps = false
+            text = context.getString(R.string.focus_guard_overlay_back_btn)
             textSize = 16f
             setTextColor(Color.parseColor("#FCFEFF"))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             gravity = Gravity.CENTER
             minHeight = dp(52)
             setPadding(dp(28), dp(14), dp(28), dp(14))
-            background = createPillDrawable(Color.parseColor("#3B82DC"), dp(28).toFloat())
-            isClickable = true
-            isFocusable = true
+            background = createPillDrawable(Color.parseColor("#27578A"), dp(28).toFloat())
             setOnClickListener { onBackToProductivity() }
         }
 
-        secondaryActionButton = TextView(context).apply {
-            text = "Pause guard for 5 min"
+        secondaryActionButton = Button(context).apply {
+            isAllCaps = false
+            text = context.getString(R.string.focus_guard_overlay_pause_btn)
             textSize = 13f
-            setTextColor(Color.parseColor("#C7DFF8"))
+            setTextColor(Color.parseColor("#DCECFD"))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             gravity = Gravity.CENTER
             minHeight = dp(48)
             setPadding(dp(20), dp(10), dp(20), dp(10))
-            isClickable = true
-            isFocusable = true
+            setBackgroundColor(Color.TRANSPARENT)
             setOnClickListener { onPauseFiveMinutes() }
         }
 
@@ -158,6 +162,17 @@ class BunnyOverlayView(
         )
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isTakeoverActive &&
+            event.keyCode == KeyEvent.KEYCODE_BACK &&
+            event.action == KeyEvent.ACTION_UP
+        ) {
+            onBackToProductivity()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     fun updateState(
         progress: Float,
         appName: String,
@@ -173,47 +188,62 @@ class BunnyOverlayView(
         currentMaxSec = maxSeconds.coerceAtLeast(1)
 
         val isTakeover = isFocusSessionMode || currentProgress >= 0.995f
+        val wasTakeover = isTakeoverActive
+        isTakeoverActive = isTakeover
         bunnyCanvasView.setProgress(currentProgress)
 
         if (isTakeover) {
             setBackgroundColor(Color.parseColor("#F20B1324"))
             compactBadgeText.visibility = GONE
             takeoverOverlayColumn.visibility = VISIBLE
+            if (!wasTakeover) {
+                requestFocus()
+            }
             if (isFocusSessionMode) {
-                timerChipText.text = "Focus Session · $focusSessionCountdown left"
-                headlineText.text = "$appName is paused during focus!"
+                timerChipText.text = context.getString(R.string.focus_guard_overlay_focus_chip, focusSessionCountdown)
+                headlineText.text = context.getString(R.string.focus_guard_overlay_focus_headline, appName)
                 detailText.text = if (!focusTaskTitle.isNullOrBlank()) {
-                    "Stay committed to \"$focusTaskTitle\" — your bunny is cheering you on."
+                    context.getString(R.string.focus_guard_overlay_focus_detail_task, focusTaskTitle)
                 } else {
-                    "Your Pomodoro focus timer is running. Step back and finish strong!"
+                    context.getString(R.string.focus_guard_overlay_focus_detail_generic)
                 }
-                backButton.text = "Return to Focus Timer"
-                secondaryActionButton.text = "Pause Focus Session"
+                backButton.text = context.getString(R.string.focus_guard_overlay_focus_back_btn)
+                secondaryActionButton.text = context.getString(R.string.focus_guard_overlay_focus_pause_btn)
             } else {
-                timerChipText.text = "${DoomscrollGuardManager.formatDurationShort(elapsedSeconds)} on $appName"
-                headlineText.text = "Time to bloom, not doomscroll!"
-                detailText.text = "Your Bunny Memo guardian filled the screen so you can step back and finish today's plans."
-                backButton.text = "Back to Bunny Memo"
-                secondaryActionButton.text = "Pause guard for 5 min"
+                timerChipText.text = context.getString(
+                    R.string.focus_guard_overlay_doomscroll_chip,
+                    DoomscrollGuardManager.formatDurationShort(elapsedSeconds),
+                    appName
+                )
+                headlineText.text = context.getString(R.string.focus_guard_overlay_doomscroll_headline)
+                detailText.text = context.getString(R.string.focus_guard_overlay_doomscroll_detail)
+                backButton.text = context.getString(R.string.focus_guard_overlay_back_btn)
+                secondaryActionButton.text = context.getString(R.string.focus_guard_overlay_pause_btn)
             }
-            (bunnyCanvasView.layoutParams as LayoutParams).apply {
-                bottomMargin = dp(220)
+            val lp = bunnyCanvasView.layoutParams as LayoutParams
+            val targetBottomMargin = dp(220)
+            if (lp.bottomMargin != targetBottomMargin) {
+                lp.bottomMargin = targetBottomMargin
+                bunnyCanvasView.requestLayout()
             }
-            bunnyCanvasView.requestLayout()
         } else {
             setBackgroundColor(Color.TRANSPARENT)
             takeoverOverlayColumn.visibility = GONE
             compactBadgeText.visibility = VISIBLE
             val pct = (currentProgress * 100f).toInt()
             compactBadgeText.text = when {
-                currentProgress < 0.35f -> "${DoomscrollGuardManager.formatDurationShort(elapsedSeconds)} · peeking"
-                currentProgress < 0.70f -> "$pct% · bunny growing!"
-                else -> "$pct% · almost full screen!"
+                currentProgress < 0.35f -> context.getString(
+                    R.string.focus_guard_overlay_peeking,
+                    DoomscrollGuardManager.formatDurationShort(elapsedSeconds)
+                )
+                currentProgress < 0.70f -> context.getString(R.string.focus_guard_overlay_growing, pct)
+                else -> context.getString(R.string.focus_guard_overlay_almost, pct)
             }
-            (bunnyCanvasView.layoutParams as LayoutParams).apply {
-                bottomMargin = 0
+            val lp = bunnyCanvasView.layoutParams as LayoutParams
+            if (lp.bottomMargin != 0) {
+                lp.bottomMargin = 0
+                bunnyCanvasView.requestLayout()
             }
-            bunnyCanvasView.requestLayout()
         }
     }
 
@@ -240,9 +270,21 @@ class BunnyOverlayView(
             color = Color.parseColor("#2B4360")
         }
 
+        // Pre-allocated drawing geometry to prevent GC churn inside onDraw()
+        private val bodyRect = RectF()
+        private val headRect = RectF()
+        private val leftPawRect = RectF()
+        private val rightPawRect = RectF()
+        private val earOuterRect = RectF()
+        private val earInnerRect = RectF()
+        private val mouthPath = Path()
+
         fun setProgress(value: Float) {
-            progress = value.coerceIn(0f, 1f)
-            invalidate()
+            val clamped = value.coerceIn(0f, 1f)
+            if (clamped != progress) {
+                progress = clamped
+                invalidate()
+            }
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -269,18 +311,18 @@ class BunnyOverlayView(
             drawEar(canvas, ox + size * 0.61f, oy + size * 0.35f, size, earTilt)
 
             // Body
-            val bodyRect = RectF(ox + size * 0.24f, oy + size * 0.53f, ox + size * 0.76f, oy + size * 0.90f)
+            bodyRect.set(ox + size * 0.24f, oy + size * 0.53f, ox + size * 0.76f, oy + size * 0.90f)
             fillPaint.color = Color.parseColor("#FCFEFF")
             canvas.drawOval(bodyRect, fillPaint)
             canvas.drawOval(bodyRect, strokePaint)
 
             // Head
-            val headRect = RectF(ox + size * 0.23f, oy + size * 0.28f, ox + size * 0.77f, oy + size * 0.67f)
+            headRect.set(ox + size * 0.23f, oy + size * 0.28f, ox + size * 0.77f, oy + size * 0.67f)
             fillPaint.color = Color.parseColor("#FCFEFF")
             canvas.drawOval(headRect, fillPaint)
             canvas.drawOval(headRect, strokePaint)
 
-            // Blush cheeks (turn warmer terracotta/pollen as scroll gets longer)
+            // Blush cheeks
             fillPaint.color = if (progress >= 0.70f) {
                 Color.parseColor("#F5B0B8")
             } else {
@@ -295,7 +337,7 @@ class BunnyOverlayView(
             canvas.drawCircle(ox + size * 0.41f, oy + size * 0.45f, eyeR, fillPaint)
             canvas.drawCircle(ox + size * 0.59f, oy + size * 0.45f, eyeR, fillPaint)
 
-            // Progressive eyebrows (cute determined stare as user keeps doomscrolling!)
+            // Progressive eyebrows
             if (progress >= 0.35f) {
                 val intensity = ((progress - 0.35f) / 0.65f).coerceIn(0f, 1f)
                 val browDip = size * 0.028f * intensity
@@ -315,7 +357,7 @@ class BunnyOverlayView(
             canvas.drawCircle(ox + size * 0.50f, oy + size * 0.50f, size * 0.019f, fillPaint)
 
             // Mouth transitions from cute smile -> tiny o -> gentle frown at full takeover
-            val mouthPath = Path()
+            mouthPath.reset()
             when {
                 progress < 0.45f -> {
                     mouthPath.moveTo(ox + size * 0.45f, oy + size * 0.545f)
@@ -332,14 +374,14 @@ class BunnyOverlayView(
                 }
             }
 
-            // Little front paws holding a forget-me-not flower
-            val leftPaw = RectF(ox + size * 0.31f, oy + size * 0.78f, ox + size * 0.45f, oy + size * 0.88f)
-            val rightPaw = RectF(ox + size * 0.55f, oy + size * 0.78f, ox + size * 0.69f, oy + size * 0.88f)
+            // Front paws
+            leftPawRect.set(ox + size * 0.31f, oy + size * 0.78f, ox + size * 0.45f, oy + size * 0.88f)
+            rightPawRect.set(ox + size * 0.55f, oy + size * 0.78f, ox + size * 0.69f, oy + size * 0.88f)
             fillPaint.color = Color.parseColor("#FCFEFF")
-            canvas.drawOval(leftPaw, fillPaint)
-            canvas.drawOval(leftPaw, strokePaint)
-            canvas.drawOval(rightPaw, fillPaint)
-            canvas.drawOval(rightPaw, strokePaint)
+            canvas.drawOval(leftPawRect, fillPaint)
+            canvas.drawOval(leftPawRect, strokePaint)
+            canvas.drawOval(rightPawRect, fillPaint)
+            canvas.drawOval(rightPawRect, strokePaint)
 
             // Forget-me-not flower perched on bunny's head crown
             drawForgetMeNot(canvas, ox + size * 0.64f, oy + size * 0.29f, size * 0.082f)
@@ -348,24 +390,24 @@ class BunnyOverlayView(
         private fun drawEar(canvas: Canvas, pivotX: Float, pivotY: Float, size: Float, angleDeg: Float) {
             canvas.save()
             canvas.rotate(angleDeg, pivotX, pivotY)
-            val outer = RectF(
+            earOuterRect.set(
                 pivotX - size * 0.072f,
                 pivotY - size * 0.29f,
                 pivotX + size * 0.072f,
                 pivotY + size * 0.03f
             )
             fillPaint.color = Color.parseColor("#FCFEFF")
-            canvas.drawOval(outer, fillPaint)
-            canvas.drawOval(outer, strokePaint)
+            canvas.drawOval(earOuterRect, fillPaint)
+            canvas.drawOval(earOuterRect, strokePaint)
 
-            val inner = RectF(
+            earInnerRect.set(
                 pivotX - size * 0.034f,
                 pivotY - size * 0.23f,
                 pivotX + size * 0.034f,
                 pivotY - size * 0.03f
             )
             fillPaint.color = Color.parseColor("#CDE5FD")
-            canvas.drawOval(inner, fillPaint)
+            canvas.drawOval(earInnerRect, fillPaint)
             canvas.restore()
         }
 

@@ -8,48 +8,144 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.widgets.WidgetIntents
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class ReminderBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val isDailyDigest = intent.action == ReminderScheduler.ACTION_DAILY_DIGEST
-        val isClassReminder = intent.action == ReminderScheduler.ACTION_CLASS_REMINDER
+        val appContext = context.applicationContext
+        val action = intent.action
+        val isDailyDigest = action == ReminderScheduler.ACTION_DAILY_DIGEST
+        val isClassReminder = action == ReminderScheduler.ACTION_CLASS_REMINDER
 
-        // Always reschedule the next day's gentle daily forget-me-not digest if active
-        if (isDailyDigest) {
-            ReminderScheduler(context).rescheduleTomorrowFromStoredPrefs()
+        val scheduler = ReminderScheduler(appContext)
+        // Always ensure channels exist even on cold-start process wakeups
+        scheduler.ensureNotificationChannel()
+
+        if (isDailyDigest || isClassReminder) {
+            val pendingResult = goAsync()
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                try {
+                    if (isDailyDigest) {
+                        val freshSummary = runCatching {
+                            scheduler.buildFreshDailyDigestFromDatabase()
+                        }.getOrNull()
+                        scheduler.rescheduleTomorrowFromStoredPrefs(freshSummary)
+                        if (hasNotificationPermission(appContext)) {
+                            val title = freshSummary?.title
+                                ?: intent.getStringExtra(ReminderScheduler.EXTRA_TITLE)
+                                ?: appContext.getString(R.string.app_name)
+                            val message = freshSummary?.body
+                                ?: intent.getStringExtra(ReminderScheduler.EXTRA_MESSAGE)
+                                ?: appContext.getString(R.string.notif_default_body)
+                            val itemId = freshSummary?.highlightItemId
+                                ?: intent.getStringExtra(ReminderScheduler.EXTRA_ITEM_ID)
+                            val notificationId = intent.getIntExtra(
+                                ReminderScheduler.EXTRA_NOTIFICATION_ID,
+                                70242
+                            )
+                            postNotification(
+                                context = appContext,
+                                channelId = ReminderScheduler.DAILY_DIGEST_CHANNEL_ID,
+                                title = title,
+                                message = message,
+                                notificationId = notificationId,
+                                itemId = itemId,
+                                openTab = null
+                            )
+                        }
+                    } else {
+                        // Class reminder: post notification AND immediately schedule the next recurring session
+                        if (hasNotificationPermission(appContext)) {
+                            val title = intent.getStringExtra(ReminderScheduler.EXTRA_TITLE)
+                                ?: appContext.getString(R.string.app_name)
+                            val message = intent.getStringExtra(ReminderScheduler.EXTRA_MESSAGE)
+                                ?: appContext.getString(R.string.notif_default_body)
+                            val notificationId = intent.getIntExtra(
+                                ReminderScheduler.EXTRA_NOTIFICATION_ID,
+                                ReminderScheduler.stableRequestCode(500_000, 400_000, title)
+                            )
+                            postNotification(
+                                context = appContext,
+                                channelId = ReminderScheduler.CHANNEL_ID,
+                                title = title,
+                                message = message,
+                                notificationId = notificationId,
+                                itemId = null,
+                                openTab = WidgetIntents.TAB_CLASSES
+                            )
+                        }
+                        runCatching { scheduler.rescheduleNextClassRemindersFromDatabase() }
+                    }
+                } catch (err: Exception) {
+                    Log.w(TAG, "Error handling broadcast $action: ${err.message}")
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) return
-        }
+        if (!hasNotificationPermission(appContext)) return
 
         val itemId = intent.getStringExtra(ReminderScheduler.EXTRA_ITEM_ID)
-        if (!isDailyDigest && !isClassReminder && itemId.isNullOrBlank()) return
+        if (itemId.isNullOrBlank()) return
 
         val channelId = intent.getStringExtra(ReminderScheduler.EXTRA_CHANNEL_ID)
-            ?: if (isDailyDigest) ReminderScheduler.DAILY_DIGEST_CHANNEL_ID else ReminderScheduler.CHANNEL_ID
+            ?: ReminderScheduler.CHANNEL_ID
         val title = intent.getStringExtra(ReminderScheduler.EXTRA_TITLE)
-            ?: context.getString(R.string.app_name)
+            ?: appContext.getString(R.string.app_name)
         val message = intent.getStringExtra(ReminderScheduler.EXTRA_MESSAGE)
-            ?: context.getString(R.string.notif_default_body)
+            ?: appContext.getString(R.string.notif_default_body)
         val notificationId = intent.getIntExtra(
             ReminderScheduler.EXTRA_NOTIFICATION_ID,
-            (itemId ?: title).hashCode()
+            ReminderScheduler.stableRequestCode(100_000, 400_000, itemId)
         )
 
+        postNotification(
+            context = appContext,
+            channelId = channelId,
+            title = title,
+            message = message,
+            notificationId = notificationId,
+            itemId = itemId,
+            openTab = null
+        )
+    }
+
+    private fun hasNotificationPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun postNotification(
+        context: Context,
+        channelId: String,
+        title: String,
+        message: String,
+        notificationId: Int,
+        itemId: String?,
+        openTab: String?
+    ) {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (!itemId.isNullOrBlank()) {
                 putExtra(ReminderScheduler.EXTRA_ITEM_ID, itemId)
+            }
+            if (!openTab.isNullOrBlank()) {
+                putExtra(WidgetIntents.EXTRA_OPEN_TAB, openTab)
             }
         }
         val contentIntent = PendingIntent.getActivity(
@@ -60,7 +156,7 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notif_flower_mono)
             .setColor(ReminderScheduler.FORGET_ME_NOT_ACCENT_COLOR)
             .setSubText(context.getString(R.string.notif_subtext_theme))
             .setContentTitle(title)
@@ -73,5 +169,9 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         manager?.notify(notificationId, notification)
+    }
+
+    companion object {
+        private const val TAG = "ReminderReceiver"
     }
 }

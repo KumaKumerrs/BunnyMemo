@@ -380,7 +380,7 @@ fun Modifier.ruledMemoLines(
     lineSpacing: Dp = 26.dp,
     lineColor: Color = SubtleBorder.copy(alpha = 0.65f)
 ): Modifier = this.drawBehind {
-    val spacingPx = lineSpacing.toPx()
+    val spacingPx = lineSpacing.toPx() * fontScale.coerceAtLeast(1f)
     val startX = 14.dp.toPx()
     val endX = size.width - startX
     val strokeW = 0.9.dp.toPx()

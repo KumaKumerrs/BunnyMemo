@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -263,7 +265,7 @@ fun PlannerSearchResultsView(
     }
 
     val showPriorityChips = (activeFilter == PlannerSearchFilter.ALL || activeFilter == PlannerSearchFilter.TASKS) &&
-        matchedTasks.isNotEmpty()
+        (matchedTasks.isNotEmpty() || priorityFilter != TaskPriorityFilter.ALL)
 
     val categoryCounts = remember(matchedItems) {
         buildMap {
@@ -314,6 +316,9 @@ fun PlannerSearchResultsView(
             emptyList()
         }
     }
+    val hasActiveFilters = activeFilter != PlannerSearchFilter.ALL ||
+        priorityFilter != TaskPriorityFilter.ALL ||
+        categoryFilter != TaskCategoryFilter.ALL
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -374,7 +379,7 @@ fun PlannerSearchResultsView(
                 }
             }
 
-            if (matchedItems.isNotEmpty()) {
+            if (matchedItems.isNotEmpty() || categoryFilter != TaskCategoryFilter.ALL) {
                 item(key = "search_category_filter_chips") {
                     TaskCategoryFilterBar(
                         selectedFilter = categoryFilter,
@@ -413,15 +418,35 @@ fun PlannerSearchResultsView(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = stringResource(R.string.search_no_results_subtitle),
+                                text = if (hasActiveFilters) {
+                                    "Try resetting your active filters or clearing the search."
+                                } else {
+                                    stringResource(R.string.search_no_results_subtitle)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MutedNavy
                             )
                             Spacer(modifier = Modifier.height(18.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                if (hasActiveFilters) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            activeFilter = PlannerSearchFilter.ALL
+                                            priorityFilter = TaskPriorityFilter.ALL
+                                            categoryFilter = TaskCategoryFilter.ALL
+                                        },
+                                        shape = RoundedCornerShape(100.dp),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("search_reset_filters_button")
+                                    ) {
+                                        Text("Reset filters", color = DeepBlue)
+                                    }
+                                }
                                 OutlinedButton(
                                     onClick = onClearSearch,
                                     shape = RoundedCornerShape(100.dp),
@@ -433,7 +458,7 @@ fun PlannerSearchResultsView(
                                     onClick = { onSaveQueryAsQuickNote(query.trim()) },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = DeepBlue,
-                                        contentColor = PureWhite
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
                                     ),
                                     shape = RoundedCornerShape(100.dp),
                                     modifier = Modifier
@@ -491,6 +516,7 @@ fun PlannerSearchResultsView(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchResultItemCard(
     match: MatchedPlannerItem,
@@ -582,7 +608,7 @@ private fun SearchResultItemCard(
                         colors = CheckboxDefaults.colors(
                             checkedColor = DeepBlue,
                             uncheckedColor = MutedNavy.copy(alpha = 0.55f),
-                            checkmarkColor = PureWhite
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier.testTag("search_task_checkbox_${item.id}")
                     )
@@ -608,43 +634,35 @@ private fun SearchResultItemCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (item.completed) MutedNavy else MidnightNavy,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None
-                            ),
-                            color = if (item.completed) MutedNavy else MidnightNavy,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                        TaskCategoryBadge(
+                            category = item.taskCategory(),
+                            compact = true
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TaskCategoryBadge(
-                                category = item.taskCategory(),
+                        if (itemType == ItemType.TASK) {
+                            TaskPriorityBadge(
+                                priority = item.taskPriority(),
                                 compact = true
                             )
-                            if (itemType == ItemType.TASK) {
-                                TaskPriorityBadge(
-                                    priority = item.taskPriority(),
-                                    compact = true
-                                )
-                            }
-                            ModernPillBadge(
-                                text = badgeLabel,
-                                containerColor = badgeContainer,
-                                contentColor = badgeContent
-                            )
                         }
+                        ModernPillBadge(
+                            text = badgeLabel,
+                            containerColor = badgeContainer,
+                            contentColor = badgeContent
+                        )
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {

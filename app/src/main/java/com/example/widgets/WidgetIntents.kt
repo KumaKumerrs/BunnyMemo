@@ -51,10 +51,27 @@ object WidgetIntents {
         taskId: String,
         newCompleted: Boolean
     ): PendingIntent {
-        val intent = Intent(context, TasksAppWidgetProvider::class.java).apply {
+        // Explicit intent to internal non-exported WidgetActionReceiver
+        val intent = Intent(context, WidgetActionReceiver::class.java).apply {
             action = ACTION_TOGGLE_TASK
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TASK_COMPLETED, newCompleted)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    fun bunnyActionBroadcastPendingIntent(
+        context: Context,
+        action: String,
+        requestCode: Int
+    ): PendingIntent {
+        val intent = Intent(context, WidgetActionReceiver::class.java).apply {
+            this.action = action
         }
         return PendingIntent.getBroadcast(
             context,

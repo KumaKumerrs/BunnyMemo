@@ -21,9 +21,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.WorkOutline
@@ -79,8 +79,7 @@ data class CategoryVisualPalette(
 
 @Composable
 fun categoryPalette(category: TaskCategory): CategoryVisualPalette {
-    // Use calm luminance-balanced colors derived from current canvas brightness so labels shine in light & dark mode
-    val isDark = MidnightNavy.red > 0.7f || isSystemInDarkTheme() && PureWhite.red < 0.3f
+    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
     return when (category) {
         TaskCategory.PERSONAL -> CategoryVisualPalette(
             containerColor = if (isDark) Color(0xFF213654) else Color(0xFFE7F2FF),
@@ -108,7 +107,7 @@ fun categoryPalette(category: TaskCategory): CategoryVisualPalette {
             contentColor = if (isDark) Color(0xFF7AD6E0) else Color(0xFF196E78),
             borderColor = if (isDark) Color(0xFF36646D) else Color(0xFFAEE2E8),
             accentColor = if (isDark) Color(0xFF5FC6D2) else Color(0xFF1F8794),
-            icon = Icons.Outlined.MenuBook
+            icon = Icons.AutoMirrored.Outlined.MenuBook
         )
         TaskCategory.CREATIVE -> CategoryVisualPalette(
             containerColor = if (isDark) Color(0xFF3C2336) else Color(0xFFFDEBF4),

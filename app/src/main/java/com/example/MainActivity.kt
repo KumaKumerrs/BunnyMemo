@@ -1,12 +1,14 @@
 package com.example
 
-import android.graphics.Color as AndroidColor
 import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -29,6 +31,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,15 +42,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -60,16 +64,21 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.outlined.CloudSync
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -81,7 +90,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -92,22 +109,25 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.Lifecycle
@@ -119,6 +139,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.audio.BunnyFeedbackManager
+import com.example.audio.TaskAudioMemoManager
 import com.example.data.AppUsageSummary
 import com.example.data.AppUsageTracker
 import com.example.data.CalendarDate
@@ -133,11 +154,18 @@ import com.example.data.RoomSyncStatus
 import com.example.data.SharedCalendarRepository
 import com.example.data.SyncPhase
 import com.example.data.TaskCategory
+import com.example.data.deleteAccountAndCloudData
+import com.example.data.findActivity
 import com.example.data.onGoogleSignInClicked
 import com.example.data.signOut
+import com.example.focus.DoomscrollGuardManager
+import com.example.focus.FocusSessionManager
 import com.example.notifications.ReminderScheduler
 import com.example.ui.components.BunnyMemoCloudSyncModal
+import com.example.ui.components.BunnyMemoConfirmModal
 import com.example.ui.components.ClassScheduleEditorModal
+import com.example.ui.components.DoomscrollGuardModal
+import com.example.ui.components.FocusSessionModal
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ForgetMeNotStationeryBackground
 import com.example.ui.components.FriendScheduleDetailModal
@@ -162,11 +190,14 @@ import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.TodayScreen
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.CloudWhite
 import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.ForgetMeNotTheme
 import com.example.ui.theme.MidnightNavy
+import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SkyCanvasTop
 import com.example.ui.theme.SubtleBorder
 import com.example.ui.theme.ThemePreferencesManager
@@ -177,7 +208,6 @@ import com.example.widgets.WidgetUpdateManager
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
@@ -195,8 +225,10 @@ class MainActivity : ComponentActivity() {
     private var latestDirective by mutableStateOf<LaunchDirective?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Call enableEdgeToEdge() before setContent() so window insets & decor are configured on frame 1
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        latestDirective = parseLaunchDirective(intent)
+        latestDirective = consumeLaunchDirective(intent)
         val themePrefs = ThemePreferencesManager.getInstance(applicationContext)
         setContent {
             val themeMode by themePrefs.themeMode.collectAsStateWithLifecycle()
@@ -236,14 +268,21 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        parseLaunchDirective(intent)?.let { latestDirective = it }
+        consumeLaunchDirective(intent)?.let { latestDirective = it }
     }
 
-    private fun parseLaunchDirective(intent: Intent?): LaunchDirective? {
+    /**
+     * Parses launch extras and immediately strips them from the Intent so configuration changes
+     * or Activity recreation never replay old widget/notification actions.
+     */
+    private fun consumeLaunchDirective(intent: Intent?): LaunchDirective? {
         if (intent == null) return null
         val itemId = intent.getStringExtra(ReminderScheduler.EXTRA_ITEM_ID)
         val tab = intent.getStringExtra(WidgetIntents.EXTRA_OPEN_TAB)
         val action = intent.getStringExtra(WidgetIntents.EXTRA_OPEN_ACTION)
+        intent.removeExtra(ReminderScheduler.EXTRA_ITEM_ID)
+        intent.removeExtra(WidgetIntents.EXTRA_OPEN_TAB)
+        intent.removeExtra(WidgetIntents.EXTRA_OPEN_ACTION)
         if (itemId.isNullOrBlank() && tab.isNullOrBlank() && action.isNullOrBlank()) {
             return null
         }
@@ -260,7 +299,15 @@ private enum class PlannerTab(val labelRes: Int) {
     PROFILE(R.string.nav_profile)
 }
 
-private enum class AppRootStage { SPLASH, AUTH, PLANNER }
+private val PRIMARY_NAV_TABS = listOf(
+    PlannerTab.TODAY,
+    PlannerTab.CALENDAR,
+    PlannerTab.CLASSES,
+    PlannerTab.REPORTS,
+    PlannerTab.PROFILE
+)
+
+private enum class AppRootStage { AUTH, PLANNER }
 
 private data class InviteFriendPrefill(
     val title: String,
@@ -284,8 +331,9 @@ fun AppContent(
     val syncService = remember(context) { RoomFirestoreSyncService.getInstance(context) }
     val syncStatus by syncService.syncStatus.collectAsStateWithLifecycle()
     val feedbackManager = remember(context) { BunnyFeedbackManager.getInstance(context) }
+    val audioMemoManager = remember(context) { TaskAudioMemoManager.getInstance(context) }
 
-    DisposableEffect(lifecycleOwner, usageTracker, feedbackManager) {
+    DisposableEffect(lifecycleOwner, usageTracker, feedbackManager, audioMemoManager) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             usageTracker.onForegroundResume()
             feedbackManager.onForegroundResume()
@@ -299,6 +347,7 @@ fun AppContent(
                 Lifecycle.Event.ON_PAUSE -> {
                     usageTracker.onForegroundPause()
                     feedbackManager.onForegroundPause()
+                    audioMemoManager.onAppBackgrounded()
                 }
                 else -> Unit
             }
@@ -308,6 +357,7 @@ fun AppContent(
             lifecycleOwner.lifecycle.removeObserver(observer)
             usageTracker.onForegroundPause()
             feedbackManager.onForegroundPause()
+            audioMemoManager.onAppBackgrounded()
         }
     }
 
@@ -321,16 +371,8 @@ fun AppContent(
     var useLocalMode by remember {
         mutableStateOf(modePrefs.getBoolean(KEY_LOCAL_MODE_ENABLED, false))
     }
-    var showLaunchSplash by rememberSaveable { mutableStateOf(launchDirective == null) }
     var migrationBanner by remember { mutableStateOf<String?>(null) }
     val reducedMotion = rememberReducedMotion()
-
-    LaunchedEffect(Unit) {
-        if (showLaunchSplash) {
-            delay(1250L)
-            showLaunchSplash = false
-        }
-    }
 
     DisposableEffect(Unit) {
         val firebaseAuth = runCatching { Firebase.auth }.getOrNull()
@@ -359,7 +401,6 @@ fun AppContent(
     }
 
     val stage = when {
-        showLaunchSplash -> AppRootStage.SPLASH
         currentUser == null && !useLocalMode -> AppRootStage.AUTH
         else -> AppRootStage.PLANNER
     }
@@ -370,16 +411,14 @@ fun AppContent(
             if (reducedMotion) {
                 fadeIn(tween(180)) togetherWith fadeOut(tween(140))
             } else {
-                (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
-                    scaleIn(initialScale = 0.985f, animationSpec = tween(380, easing = FastOutSlowInEasing))) togetherWith
-                    fadeOut(tween(260, easing = FastOutSlowInEasing))
+                (fadeIn(tween(340, easing = FastOutSlowInEasing)) +
+                    scaleIn(initialScale = 0.985f, animationSpec = tween(340, easing = FastOutSlowInEasing))) togetherWith
+                    fadeOut(tween(220, easing = FastOutSlowInEasing))
             }
         },
         label = "app_root_transition"
     ) { targetStage ->
         when (targetStage) {
-            AppRootStage.SPLASH -> HoppingBunnyLoadingScreen()
-
             AppRootStage.AUTH -> AuthScreen(
                 onAuthSuccess = {
                     currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
@@ -395,7 +434,6 @@ fun AppContent(
                 val isLocalMode = user == null
                 val sessionKey = if (isLocalMode) LocalPlannerRepository.LOCAL_USER_ID else user.uid
 
-                // Key by sessionKey so transitioning between local guest mode and signed-in cloud sync refreshes ViewModel
                 key(sessionKey) {
                     PlannerWorkspaceShell(
                         isLocalMode = isLocalMode,
@@ -413,7 +451,16 @@ fun AppContent(
                         onSignedInFromLocal = {
                             currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
                         },
-                        onSwitchToLocalAfterSignOut = {
+                        onSignedOutAndWiped = { bannerText ->
+                            syncService.stopCloudSync()
+                            modePrefs.edit().putBoolean(KEY_LOCAL_MODE_ENABLED, false).apply()
+                            useLocalMode = false
+                            currentUser = null
+                            if (!bannerText.isNullOrBlank()) {
+                                migrationBanner = bannerText
+                            }
+                        },
+                        onFallbackToLocalMode = {
                             syncService.stopCloudSync()
                             modePrefs.edit().putBoolean(KEY_LOCAL_MODE_ENABLED, true).apply()
                             useLocalMode = true
@@ -443,15 +490,18 @@ private fun PlannerWorkspaceShell(
     externalBannerMessage: String?,
     onClearExternalBanner: () -> Unit,
     onSignedInFromLocal: () -> Unit,
-    onSwitchToLocalAfterSignOut: () -> Unit
+    onSignedOutAndWiped: (String?) -> Unit,
+    onFallbackToLocalMode: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val reducedMotion = rememberReducedMotion()
     val credentialManager = remember(context) {
         runCatching { CredentialManager.create(context) }.getOrNull()
     }
     val feedbackManager = remember(context) { BunnyFeedbackManager.getInstance(context) }
+    val syncService = remember(context) { RoomFirestoreSyncService.getInstance(context) }
     val sharedCalendarRepo = remember(context) { SharedCalendarRepository(context) }
 
     val viewModel: PlannerViewModel = viewModel(
@@ -461,8 +511,6 @@ private fun PlannerWorkspaceShell(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                // Offline-first Room repository wired to RoomFirestoreSyncService:
-                // all writes persist immediately to Room and push automatically to Firestore when online
                 val dataSource = RoomFirestoreSyncService.getInstance(app).createOfflineFirstDataSource()
                 PlannerViewModel(
                     repository = dataSource,
@@ -475,7 +523,6 @@ private fun PlannerWorkspaceShell(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val celebratingItemId by viewModel.celebratingItemId.collectAsStateWithLifecycle()
-    val feedbackMessage by viewModel.feedbackMessage.collectAsStateWithLifecycle()
     val isSaving by viewModel.isSaving.collectAsStateWithLifecycle()
 
     val calendarInvites by remember(sharedCalendarRepo, isLocalMode, currentUserId, userEmail) {
@@ -485,6 +532,8 @@ private fun PlannerWorkspaceShell(
             sharedCalendarRepo.observeAllVisibleInvites(currentUserId, userEmail)
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val sharedStreamError by sharedCalendarRepo.lastStreamError.collectAsStateWithLifecycle()
 
     LaunchedEffect(calendarInvites, currentUserId, isLocalMode) {
         if (!isLocalMode) {
@@ -499,10 +548,9 @@ private fun PlannerWorkspaceShell(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(feedbackMessage) {
-        feedbackMessage?.let { msg ->
+    LaunchedEffect(viewModel) {
+        viewModel.feedbackEvents.collect { msg ->
             snackbarHostState.showSnackbar(msg)
-            viewModel.clearFeedback()
         }
     }
     LaunchedEffect(externalBannerMessage) {
@@ -511,20 +559,36 @@ private fun PlannerWorkspaceShell(
             onClearExternalBanner()
         }
     }
-
-    // Notification runtime permission (Android 13+)
-    var hasNotificationPermission by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
-        )
+    LaunchedEffect(sharedStreamError) {
+        sharedStreamError?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+        }
     }
+
+    // Notification runtime permission (Android 13+) refreshed on ON_RESUME + Settings fallback
+    fun checkNotificationPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+    var hasNotificationPermission by remember { mutableStateOf(checkNotificationPermission()) }
+    var hasRequestedNotificationOnce by rememberSaveable { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationPermission = checkNotificationPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -532,7 +596,33 @@ private fun PlannerWorkspaceShell(
     }
     val requestNotifPermission: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            val activity = context.findActivity()
+            val permanentlyDenied = hasRequestedNotificationOnce &&
+                activity != null &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(
+                    activity,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            if (permanentlyDenied) {
+                runCatching {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }.onFailure {
+                    runCatching {
+                        val fallback = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(fallback)
+                    }
+                }
+            } else {
+                hasRequestedNotificationOnce = true
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 
@@ -547,14 +637,23 @@ private fun PlannerWorkspaceShell(
     var showClassEditorModal by remember { mutableStateOf(false) }
     var editingClassSchedule by remember { mutableStateOf<ClassScheduleItem?>(null) }
     var classPrefillDayOfWeek by remember { mutableStateOf<Int?>(null) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
-    var forceShowDedication by remember { mutableStateOf(false) }
+    var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
+    var showFocusSessionModal by rememberSaveable { mutableStateOf(false) }
+    var showDoomscrollGuardModal by rememberSaveable { mutableStateOf(false) }
+    var forceShowDedication by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    var showQuickNoteModal by remember { mutableStateOf(false) }
-    var quickNotePrefillText by remember { mutableStateOf("") }
+    var showQuickNoteModal by rememberSaveable { mutableStateOf(false) }
+    var quickNotePrefillText by rememberSaveable { mutableStateOf("") }
     var invitePrefill by remember { mutableStateOf<InviteFriendPrefill?>(null) }
     var inspectedSharedInvite by remember { mutableStateOf<CalendarInvite?>(null) }
+
+    // Sign-Out & Delete Account confirmation modal states
+    var showSignOutConfirm by remember { mutableStateOf(false) }
+    var signOutPendingOpsCount by remember { mutableIntStateOf(0) }
+    var showDeleteAccountConfirm by remember { mutableStateOf(false) }
+    var isDeletingAccount by remember { mutableStateOf(false) }
+
     val inspectedInviteReplies by remember(sharedCalendarRepo, inspectedSharedInvite?.id) {
         val inviteId = inspectedSharedInvite?.id
         if (inviteId.isNullOrBlank()) flowOf(emptyList())
@@ -562,6 +661,28 @@ private fun PlannerWorkspaceShell(
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val liveInspectedInvite = inspectedSharedInvite?.let { currentInv ->
         calendarInvites.firstOrNull { it.id == currentInv.id } ?: currentInv
+    }
+
+    val requestSignOutFlow: () -> Unit = {
+        scope.launch {
+            signOutPendingOpsCount = syncService.getPendingOpCount()
+            showSignOutConfirm = true
+        }
+    }
+
+    val performCleanSignOut: () -> Unit = {
+        scope.launch {
+            syncService.stopCloudSync()
+            ReminderScheduler(context).cancelAll()
+            DoomscrollGuardManager.setGuardEnabled(context, false)
+            FocusSessionManager.reset(context)
+            FocusSessionManager.resetInMemoryForReload()
+            AppUsageTracker.getInstance(context).resetAllUsage()
+            LocalPlannerRepository.wipeAllUserLocalData(context)
+            WidgetUpdateManager.refreshAllWidgetsSuspend(context)
+            signOut(credentialManager = credentialManager, scope = scope)
+            onSignedOutAndWiped("Signed out and cleared local account data.")
+        }
     }
 
     // Apply home screen widget & notification deep-link directives cleanly
@@ -597,7 +718,7 @@ private fun PlannerWorkspaceShell(
     }
 
     // Optional Google Sign-In modal state for local-mode users
-    var showCloudSyncModal by remember { mutableStateOf(false) }
+    var showCloudSyncModal by rememberSaveable { mutableStateOf(false) }
     var isSigningInToCloud by remember { mutableStateOf(false) }
     var cloudSignInError by remember { mutableStateOf<String?>(null) }
 
@@ -642,9 +763,9 @@ private fun PlannerWorkspaceShell(
             if (reducedMotion) {
                 fadeIn(tween(180)) togetherWith fadeOut(tween(140))
             } else {
-                (fadeIn(tween(340, easing = FastOutSlowInEasing)) +
-                    slideInVertically(tween(340, easing = FastOutSlowInEasing)) { it / 28 }) togetherWith
-                    fadeOut(tween(220, easing = FastOutSlowInEasing))
+                (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 28 }) togetherWith
+                    fadeOut(tween(200, easing = FastOutSlowInEasing))
             }
         },
         label = "planner_shell_stage_transition"
@@ -661,7 +782,7 @@ private fun PlannerWorkspaceShell(
             }
 
             PlannerShellStage.ERROR -> {
-                val errMessage = (uiState as? PlannerUiState.Error)?.message ?: "Unable to sync right now."
+                val errMessage = (uiState as? PlannerUiState.Error)?.message ?: "Unable to load planner right now."
                 ForgetMeNotStationeryBackground {
                     Box(
                         modifier = Modifier
@@ -673,12 +794,14 @@ private fun PlannerWorkspaceShell(
                             color = PureWhite,
                             shape = RoundedCornerShape(24.dp),
                             border = BorderStroke(1.dp, SubtleBorder),
-                            modifier = Modifier.widthIn(max = 420.dp)
+                            modifier = Modifier
+                                .widthIn(max = 420.dp)
+                                .testTag("planner_error_recovery_card")
                         ) {
                             Column(
                                 modifier = Modifier.padding(24.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(
                                     text = "Could not load planner",
@@ -690,6 +813,42 @@ private fun PlannerWorkspaceShell(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = OverdueTerracotta
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Button(
+                                    onClick = { viewModel.retryLoad() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = DeepBlue,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
+                                    shape = RoundedCornerShape(100.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("error_retry_button")
+                                ) {
+                                    Text("Retry")
+                                }
+                                if (!isLocalMode) {
+                                    OutlinedButton(
+                                        onClick = onFallbackToLocalMode,
+                                        border = BorderStroke(1.dp, SubtleBorder),
+                                        shape = RoundedCornerShape(100.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("error_continue_locally_button")
+                                    ) {
+                                        Text("Continue locally", color = MidnightNavy)
+                                    }
+                                    OutlinedButton(
+                                        onClick = performCleanSignOut,
+                                        border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(100.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("error_sign_out_button")
+                                    ) {
+                                        Text("Sign out", color = OverdueTerracotta)
+                                    }
+                                }
                             }
                         }
                     }
@@ -698,13 +857,20 @@ private fun PlannerWorkspaceShell(
 
             PlannerShellStage.DEDICATION -> {
                 val ready = uiState as? PlannerUiState.Ready ?: return@AnimatedContent
+                val isReopened = ready.profile.hasSeenDedication && forceShowDedication
+                BackHandler(enabled = isReopened) {
+                    forceShowDedication = false
+                }
                 DedicationScreen(
                     initialDedication = ready.profile.dedicationText,
                     isSaving = isSaving,
                     onOpenPlanner = { editedText ->
                         viewModel.saveDedication(editedText, markSeen = true)
                         forceShowDedication = false
-                    }
+                    },
+                    onCancel = if (isReopened) {
+                        { forceShowDedication = false }
+                    } else null
                 )
             }
 
@@ -716,278 +882,419 @@ private fun PlannerWorkspaceShell(
                 val dueInboxCount = remember(current.inboxEntries, current.nowMillis) {
                     current.inboxEntries.count { it.triggerUtcMillis <= current.nowMillis }
                 }
+                val showFab = activeTab == PlannerTab.TODAY ||
+                    activeTab == PlannerTab.CALENDAR ||
+                    activeTab == PlannerTab.CLASSES
 
                 ForgetMeNotStationeryBackground {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val supportsSideDetailPane = maxWidth >= 720.dp
+                        val useTabletRail = maxWidth >= 720.dp
                         val detailPaneWidth = adaptiveDetailPaneWidth(maxWidth)
-                        val showingCompactDetail = !supportsSideDetailPane && selectedItem != null
+                        val showingCompactDetail = !useTabletRail && selectedItem != null
 
-                        AnimatedContent(
-                            targetState = showingCompactDetail,
-                            transitionSpec = {
-                                if (reducedMotion) {
-                                    fadeIn(tween(140)) togetherWith fadeOut(tween(110))
-                                } else if (targetState) {
-                                    (slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 16 } +
-                                        fadeIn(tween(200, easing = FastOutSlowInEasing))) togetherWith
-                                        fadeOut(tween(150, easing = FastOutSlowInEasing))
-                                } else {
-                                    fadeIn(tween(200, easing = FastOutSlowInEasing)) togetherWith
-                                        (slideOutVertically(tween(190, easing = FastOutSlowInEasing)) { it / 16 } +
-                                            fadeOut(tween(150, easing = FastOutSlowInEasing)))
+                        // Tablet BackHandler closes side detail pane before leaving app
+                        BackHandler(enabled = useTabletRail && selectedItem != null) {
+                            selectedItemId = null
+                            viewModel.clearCelebration()
+                        }
+
+                        val drawerState = rememberDrawerState(DrawerValue.Closed)
+                        BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+                        var createMenuOpen by remember { mutableStateOf(false) }
+
+                        val detailCallbacks = remember(current, viewModel, feedbackManager) {
+                            object {
+                                fun onEdit(item: PlannerItem) {
+                                    editingItem = item
+                                    editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
+                                    showEditorDialog = true
                                 }
-                            },
-                            label = "compact_detail_transition"
-                        ) { isCompactDetail ->
-                            if (isCompactDetail && selectedItem != null) {
-                                Scaffold(
-                                    containerColor = Color.Transparent,
-                                    contentWindowInsets = WindowInsets.safeDrawing,
-                                    snackbarHost = { SnackbarHost(snackbarHostState) }
-                                ) { innerPadding ->
-                                    ItemDetailScreen(
-                                        item = selectedItem,
-                                        state = current,
-                                        isCelebrating = celebratingItemId == selectedItem.id,
-                                        showBackButton = true,
-                                        onBack = {
-                                            selectedItemId = null
-                                            viewModel.clearCelebration()
-                                        },
-                                        onEditItem = { itemToEdit ->
-                                            editingItem = itemToEdit
-                                            editorPrefillDate = itemToEdit.primaryCalendarDate() ?: current.todayDate()
-                                            showEditorDialog = true
-                                        },
-                                        onToggleItemCompleted = { item, checked ->
-                                            feedbackManager.onTaskToggled(checked)
-                                            viewModel.toggleItemCompleted(item, checked)
-                                        },
-                                        onDeleteItem = { item ->
-                                            feedbackManager.onDeleteAction()
-                                            viewModel.deleteItem(item) { selectedItemId = null }
-                                        },
-                                        onAddStep = { itemId, title, due ->
-                                            feedbackManager.onSaveSuccess()
-                                            viewModel.addStep(itemId, title, due, null)
-                                        },
-                                        onToggleStep = { step, checked ->
-                                            feedbackManager.onTaskToggled(checked)
-                                            viewModel.toggleUnifiedStep(step, checked)
-                                        },
-                                        onDeleteStep = { step ->
-                                            feedbackManager.onDeleteAction()
-                                            viewModel.deleteStep(step)
-                                        },
-                                        onAddReminder = { item, kind, offset ->
-                                            feedbackManager.onSaveSuccess()
-                                            viewModel.addReminder(
-                                                item = item,
-                                                kind = kind,
-                                                offsetMinutes = offset,
-                                                localHour = current.profile.defaultReminderHour,
-                                                localMinute = current.profile.defaultReminderMinute
-                                            )
-                                        },
-                                        onDeleteReminder = { rem ->
-                                            feedbackManager.onDeleteAction()
-                                            viewModel.deleteReminder(rem)
-                                        },
-                                        onUpdatePhotos = { item, paths ->
-                                            feedbackManager.onLightTick()
-                                            viewModel.updateItemPhotos(item, paths)
-                                        },
-                                        onUpdateAudioMemo = { item, path, durationSec ->
-                                            viewModel.updateItemAudioMemo(item, path, durationSec)
-                                        },
-                                        onUpdatePriority = { item, priority ->
-                                            feedbackManager.onLightTick()
-                                            viewModel.updateItemPriority(item, priority)
-                                        },
-                                        onUpdateCategory = { item, category ->
-                                            feedbackManager.onLightTick()
-                                            viewModel.updateItemCategory(item, category)
-                                        },
-                                        onLogStepTime = { step, mins ->
-                                            feedbackManager.onLightTick()
-                                            viewModel.logStepTimeSpent(step, mins)
-                                        },
-                                        onInviteFriend = { item ->
-                                            feedbackManager.onPopOpen()
-                                            val timeLabel = when {
-                                                item.startAtUtcMillis != null -> PlannerDateUtils.formatEventTimeRange(
-                                                    item.startAtUtcMillis,
-                                                    item.endAtUtcMillis
-                                                )
-                                                item.dueTimeMinutes != null -> PlannerDateUtils.formatTimeOfDay(item.dueTimeMinutes)
-                                                else -> null
-                                            }
-                                            invitePrefill = InviteFriendPrefill(
-                                                title = item.title,
-                                                dateIso = (item.primaryCalendarDate() ?: current.todayDate()).toIsoString(),
-                                                timeLabel = timeLabel,
-                                                notes = item.notes,
-                                                itemId = item.id,
-                                                itemType = item.itemType(),
-                                                category = item.taskCategory()
-                                            )
-                                        },
-                                        onDismissCelebration = { viewModel.clearCelebration() },
-                                        modifier = Modifier.padding(innerPadding)
+                                fun onInvite(item: PlannerItem) {
+                                    val timeLabel = when {
+                                        item.startAtUtcMillis != null -> PlannerDateUtils.formatEventTimeRange(
+                                            item.startAtUtcMillis,
+                                            item.endAtUtcMillis
+                                        )
+                                        item.dueTimeMinutes != null -> PlannerDateUtils.formatTimeOfDay(item.dueTimeMinutes)
+                                        else -> null
+                                    }
+                                    invitePrefill = InviteFriendPrefill(
+                                        title = item.title,
+                                        dateIso = (item.primaryCalendarDate() ?: current.todayDate()).toIsoString(),
+                                        timeLabel = timeLabel,
+                                        notes = item.notes,
+                                        itemId = item.id,
+                                        itemType = item.itemType(),
+                                        category = item.taskCategory()
                                     )
                                 }
-                            } else {
-                                val drawerState = rememberDrawerState(DrawerValue.Closed)
-                                BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
-                                var createMenuOpen by remember { mutableStateOf(false) }
-                                ModalNavigationDrawer(
-                                    drawerState = drawerState,
-                                    gesturesEnabled = drawerState.isOpen,
-                                    drawerContent = {
-                                        ModalDrawerSheet(drawerContainerColor = PureWhite) {
-                                            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                                ) {
-                                                    ForgetMeNotFlower(bloomed = true, size = 32.dp)
-                                                    Text("Bunny Memo", style = MaterialTheme.typography.headlineSmall, color = MidnightNavy)
-                                                }
-                                                PlannerTab.entries.forEach { tab ->
-                                                    NavigationDrawerItem(
-                                                        label = { Text(stringResource(tab.labelRes)) },
-                                                        selected = activeTab == tab,
-                                                        icon = { TabIcon(tab, activeTab == tab, if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0) },
-                                                        onClick = {
-                                                            feedbackManager.onTabSwitch()
-                                                            activeTab = tab
-                                                            selectedItemId = null
-                                                            searchQuery = ""
-                                                            searchOpen = false
-                                                            scope.launch { drawerState.close() }
-                                                        }
-                                                    )
-                                                }
-                                                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                                                DropdownMenuItem(
-                                                    text = { Text(if (isLocalMode) "Back up memos" else "Sync now") },
-                                                    leadingIcon = { Icon(if (isLocalMode) Icons.Outlined.CloudUpload else Icons.Outlined.CloudSync, contentDescription = null, tint = DeepBlue) },
-                                                    onClick = {
-                                                        feedbackManager.onLightTick()
-                                                        scope.launch { drawerState.close() }
-                                                        if (isLocalMode) {
-                                                            cloudSignInError = null
-                                                            showCloudSyncModal = true
-                                                        } else onRequestManualSync()
-                                                    }
+                            }
+                        }
+
+                        ModalNavigationDrawer(
+                            drawerState = drawerState,
+                            gesturesEnabled = !showingCompactDetail,
+                            drawerContent = {
+                                ModalDrawerSheet(drawerContainerColor = PureWhite) {
+                                    Column(
+                                        modifier = Modifier
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            ForgetMeNotFlower(bloomed = true, size = 32.dp)
+                                            Column {
+                                                Text(
+                                                    text = stringResource(R.string.app_name),
+                                                    style = MaterialTheme.typography.headlineSmall,
+                                                    color = MidnightNavy
                                                 )
-                                                DropdownMenuItem(
-                                                    text = { Text("Dedication") },
-                                                    leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, tint = DeepBlue) },
-                                                    onClick = {
-                                                        feedbackManager.onPopOpen()
-                                                        scope.launch { drawerState.close() }
-                                                        forceShowDedication = true
-                                                    }
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text("Settings") },
-                                                    leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = DeepBlue) },
-                                                    onClick = {
-                                                        feedbackManager.onPopOpen()
-                                                        scope.launch { drawerState.close() }
-                                                        showSettingsDialog = true
-                                                    }
+                                                Text(
+                                                    text = if (isLocalMode) stringResource(R.string.local_mode_badge)
+                                                    else (userEmail ?: stringResource(R.string.sync_status_synced)),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MutedNavy,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }
+
+                                        val drawerItemColors = NavigationDrawerItemDefaults.colors(
+                                            selectedContainerColor = SkyBlue.copy(alpha = 0.72f),
+                                            selectedIconColor = DeepBlue,
+                                            selectedTextColor = MidnightNavy,
+                                            unselectedContainerColor = Color.Transparent,
+                                            unselectedIconColor = MutedNavy,
+                                            unselectedTextColor = MidnightNavy
+                                        )
+
+                                        PlannerTab.entries.forEach { tab ->
+                                            NavigationDrawerItem(
+                                                label = { Text(stringResource(tab.labelRes)) },
+                                                selected = activeTab == tab,
+                                                icon = {
+                                                    TabIcon(
+                                                        tab = tab,
+                                                        selected = activeTab == tab,
+                                                        badgeCount = if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0
+                                                    )
+                                                },
+                                                colors = drawerItemColors,
+                                                onClick = {
+                                                    feedbackManager.onTabSwitch()
+                                                    activeTab = tab
+                                                    selectedItemId = null
+                                                    searchQuery = ""
+                                                    searchOpen = false
+                                                    scope.launch { drawerState.close() }
+                                                }
+                                            )
+                                        }
+
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 10.dp),
+                                            color = SubtleBorder
+                                        )
+
+                                        NavigationDrawerItem(
+                                            label = { Text(stringResource(R.string.focus_session_title)) },
+                                            selected = false,
+                                            icon = { Icon(Icons.Outlined.Timer, contentDescription = null, tint = DeepBlue) },
+                                            colors = drawerItemColors,
+                                            onClick = {
+                                                feedbackManager.onPopOpen()
+                                                scope.launch { drawerState.close() }
+                                                showFocusSessionModal = true
+                                            }
+                                        )
+                                        NavigationDrawerItem(
+                                            label = { Text(stringResource(R.string.focus_guard_title)) },
+                                            selected = false,
+                                            icon = { Icon(Icons.Outlined.Shield, contentDescription = null, tint = DeepBlue) },
+                                            colors = drawerItemColors,
+                                            onClick = {
+                                                feedbackManager.onPopOpen()
+                                                scope.launch { drawerState.close() }
+                                                showDoomscrollGuardModal = true
+                                            }
+                                        )
+                                        NavigationDrawerItem(
+                                            label = { Text(if (isLocalMode) "Back up memos" else "Sync now") },
+                                            selected = false,
+                                            icon = {
+                                                Icon(
+                                                    imageVector = if (isLocalMode) Icons.Outlined.CloudUpload else Icons.Outlined.CloudSync,
+                                                    contentDescription = null,
+                                                    tint = DeepBlue
+                                                )
+                                            },
+                                            colors = drawerItemColors,
+                                            onClick = {
+                                                feedbackManager.onLightTick()
+                                                scope.launch { drawerState.close() }
+                                                if (isLocalMode) {
+                                                    cloudSignInError = null
+                                                    showCloudSyncModal = true
+                                                } else {
+                                                    onRequestManualSync()
+                                                }
+                                            }
+                                        )
+                                        NavigationDrawerItem(
+                                            label = { Text("Dedication") },
+                                            selected = false,
+                                            icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, tint = DeepBlue) },
+                                            colors = drawerItemColors,
+                                            onClick = {
+                                                feedbackManager.onPopOpen()
+                                                scope.launch { drawerState.close() }
+                                                forceShowDedication = true
+                                            }
+                                        )
+                                        NavigationDrawerItem(
+                                            label = { Text("Settings") },
+                                            selected = false,
+                                            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = DeepBlue) },
+                                            colors = drawerItemColors,
+                                            onClick = {
+                                                feedbackManager.onPopOpen()
+                                                scope.launch { drawerState.close() }
+                                                showSettingsDialog = true
+                                            }
+                                        )
+
+                                        if (!isLocalMode) {
+                                            HorizontalDivider(
+                                                modifier = Modifier.padding(vertical = 8.dp),
+                                                color = SubtleBorder
+                                            )
+                                            NavigationDrawerItem(
+                                                label = { Text(stringResource(R.string.profile_sign_out_cta)) },
+                                                selected = false,
+                                                icon = {
+                                                    Icon(
+                                                        Icons.AutoMirrored.Outlined.Logout,
+                                                        contentDescription = null,
+                                                        tint = MutedNavy
+                                                    )
+                                                },
+                                                colors = drawerItemColors,
+                                                onClick = {
+                                                    feedbackManager.onLightTick()
+                                                    scope.launch { drawerState.close() }
+                                                    requestSignOutFlow()
+                                                }
+                                            )
+                                            NavigationDrawerItem(
+                                                label = {
+                                                    Text(
+                                                        text = stringResource(R.string.profile_delete_account_cta),
+                                                        color = OverdueTerracotta
+                                                    )
+                                                },
+                                                selected = false,
+                                                icon = {
+                                                    Icon(
+                                                        Icons.Outlined.DeleteForever,
+                                                        contentDescription = null,
+                                                        tint = OverdueTerracotta
+                                                    )
+                                                },
+                                                colors = drawerItemColors,
+                                                onClick = {
+                                                    feedbackManager.onLightTick()
+                                                    scope.launch { drawerState.close() }
+                                                    showDeleteAccountConfirm = true
+                                                }
+                                            )
+                                        }
                                     }
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize()) {
-                                    Scaffold(
-                                        containerColor = Color.Transparent,
-                                        contentWindowInsets = WindowInsets.safeDrawing,
-                                        snackbarHost = { SnackbarHost(snackbarHostState) },
-                                        topBar = {
-                                            Column {
-                                                TopAppBar(
-                                                    colors = TopAppBarDefaults.topAppBarColors(
-                                                        containerColor = SkyCanvasTop.copy(alpha = 0.86f),
-                                                        titleContentColor = MidnightNavy
-                                                    ),
-                                                    title = {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            ForgetMeNotFlower(bloomed = true, size = 24.dp)
-                                                            Spacer(modifier = Modifier.width(10.dp))
-                                                            Column {
-                                                                Text(
-                                                                    text = stringResource(activeTab.labelRes),
-                                                                    style = MaterialTheme.typography.titleLarge,
-                                                                    color = MidnightNavy
+                                }
+                            }
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                // Main workspace stays mounted behind compact detail overlay so scroll & Calendar state never reset
+                                Scaffold(
+                                    containerColor = Color.Transparent,
+                                    contentWindowInsets = WindowInsets.safeDrawing,
+                                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                                    topBar = {
+                                        Column {
+                                            TopAppBar(
+                                                colors = TopAppBarDefaults.topAppBarColors(
+                                                    containerColor = SkyCanvasTop.copy(alpha = 0.90f),
+                                                    titleContentColor = MidnightNavy
+                                                ),
+                                                title = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        ForgetMeNotFlower(bloomed = true, size = 24.dp)
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Column {
+                                                            Text(
+                                                                text = stringResource(activeTab.labelRes),
+                                                                style = MaterialTheme.typography.titleLarge,
+                                                                color = MidnightNavy,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            val statusText = when {
+                                                                isLocalMode -> stringResource(R.string.local_mode_badge)
+                                                                syncStatus.phase == SyncPhase.SYNCING -> stringResource(
+                                                                    R.string.sync_status_syncing,
+                                                                    syncStatus.pendingCount.coerceAtLeast(1)
                                                                 )
-                                                                val statusText = when {
-                                                                    isLocalMode -> stringResource(R.string.local_mode_badge)
-                                                                    syncStatus.phase == SyncPhase.SYNCING -> stringResource(
-                                                                        R.string.sync_status_syncing,
-                                                                        syncStatus.pendingCount.coerceAtLeast(1)
-                                                                    )
-                                                                    syncStatus.phase == SyncPhase.OFFLINE_QUEUED -> stringResource(
-                                                                        R.string.sync_status_offline_pending,
-                                                                        syncStatus.pendingCount
-                                                                    )
-                                                                    syncStatus.phase == SyncPhase.OFFLINE_IDLE -> stringResource(
-                                                                        R.string.sync_status_offline_idle
-                                                                    )
-                                                                    syncStatus.phase == SyncPhase.ERROR -> stringResource(
-                                                                        R.string.sync_status_error,
-                                                                        syncStatus.pendingCount
-                                                                    )
-                                                                    else -> stringResource(R.string.sync_status_synced)
-                                                                }
-                                                                val statusColor = when {
-                                                                    !isLocalMode && (syncStatus.phase == SyncPhase.OFFLINE_QUEUED || syncStatus.phase == SyncPhase.ERROR) -> OverdueTerracotta
-                                                                    !isLocalMode && syncStatus.phase == SyncPhase.SYNCING -> DeepBlue
-                                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                                                }
-                                                                Text(
-                                                                    text = statusText,
-                                                                    style = MaterialTheme.typography.labelSmall,
-                                                                    color = statusColor,
-                                                                    modifier = Modifier.testTag("top_bar_sync_status_text")
+                                                                syncStatus.phase == SyncPhase.OFFLINE_QUEUED -> stringResource(
+                                                                    R.string.sync_status_offline_pending,
+                                                                    syncStatus.pendingCount
                                                                 )
+                                                                syncStatus.phase == SyncPhase.OFFLINE_IDLE -> stringResource(
+                                                                    R.string.sync_status_offline_idle
+                                                                )
+                                                                syncStatus.phase == SyncPhase.ERROR -> stringResource(
+                                                                    R.string.sync_status_error,
+                                                                    syncStatus.pendingCount
+                                                                )
+                                                                else -> stringResource(R.string.sync_status_synced)
                                                             }
-                                                        }
-                                                    },
-                                                    navigationIcon = {
-                                                        IconButton(onClick = {
-                                                            feedbackManager.onLightTick()
-                                                            scope.launch { drawerState.open() }
-                                                        }) {
-                                                            Icon(Icons.Default.Menu, contentDescription = "Open planner navigation")
-                                                        }
-                                                    },
-                                                    actions = {
-                                                        IconButton(onClick = {
-                                                            feedbackManager.onPopOpen()
-                                                            searchOpen = !searchOpen
-                                                            if (!searchOpen) searchQuery = ""
-                                                        }) {
-                                                            Icon(
-                                                                if (searchOpen) Icons.Default.Close else Icons.Default.Search,
-                                                                contentDescription = if (searchOpen) "Close search" else "Search planner"
+                                                            val statusColor = when {
+                                                                !isLocalMode && (syncStatus.phase == SyncPhase.OFFLINE_QUEUED || syncStatus.phase == SyncPhase.ERROR) -> OverdueTerracotta
+                                                                !isLocalMode && syncStatus.phase == SyncPhase.SYNCING -> DeepBlue
+                                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                            }
+                                                            Text(
+                                                                text = statusText,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = statusColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                modifier = Modifier.testTag("top_bar_sync_status_text")
                                                             )
                                                         }
                                                     }
-                                                )
+                                                },
+                                                navigationIcon = {
+                                                    IconButton(
+                                                        onClick = {
+                                                            feedbackManager.onLightTick()
+                                                            scope.launch { drawerState.open() }
+                                                        },
+                                                        modifier = Modifier.testTag("top_bar_drawer_button")
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Menu,
+                                                            contentDescription = "Open planner navigation",
+                                                            tint = MidnightNavy
+                                                        )
+                                                    }
+                                                },
+                                                actions = {
+                                                    // Pomodoro Focus Timer quick action
+                                                    IconButton(
+                                                        onClick = {
+                                                            feedbackManager.onPopOpen()
+                                                            showFocusSessionModal = true
+                                                        },
+                                                        modifier = Modifier.testTag("top_bar_focus_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Timer,
+                                                            contentDescription = stringResource(R.string.focus_session_cd),
+                                                            tint = DeepBlue
+                                                        )
+                                                    }
+                                                    // Badged Inbox bell directly in TopAppBar for instant 1-tap access
+                                                    IconButton(
+                                                        onClick = {
+                                                            feedbackManager.onTabSwitch()
+                                                            activeTab = PlannerTab.NOTIFICATIONS
+                                                            searchQuery = ""
+                                                            searchOpen = false
+                                                        },
+                                                        modifier = Modifier.testTag("top_bar_inbox_button")
+                                                    ) {
+                                                        TabIcon(
+                                                            tab = PlannerTab.NOTIFICATIONS,
+                                                            selected = activeTab == PlannerTab.NOTIFICATIONS,
+                                                            badgeCount = dueInboxCount
+                                                        )
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            feedbackManager.onPopOpen()
+                                                            searchOpen = !searchOpen
+                                                            if (!searchOpen) searchQuery = ""
+                                                        },
+                                                        modifier = Modifier.testTag("top_bar_search_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                                                            contentDescription = if (searchOpen) "Close search" else "Search planner",
+                                                            tint = MidnightNavy
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                            HorizontalDivider(
+                                                thickness = 0.75.dp,
+                                                color = SubtleBorder.copy(alpha = 0.85f)
+                                            )
+                                        }
+                                    },
+                                    bottomBar = {
+                                        if (!useTabletRail) {
+                                            Column {
                                                 HorizontalDivider(
                                                     thickness = 0.75.dp,
                                                     color = SubtleBorder.copy(alpha = 0.85f)
                                                 )
+                                                NavigationBar(
+                                                    containerColor = PureWhite,
+                                                    contentColor = MidnightNavy,
+                                                    modifier = Modifier.testTag("planner_bottom_nav_bar")
+                                                ) {
+                                                    PRIMARY_NAV_TABS.forEach { tab ->
+                                                        val isSelected = activeTab == tab
+                                                        NavigationBarItem(
+                                                            selected = isSelected,
+                                                            onClick = {
+                                                                if (!isSelected) {
+                                                                    feedbackManager.onTabSwitch()
+                                                                    activeTab = tab
+                                                                    selectedItemId = null
+                                                                    searchQuery = ""
+                                                                    searchOpen = false
+                                                                }
+                                                            },
+                                                            icon = { TabIcon(tab = tab, selected = isSelected, badgeCount = 0) },
+                                                            label = {
+                                                                Text(
+                                                                    text = stringResource(tab.labelRes),
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            },
+                                                            colors = NavigationBarItemDefaults.colors(
+                                                                selectedIconColor = DeepBlue,
+                                                                selectedTextColor = DeepBlue,
+                                                                indicatorColor = SkyBlue.copy(alpha = 0.72f),
+                                                                unselectedIconColor = MutedNavy,
+                                                                unselectedTextColor = MutedNavy
+                                                            ),
+                                                            modifier = Modifier.testTag("bottom_nav_${tab.name.lowercase()}")
+                                                        )
+                                                    }
+                                                }
                                             }
-                                        },
-                                        floatingActionButton = {
+                                        }
+                                    },
+                                    floatingActionButton = {
+                                        if (showFab) {
                                             Box {
                                                 ExtendedFloatingActionButton(
                                                     onClick = {
@@ -995,13 +1302,22 @@ private fun PlannerWorkspaceShell(
                                                         createMenuOpen = true
                                                     },
                                                     containerColor = DeepBlue,
-                                                    contentColor = PureWhite,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary,
                                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                                    text = { Text("Create") }
+                                                    text = { Text("Create") },
+                                                    modifier = Modifier.testTag("workspace_create_fab")
                                                 )
-                                                DropdownMenu(expanded = createMenuOpen, onDismissRequest = { createMenuOpen = false }) {
+                                                DropdownMenu(
+                                                    expanded = createMenuOpen,
+                                                    onDismissRequest = { createMenuOpen = false }
+                                                ) {
                                                     DropdownMenuItem(
-                                                        text = { Text(if (activeTab == PlannerTab.CLASSES) "Add class" else "Add planner item") },
+                                                        text = {
+                                                            Text(
+                                                                if (activeTab == PlannerTab.CLASSES) "Add class"
+                                                                else "Add planner item"
+                                                            )
+                                                        },
                                                         onClick = {
                                                             feedbackManager.onPopOpen()
                                                             createMenuOpen = false
@@ -1032,416 +1348,504 @@ private fun PlannerWorkspaceShell(
                                                 }
                                             }
                                         }
-                                    ) { innerPadding ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .padding(innerPadding)
-                                        ) {
-
-                                            BackHandler(enabled = searchOpen && drawerState.isClosed) {
-                                                searchQuery = ""
-                                                searchOpen = false
-                                            }
-                                            Column(
+                                    }
+                                ) { innerPadding ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(innerPadding)
+                                    ) {
+                                        // Persistent Tablet NavigationRail (>= 720dp)
+                                        if (useTabletRail) {
+                                            NavigationRail(
+                                                containerColor = PureWhite.copy(alpha = 0.94f),
+                                                contentColor = MidnightNavy,
                                                 modifier = Modifier
-                                                    .weight(1f)
                                                     .fillMaxHeight()
+                                                    .testTag("planner_nav_rail")
                                             ) {
-                                                val searchHorizontalPad = adaptiveHorizontalPadding(this@BoxWithConstraints.maxWidth)
-                                                if (searchOpen) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(
-                                                                start = searchHorizontalPad,
-                                                                end = searchHorizontalPad,
-                                                                top = 12.dp,
-                                                                bottom = 6.dp
-                                                            ),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        PlannerSearchBar(
-                                                            query = searchQuery,
-                                                            onQueryChange = { searchQuery = it },
-                                                            modifier = Modifier.widthIn(max = 760.dp)
-                                                        )
-                                                    }
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                PRIMARY_NAV_TABS.forEach { tab ->
+                                                    val isSelected = activeTab == tab
+                                                    NavigationRailItem(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            if (!isSelected) {
+                                                                feedbackManager.onTabSwitch()
+                                                                activeTab = tab
+                                                                selectedItemId = null
+                                                                searchQuery = ""
+                                                                searchOpen = false
+                                                            }
+                                                        },
+                                                        icon = { TabIcon(tab = tab, selected = isSelected, badgeCount = 0) },
+                                                        label = {
+                                                            Text(
+                                                                text = stringResource(tab.labelRes),
+                                                                maxLines = 1
+                                                            )
+                                                        },
+                                                        colors = NavigationRailItemDefaults.colors(
+                                                            selectedIconColor = DeepBlue,
+                                                            selectedTextColor = DeepBlue,
+                                                            indicatorColor = SkyBlue.copy(alpha = 0.72f),
+                                                            unselectedIconColor = MutedNavy,
+                                                            unselectedTextColor = MutedNavy
+                                                        ),
+                                                        modifier = Modifier.testTag("nav_rail_${tab.name.lowercase()}")
+                                                    )
                                                 }
+                                            }
+                                            VerticalDivider(color = SubtleBorder.copy(alpha = 0.85f))
+                                        }
 
+                                        BackHandler(enabled = searchOpen && drawerState.isClosed && !showingCompactDetail) {
+                                            searchQuery = ""
+                                            searchOpen = false
+                                        }
+
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                        ) {
+                                            val searchHorizontalPad = adaptiveHorizontalPadding(this@BoxWithConstraints.maxWidth)
+                                            if (searchOpen) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .weight(1f)
                                                         .fillMaxWidth()
+                                                        .padding(
+                                                            start = searchHorizontalPad,
+                                                            end = searchHorizontalPad,
+                                                            top = 12.dp,
+                                                            bottom = 6.dp
+                                                        ),
+                                                    contentAlignment = Alignment.Center
                                                 ) {
-                                                    val isSearching = searchQuery.isNotBlank()
-                                                    AnimatedContent(
-                                                        targetState = isSearching,
-                                                        transitionSpec = {
-                                                            fadeIn(tween(150, easing = FastOutSlowInEasing)) togetherWith
-                                                                fadeOut(tween(120, easing = FastOutSlowInEasing))
-                                                        },
-                                                        label = "planner_search_mode_transition"
-                                                    ) { showingSearch ->
-                                                        if (showingSearch) {
-                                                            PlannerSearchResultsView(
-                                                                query = searchQuery,
-                                                                state = current,
-                                                                selectedItemId = selectedItemId,
-                                                                onSelectItem = { id -> selectedItemId = id },
-                                                                onToggleTask = { task, checked ->
-                                                                    feedbackManager.onTaskToggled(checked)
-                                                                    viewModel.toggleItemCompleted(task, checked)
-                                                                },
-                                                                onEditClass = { cls ->
-                                                                    editingClassSchedule = cls
-                                                                    classPrefillDayOfWeek = null
-                                                                    showClassEditorModal = true
-                                                                },
-                                                                onClearSearch = { searchQuery = "" },
-                                                                onSaveQueryAsQuickNote = { prefill ->
-                                                                    quickNotePrefillText = prefill
-                                                                    showQuickNoteModal = true
-                                                                }
-                                                            )
-                                                        } else {
-                                                            AnimatedContent(
-                                                                targetState = activeTab,
-                                                                transitionSpec = {
-                                                                    if (reducedMotion) {
-                                                                        fadeIn(tween(130)) togetherWith fadeOut(tween(100))
-                                                                    } else {
-                                                                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                                                                        (slideInHorizontally(
-                                                                            animationSpec = tween(210, easing = FastOutSlowInEasing)
-                                                                        ) { width -> direction * (width / 24) } +
-                                                                            fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
-                                                                            (slideOutHorizontally(
-                                                                                animationSpec = tween(160, easing = FastOutSlowInEasing)
-                                                                            ) { width -> -direction * (width / 28) } +
-                                                                                fadeOut(tween(140, easing = FastOutSlowInEasing)))
-                                                                    }
-                                                                },
-                                                                label = "section_tab_transition"
-                                                            ) { targetTab ->
-                                                    when (targetTab) {
-                                                        PlannerTab.TODAY -> TodayScreen(
+                                                    PlannerSearchBar(
+                                                        query = searchQuery,
+                                                        onQueryChange = { searchQuery = it },
+                                                        modifier = Modifier.widthIn(max = 760.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxWidth()
+                                            ) {
+                                                val isSearching = searchQuery.isNotBlank()
+                                                AnimatedContent(
+                                                    targetState = isSearching,
+                                                    transitionSpec = {
+                                                        fadeIn(tween(150, easing = FastOutSlowInEasing)) togetherWith
+                                                            fadeOut(tween(120, easing = FastOutSlowInEasing))
+                                                    },
+                                                    label = "planner_search_mode_transition"
+                                                ) { showingSearch ->
+                                                    if (showingSearch) {
+                                                        PlannerSearchResultsView(
+                                                            query = searchQuery,
                                                             state = current,
-                                                            usageSummary = usageSummary,
                                                             selectedItemId = selectedItemId,
                                                             onSelectItem = { id -> selectedItemId = id },
                                                             onToggleTask = { task, checked ->
                                                                 feedbackManager.onTaskToggled(checked)
                                                                 viewModel.toggleItemCompleted(task, checked)
                                                             },
-                                                            onToggleStep = { step, checked ->
-                                                                feedbackManager.onTaskToggled(checked)
-                                                                viewModel.toggleUnifiedStep(step, checked)
-                                                            },
-                                                            onAddClick = { date ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingItem = null
-                                                                editorPrefillDate = date
-                                                                showEditorDialog = true
-                                                            },
                                                             onEditClass = { cls ->
-                                                                feedbackManager.onPopOpen()
                                                                 editingClassSchedule = cls
                                                                 classPrefillDayOfWeek = null
                                                                 showClassEditorModal = true
                                                             },
-                                                            onOpenReports = {
-                                                                feedbackManager.onTabSwitch()
-                                                                activeTab = PlannerTab.REPORTS
-                                                            },
-                                                            calendarInvites = calendarInvites,
-                                                            currentUserId = if (isLocalMode) null else currentUserId,
-                                                            onInviteFriendClick = {
-                                                                feedbackManager.onPopOpen()
-                                                                invitePrefill = InviteFriendPrefill(
-                                                                    title = "",
-                                                                    dateIso = current.todayDate().toIsoString()
-                                                                )
-                                                            },
-                                                            onOpenSharedInvite = { invite ->
-                                                                feedbackManager.onPopOpen()
-                                                                inspectedSharedInvite = invite
+                                                            onClearSearch = { searchQuery = "" },
+                                                            onSaveQueryAsQuickNote = { prefill ->
+                                                                quickNotePrefillText = prefill
+                                                                showQuickNoteModal = true
                                                             }
                                                         )
-
-                                                        PlannerTab.CALENDAR -> CalendarScreen(
-                                                            state = current,
-                                                            selectedDate = selectedDate,
-                                                            selectedItemId = selectedItemId,
-                                                            onSelectDate = { d -> selectedDateIso = d.toIsoString() },
-                                                            onSelectItem = { id -> selectedItemId = id },
-                                                            onAddForDate = { d ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingItem = null
-                                                                editorPrefillDate = d
-                                                                showEditorDialog = true
+                                                    } else {
+                                                        AnimatedContent(
+                                                            targetState = activeTab,
+                                                            transitionSpec = {
+                                                                if (reducedMotion) {
+                                                                    fadeIn(tween(130)) togetherWith fadeOut(tween(100))
+                                                                } else {
+                                                                    val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                                                    (slideInHorizontally(
+                                                                        animationSpec = tween(210, easing = FastOutSlowInEasing)
+                                                                    ) { width -> direction * (width / 24) } +
+                                                                        fadeIn(tween(190, easing = FastOutSlowInEasing))) togetherWith
+                                                                        (slideOutHorizontally(
+                                                                            animationSpec = tween(160, easing = FastOutSlowInEasing)
+                                                                        ) { width -> -direction * (width / 28) } +
+                                                                            fadeOut(tween(140, easing = FastOutSlowInEasing)))
+                                                                }
                                                             },
-                                                            onEditClass = { cls ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingClassSchedule = cls
-                                                                classPrefillDayOfWeek = null
-                                                                showClassEditorModal = true
-                                                            },
-                                                            calendarInvites = calendarInvites,
-                                                            currentUserId = if (isLocalMode) null else currentUserId,
-                                                            onInviteFriendClick = { date ->
-                                                                feedbackManager.onPopOpen()
-                                                                invitePrefill = InviteFriendPrefill(
-                                                                    title = "",
-                                                                    dateIso = date.toIsoString()
-                                                                )
-                                                            },
-                                                            onOpenSharedInvite = { invite ->
-                                                                feedbackManager.onPopOpen()
-                                                                inspectedSharedInvite = invite
-                                                            }
-                                                        )
-
-                                                        PlannerTab.CLASSES -> ClassScheduleScreen(
-                                                            state = current,
-                                                            hasNotificationPermission = hasNotificationPermission,
-                                                            onRequestNotificationPermission = requestNotifPermission,
-                                                            onAddClassForDay = { dayIdx ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingClassSchedule = null
-                                                                classPrefillDayOfWeek = dayIdx
-                                                                showClassEditorModal = true
-                                                            },
-                                                            onEditClass = { cls ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingClassSchedule = cls
-                                                                classPrefillDayOfWeek = null
-                                                                showClassEditorModal = true
-                                                            }
-                                                        )
-
-                                                        PlannerTab.NOTIFICATIONS -> NotificationsScreen(
-                                                            state = current,
-                                                            hasNotificationPermission = hasNotificationPermission,
-                                                            onRequestNotificationPermission = requestNotifPermission,
-                                                            onToggleDailyDigest = { enabled ->
-                                                                feedbackManager.onLightTick()
-                                                                viewModel.setDailyDigestEnabled(enabled)
-                                                            },
-                                                            onUpdateDailyDigestTime = { h, m ->
-                                                                feedbackManager.onSaveSuccess()
-                                                                viewModel.updateDailyDigestTime(h, m)
-                                                            },
-                                                            onSendDailyDigestPreview = {
-                                                                feedbackManager.onPopOpen()
-                                                                viewModel.sendDailyDigestPreview()
-                                                            },
-                                                            onOpenItem = { id -> selectedItemId = id },
-                                                            onRescheduleItem = { item ->
-                                                                feedbackManager.onPopOpen()
-                                                                editingItem = item
-                                                                editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
-                                                                showEditorDialog = true
-                                                            },
-                                                            onSnoozeReminder = { rem, mins ->
-                                                                feedbackManager.onReminderSnoozed()
-                                                                viewModel.snoozeReminder(rem, mins)
-                                                            },
-                                                            onDismissReminder = { rem ->
-                                                                feedbackManager.onReminderDismissed()
-                                                                viewModel.dismissReminder(rem)
-                                                            },
-                                                            calendarInvites = calendarInvites,
-                                                            currentUserId = if (isLocalMode) null else currentUserId,
-                                                            onOpenSharedInvite = { invite ->
-                                                                feedbackManager.onPopOpen()
-                                                                inspectedSharedInvite = invite
-                                                            },
-                                                            onInviteFriendClick = {
-                                                                feedbackManager.onPopOpen()
-                                                                invitePrefill = InviteFriendPrefill(
-                                                                    title = "",
-                                                                    dateIso = current.todayDate().toIsoString()
-                                                                )
-                                                            }
-                                                        )
-
-                                                        PlannerTab.REPORTS -> ReportsScreen(
-                                                            state = current,
-                                                            onSelectItem = { id -> selectedItemId = id }
-                                                        )
-
-                                                        PlannerTab.PROFILE -> ProfileScreen(
-                                                            state = current,
-                                                            userDisplayName = userDisplayName,
-                                                            userEmail = userEmail,
-                                                            userPhotoUrl = userPhotoUrl,
-                                                            isLocalMode = isLocalMode,
-                                                            syncStatus = syncStatus,
-                                                            calendarInvites = calendarInvites,
-                                                            isExpanded = supportsSideDetailPane,
-                                                            onEditDedication = {
-                                                                feedbackManager.onPopOpen()
-                                                                forceShowDedication = true
-                                                            },
-                                                            onOpenSettings = {
-                                                                feedbackManager.onPopOpen()
-                                                                showSettingsDialog = true
-                                                            },
-                                                            onInviteFriendClick = {
-                                                                feedbackManager.onPopOpen()
-                                                                invitePrefill = InviteFriendPrefill(
-                                                                    title = "",
-                                                                    dateIso = current.todayDate().toIsoString()
-                                                                )
-                                                            },
-                                                            onTriggerSync = {
-                                                                feedbackManager.onLightTick()
-                                                                onRequestManualSync()
-                                                            },
-                                                            onGoogleSignIn = {
-                                                                feedbackManager.onPopOpen()
-                                                                cloudSignInError = null
-                                                                showCloudSyncModal = true
-                                                            },
-                                                            onSignOut = {
-                                                                feedbackManager.onLightTick()
-                                                                onSwitchToLocalAfterSignOut()
-                                                                signOut(credentialManager = credentialManager, scope = scope)
-                                                            }
-                                                        )
-                                                    }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Tablet/expanded detail side panel (fixed adaptive width, zero weight oscillation)
-                                            AnimatedVisibility(
-                                                visible = supportsSideDetailPane && selectedItem != null,
-                                                enter = fadeIn(tween(180)) + expandHorizontally(
-                                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
-                                                    expandFrom = Alignment.Start
-                                                ),
-                                                exit = fadeOut(tween(140)) + shrinkHorizontally(
-                                                    animationSpec = tween(180, easing = FastOutSlowInEasing),
-                                                    shrinkTowards = Alignment.Start
-                                                )
-                                            ) {
-                                                if (selectedItem != null) {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .width(detailPaneWidth)
-                                                            .fillMaxHeight()
-                                                    ) {
-                                                        VerticalDivider(color = SubtleBorder)
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .weight(1f)
-                                                                .fillMaxHeight()
-                                                        ) {
-                                                            ItemDetailScreen(
-                                                                item = selectedItem,
-                                                                state = current,
-                                                                isCelebrating = celebratingItemId == selectedItem.id,
-                                                                showBackButton = false,
-                                                                onBack = {
-                                                                    selectedItemId = null
-                                                                    viewModel.clearCelebration()
-                                                                },
-                                                                onEditItem = { itemToEdit ->
-                                                                    editingItem = itemToEdit
-                                                                    editorPrefillDate = itemToEdit.primaryCalendarDate() ?: current.todayDate()
-                                                                    showEditorDialog = true
-                                                                },
-                                                                onToggleItemCompleted = { item, checked ->
-                                                                    feedbackManager.onTaskToggled(checked)
-                                                                    viewModel.toggleItemCompleted(item, checked)
-                                                                },
-                                                                onDeleteItem = { item ->
-                                                                    feedbackManager.onDeleteAction()
-                                                                    viewModel.deleteItem(item) { selectedItemId = null }
-                                                                },
-                                                                onAddStep = { itemId, title, due ->
-                                                                    feedbackManager.onSaveSuccess()
-                                                                    viewModel.addStep(itemId, title, due, null)
-                                                                },
-                                                                onToggleStep = { step, checked ->
-                                                                    feedbackManager.onTaskToggled(checked)
-                                                                    viewModel.toggleUnifiedStep(step, checked)
-                                                                },
-                                                                onDeleteStep = { step ->
-                                                                    feedbackManager.onDeleteAction()
-                                                                    viewModel.deleteStep(step)
-                                                                },
-                                                                onAddReminder = { item, kind, offset ->
-                                                                    feedbackManager.onSaveSuccess()
-                                                                    viewModel.addReminder(
-                                                                        item = item,
-                                                                        kind = kind,
-                                                                        offsetMinutes = offset,
-                                                                        localHour = current.profile.defaultReminderHour,
-                                                                        localMinute = current.profile.defaultReminderMinute
-                                                                    )
-                                                                },
-                                                                onDeleteReminder = { rem ->
-                                                                    feedbackManager.onDeleteAction()
-                                                                    viewModel.deleteReminder(rem)
-                                                                },
-                                                                onUpdatePhotos = { item, paths ->
-                                                                    feedbackManager.onLightTick()
-                                                                    viewModel.updateItemPhotos(item, paths)
-                                                                },
-                                                                onUpdateAudioMemo = { item, path, durationSec ->
-                                                                    viewModel.updateItemAudioMemo(item, path, durationSec)
-                                                                },
-                                                                onUpdatePriority = { item, priority ->
-                                                                    feedbackManager.onLightTick()
-                                                                    viewModel.updateItemPriority(item, priority)
-                                                                },
-                                                                onUpdateCategory = { item, category ->
-                                                                    feedbackManager.onLightTick()
-                                                                    viewModel.updateItemCategory(item, category)
-                                                                },
-                                                                onLogStepTime = { step, mins ->
-                                                                    feedbackManager.onLightTick()
-                                                                    viewModel.logStepTimeSpent(step, mins)
-                                                                },
-                                                                onInviteFriend = { item ->
-                                                                    feedbackManager.onPopOpen()
-                                                                    val timeLabel = when {
-                                                                        item.startAtUtcMillis != null -> PlannerDateUtils.formatEventTimeRange(
-                                                                            item.startAtUtcMillis,
-                                                                            item.endAtUtcMillis
+                                                            label = "section_tab_transition"
+                                                        ) { targetTab ->
+                                                            when (targetTab) {
+                                                                PlannerTab.TODAY -> TodayScreen(
+                                                                    state = current,
+                                                                    usageSummary = usageSummary,
+                                                                    selectedItemId = selectedItemId,
+                                                                    onSelectItem = { id -> selectedItemId = id },
+                                                                    onToggleTask = { task, checked ->
+                                                                        feedbackManager.onTaskToggled(checked)
+                                                                        viewModel.toggleItemCompleted(task, checked)
+                                                                    },
+                                                                    onToggleStep = { step, checked ->
+                                                                        feedbackManager.onTaskToggled(checked)
+                                                                        viewModel.toggleUnifiedStep(step, checked)
+                                                                    },
+                                                                    onAddClick = { date ->
+                                                                        editingItem = null
+                                                                        editorPrefillDate = date
+                                                                        showEditorDialog = true
+                                                                    },
+                                                                    onEditClass = { cls ->
+                                                                        editingClassSchedule = cls
+                                                                        classPrefillDayOfWeek = null
+                                                                        showClassEditorModal = true
+                                                                    },
+                                                                    onOpenReports = {
+                                                                        feedbackManager.onTabSwitch()
+                                                                        activeTab = PlannerTab.REPORTS
+                                                                    },
+                                                                    calendarInvites = calendarInvites,
+                                                                    currentUserId = if (isLocalMode) null else currentUserId,
+                                                                    onInviteFriendClick = {
+                                                                        invitePrefill = InviteFriendPrefill(
+                                                                            title = "",
+                                                                            dateIso = current.todayDate().toIsoString()
                                                                         )
-                                                                        item.dueTimeMinutes != null -> PlannerDateUtils.formatTimeOfDay(item.dueTimeMinutes)
-                                                                        else -> null
+                                                                    },
+                                                                    onOpenSharedInvite = { invite ->
+                                                                        inspectedSharedInvite = invite
                                                                     }
-                                                                    invitePrefill = InviteFriendPrefill(
-                                                                        title = item.title,
-                                                                        dateIso = (item.primaryCalendarDate() ?: current.todayDate()).toIsoString(),
-                                                                        timeLabel = timeLabel,
-                                                                        notes = item.notes,
-                                                                        itemId = item.id,
-                                                                        itemType = item.itemType(),
-                                                                        category = item.taskCategory()
-                                                                    )
-                                                                },
-                                                                onDismissCelebration = { viewModel.clearCelebration() }
-                                                            )
+                                                                )
+
+                                                                PlannerTab.CALENDAR -> CalendarScreen(
+                                                                    state = current,
+                                                                    selectedDate = selectedDate,
+                                                                    selectedItemId = selectedItemId,
+                                                                    onSelectDate = { d -> selectedDateIso = d.toIsoString() },
+                                                                    onSelectItem = { id -> selectedItemId = id },
+                                                                    onAddForDate = { d ->
+                                                                        editingItem = null
+                                                                        editorPrefillDate = d
+                                                                        showEditorDialog = true
+                                                                    },
+                                                                    onEditClass = { cls ->
+                                                                        editingClassSchedule = cls
+                                                                        classPrefillDayOfWeek = null
+                                                                        showClassEditorModal = true
+                                                                    },
+                                                                    calendarInvites = calendarInvites,
+                                                                    currentUserId = if (isLocalMode) null else currentUserId,
+                                                                    onInviteFriendClick = { date ->
+                                                                        invitePrefill = InviteFriendPrefill(
+                                                                            title = "",
+                                                                            dateIso = date.toIsoString()
+                                                                        )
+                                                                    },
+                                                                    onOpenSharedInvite = { invite ->
+                                                                        inspectedSharedInvite = invite
+                                                                    }
+                                                                )
+
+                                                                PlannerTab.CLASSES -> ClassScheduleScreen(
+                                                                    state = current,
+                                                                    hasNotificationPermission = hasNotificationPermission,
+                                                                    onRequestNotificationPermission = requestNotifPermission,
+                                                                    onAddClassForDay = { dayIdx ->
+                                                                        editingClassSchedule = null
+                                                                        classPrefillDayOfWeek = dayIdx
+                                                                        showClassEditorModal = true
+                                                                    },
+                                                                    onEditClass = { cls ->
+                                                                        editingClassSchedule = cls
+                                                                        classPrefillDayOfWeek = null
+                                                                        showClassEditorModal = true
+                                                                    }
+                                                                )
+
+                                                                PlannerTab.NOTIFICATIONS -> NotificationsScreen(
+                                                                    state = current,
+                                                                    hasNotificationPermission = hasNotificationPermission,
+                                                                    onRequestNotificationPermission = requestNotifPermission,
+                                                                    onToggleDailyDigest = { enabled ->
+                                                                        feedbackManager.onLightTick()
+                                                                        viewModel.setDailyDigestEnabled(enabled)
+                                                                    },
+                                                                    onUpdateDailyDigestTime = { h, m ->
+                                                                        feedbackManager.onSaveSuccess()
+                                                                        viewModel.updateDailyDigestTime(h, m)
+                                                                    },
+                                                                    onSendDailyDigestPreview = {
+                                                                        feedbackManager.onPopOpen()
+                                                                        viewModel.sendDailyDigestPreview()
+                                                                    },
+                                                                    onOpenItem = { id -> selectedItemId = id },
+                                                                    onRescheduleItem = { item ->
+                                                                        editingItem = item
+                                                                        editorPrefillDate = item.primaryCalendarDate() ?: current.todayDate()
+                                                                        showEditorDialog = true
+                                                                    },
+                                                                    onSnoozeReminder = { rem, mins ->
+                                                                        viewModel.snoozeReminder(rem, mins)
+                                                                    },
+                                                                    onDismissReminder = { rem ->
+                                                                        viewModel.dismissReminder(rem)
+                                                                    },
+                                                                    calendarInvites = calendarInvites,
+                                                                    currentUserId = if (isLocalMode) null else currentUserId,
+                                                                    onOpenSharedInvite = { invite ->
+                                                                        inspectedSharedInvite = invite
+                                                                    },
+                                                                    onInviteFriendClick = {
+                                                                        invitePrefill = InviteFriendPrefill(
+                                                                            title = "",
+                                                                            dateIso = current.todayDate().toIsoString()
+                                                                        )
+                                                                    }
+                                                                )
+
+                                                                PlannerTab.REPORTS -> ReportsScreen(
+                                                                    state = current,
+                                                                    onSelectItem = { id -> selectedItemId = id }
+                                                                )
+
+                                                                PlannerTab.PROFILE -> ProfileScreen(
+                                                                    state = current,
+                                                                    userDisplayName = userDisplayName,
+                                                                    userEmail = userEmail,
+                                                                    userPhotoUrl = userPhotoUrl,
+                                                                    isLocalMode = isLocalMode,
+                                                                    syncStatus = syncStatus,
+                                                                    calendarInvites = calendarInvites,
+                                                                    isExpanded = useTabletRail,
+                                                                    onEditDedication = {
+                                                                        forceShowDedication = true
+                                                                    },
+                                                                    onOpenSettings = {
+                                                                        showSettingsDialog = true
+                                                                    },
+                                                                    onInviteFriendClick = {
+                                                                        invitePrefill = InviteFriendPrefill(
+                                                                            title = "",
+                                                                            dateIso = current.todayDate().toIsoString()
+                                                                        )
+                                                                    },
+                                                                    onTriggerSync = {
+                                                                        onRequestManualSync()
+                                                                    },
+                                                                    onGoogleSignIn = {
+                                                                        cloudSignInError = null
+                                                                        showCloudSyncModal = true
+                                                                    },
+                                                                    onSignOut = requestSignOutFlow,
+                                                                    onDeleteAccount = if (!isLocalMode) {
+                                                                        { showDeleteAccountConfirm = true }
+                                                                    } else null
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
 
+                                        // Tablet/expanded detail side panel
+                                        AnimatedVisibility(
+                                            visible = useTabletRail && selectedItem != null,
+                                            enter = fadeIn(tween(180)) + expandHorizontally(
+                                                animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                                expandFrom = Alignment.Start
+                                            ),
+                                            exit = fadeOut(tween(140)) + shrinkHorizontally(
+                                                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                                                shrinkTowards = Alignment.Start
+                                            )
+                                        ) {
+                                            if (selectedItem != null) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .width(detailPaneWidth)
+                                                        .fillMaxHeight()
+                                                ) {
+                                                    VerticalDivider(color = SubtleBorder)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxHeight()
+                                                    ) {
+                                                        ItemDetailScreen(
+                                                            item = selectedItem,
+                                                            state = current,
+                                                            isCelebrating = celebratingItemId == selectedItem.id,
+                                                            showBackButton = false,
+                                                            onBack = {
+                                                                selectedItemId = null
+                                                                viewModel.clearCelebration()
+                                                            },
+                                                            onEditItem = detailCallbacks::onEdit,
+                                                            onToggleItemCompleted = { item, checked ->
+                                                                feedbackManager.onTaskToggled(checked)
+                                                                viewModel.toggleItemCompleted(item, checked)
+                                                            },
+                                                            onDeleteItem = { item ->
+                                                                feedbackManager.onDeleteAction()
+                                                                viewModel.deleteItem(item) { selectedItemId = null }
+                                                            },
+                                                            onAddStep = { itemId, title, due ->
+                                                                feedbackManager.onSaveSuccess()
+                                                                viewModel.addStep(itemId, title, due, null)
+                                                            },
+                                                            onToggleStep = { step, checked ->
+                                                                feedbackManager.onTaskToggled(checked)
+                                                                viewModel.toggleUnifiedStep(step, checked)
+                                                            },
+                                                            onDeleteStep = { step ->
+                                                                feedbackManager.onDeleteAction()
+                                                                viewModel.deleteStep(step)
+                                                            },
+                                                            onAddReminder = { item, kind, offset ->
+                                                                feedbackManager.onSaveSuccess()
+                                                                viewModel.addReminder(
+                                                                    item = item,
+                                                                    kind = kind,
+                                                                    offsetMinutes = offset,
+                                                                    localHour = current.profile.defaultReminderHour,
+                                                                    localMinute = current.profile.defaultReminderMinute
+                                                                )
+                                                            },
+                                                            onDeleteReminder = { rem ->
+                                                                feedbackManager.onDeleteAction()
+                                                                viewModel.deleteReminder(rem)
+                                                            },
+                                                            onUpdatePhotos = { item, paths ->
+                                                                feedbackManager.onLightTick()
+                                                                viewModel.updateItemPhotos(item, paths)
+                                                            },
+                                                            onUpdateAudioMemo = { item, path, durationSec ->
+                                                                viewModel.updateItemAudioMemo(item, path, durationSec)
+                                                            },
+                                                            onUpdatePriority = { item, priority ->
+                                                                viewModel.updateItemPriority(item, priority)
+                                                            },
+                                                            onUpdateCategory = { item, category ->
+                                                                viewModel.updateItemCategory(item, category)
+                                                            },
+                                                            onLogStepTime = { step, mins ->
+                                                                viewModel.logStepTimeSpent(step, mins)
+                                                            },
+                                                            onInviteFriend = detailCallbacks::onInvite,
+                                                            onDismissCelebration = { viewModel.clearCelebration() }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Companion bunny sits cleanly above BottomNavBar on phones
+                                if (!showingCompactDetail) {
                                     MonthBunnyOverlay(
                                         state = current,
                                         onOpenItem = { itemId -> selectedItemId = itemId },
-                                        modifier = Modifier.align(Alignment.BottomStart)
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(bottom = if (useTabletRail) 4.dp else 82.dp)
                                     )
+                                }
+
+                                // Compact-phone full-screen ItemDetailScreen overlay (keeps active tab mounted beneath!)
+                                AnimatedVisibility(
+                                    visible = showingCompactDetail,
+                                    enter = if (reducedMotion) fadeIn(tween(140)) else slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 16 } + fadeIn(tween(200)),
+                                    exit = if (reducedMotion) fadeOut(tween(110)) else slideOutVertically(tween(180, easing = FastOutSlowInEasing)) { it / 16 } + fadeOut(tween(150))
+                                ) {
+                                    if (selectedItem != null) {
+                                        Surface(
+                                            color = CloudWhite,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            ForgetMeNotStationeryBackground {
+                                                Scaffold(
+                                                    containerColor = Color.Transparent,
+                                                    contentWindowInsets = WindowInsets.safeDrawing,
+                                                    snackbarHost = { SnackbarHost(snackbarHostState) }
+                                                ) { innerPadding ->
+                                                    ItemDetailScreen(
+                                                        item = selectedItem,
+                                                        state = current,
+                                                        isCelebrating = celebratingItemId == selectedItem.id,
+                                                        showBackButton = true,
+                                                        onBack = {
+                                                            selectedItemId = null
+                                                            viewModel.clearCelebration()
+                                                        },
+                                                        onEditItem = detailCallbacks::onEdit,
+                                                        onToggleItemCompleted = { item, checked ->
+                                                            feedbackManager.onTaskToggled(checked)
+                                                            viewModel.toggleItemCompleted(item, checked)
+                                                        },
+                                                        onDeleteItem = { item ->
+                                                            feedbackManager.onDeleteAction()
+                                                            viewModel.deleteItem(item) { selectedItemId = null }
+                                                        },
+                                                        onAddStep = { itemId, title, due ->
+                                                            feedbackManager.onSaveSuccess()
+                                                            viewModel.addStep(itemId, title, due, null)
+                                                        },
+                                                        onToggleStep = { step, checked ->
+                                                            feedbackManager.onTaskToggled(checked)
+                                                            viewModel.toggleUnifiedStep(step, checked)
+                                                        },
+                                                        onDeleteStep = { step ->
+                                                            feedbackManager.onDeleteAction()
+                                                            viewModel.deleteStep(step)
+                                                        },
+                                                        onAddReminder = { item, kind, offset ->
+                                                            feedbackManager.onSaveSuccess()
+                                                            viewModel.addReminder(
+                                                                item = item,
+                                                                kind = kind,
+                                                                offsetMinutes = offset,
+                                                                localHour = current.profile.defaultReminderHour,
+                                                                localMinute = current.profile.defaultReminderMinute
+                                                            )
+                                                        },
+                                                        onDeleteReminder = { rem ->
+                                                            feedbackManager.onDeleteAction()
+                                                            viewModel.deleteReminder(rem)
+                                                        },
+                                                        onUpdatePhotos = { item, paths ->
+                                                            feedbackManager.onLightTick()
+                                                            viewModel.updateItemPhotos(item, paths)
+                                                        },
+                                                        onUpdateAudioMemo = { item, path, durationSec ->
+                                                            viewModel.updateItemAudioMemo(item, path, durationSec)
+                                                        },
+                                                        onUpdatePriority = { item, priority ->
+                                                            viewModel.updateItemPriority(item, priority)
+                                                        },
+                                                        onUpdateCategory = { item, category ->
+                                                            viewModel.updateItemCategory(item, category)
+                                                        },
+                                                        onLogStepTime = { step, mins ->
+                                                            viewModel.logStepTimeSpent(step, mins)
+                                                        },
+                                                        onInviteFriend = detailCallbacks::onInvite,
+                                                        onDismissCelebration = { viewModel.clearCelebration() },
+                                                        modifier = Modifier.padding(innerPadding)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1450,7 +1854,9 @@ private fun PlannerWorkspaceShell(
                 }
 
                 if (showEditorDialog) {
-                    val plansForLinking = current.items.filter { it.itemType().name == "PLAN" }
+                    val plansForLinking = current.items.filter {
+                        it.itemType() == ItemType.PLAN && it.id != editingItem?.id
+                    }
                     val existingRem = editingItem?.let { current.remindersFor(it.id) } ?: emptyList()
                     ItemEditorDialog(
                         prefillDate = editorPrefillDate,
@@ -1540,14 +1946,35 @@ private fun PlannerWorkspaceShell(
                                 )
                             }
                         },
+                        onOpenFocusGuard = {
+                            showSettingsDialog = false
+                            showDoomscrollGuardModal = true
+                        },
                         onSignInWithGoogle = {
                             cloudSignInError = null
                             showCloudSyncModal = true
                         },
                         onSignOut = {
-                            onSwitchToLocalAfterSignOut()
-                            signOut(credentialManager = credentialManager, scope = scope)
+                            showSettingsDialog = false
+                            requestSignOutFlow()
                         }
+                    )
+                }
+
+                if (showFocusSessionModal) {
+                    FocusSessionModal(
+                        activeTasks = current.items.filter { !it.completed && it.itemType() == ItemType.TASK },
+                        onOpenBlockedAppsSetup = {
+                            showFocusSessionModal = false
+                            showDoomscrollGuardModal = true
+                        },
+                        onDismiss = { showFocusSessionModal = false }
+                    )
+                }
+
+                if (showDoomscrollGuardModal) {
+                    DoomscrollGuardModal(
+                        onDismiss = { showDoomscrollGuardModal = false }
                     )
                 }
 
@@ -1578,6 +2005,7 @@ private fun PlannerWorkspaceShell(
                                     notifyOffsetMinutes = notifyOffset,
                                     colorKey = colorKey
                                 ) {
+                                    feedbackManager.onSaveSuccess()
                                     showClassEditorModal = false
                                     editingClassSchedule = null
                                 }
@@ -1597,6 +2025,7 @@ private fun PlannerWorkspaceShell(
                                     notifyOffsetMinutes = notifyOffset,
                                     colorKey = colorKey
                                 ) {
+                                    feedbackManager.onSaveSuccess()
                                     showClassEditorModal = false
                                     editingClassSchedule = null
                                 }
@@ -1604,6 +2033,7 @@ private fun PlannerWorkspaceShell(
                         },
                         onDelete = { toDelete ->
                             viewModel.deleteClassSchedule(toDelete) {
+                                feedbackManager.onDeleteAction()
                                 showClassEditorModal = false
                                 editingClassSchedule = null
                             }
@@ -1645,6 +2075,70 @@ private fun PlannerWorkspaceShell(
                                 showCloudSyncModal = false
                                 cloudSignInError = null
                             }
+                        }
+                    )
+                }
+
+                if (showSignOutConfirm) {
+                    val msg = if (signOutPendingOpsCount > 0) {
+                        "You have $signOutPendingOpsCount unsynced change(s) waiting to upload. Signing out clears this device's local planner data, photos, and voice memos so your account stays private."
+                    } else {
+                        "Signing out clears this device's local planner cache, device-only photos, and voice memos so your account stays private. Your synced cloud memos remain safe."
+                    }
+                    BunnyMemoConfirmModal(
+                        title = "Sign out of Bunny Memo?",
+                        message = msg,
+                        confirmLabel = "Sign out & clear",
+                        cancelLabel = "Stay signed in",
+                        isDestructive = true,
+                        confirmTestTag = "confirm_sign_out_button",
+                        onConfirm = {
+                            showSignOutConfirm = false
+                            performCleanSignOut()
+                        },
+                        onDismiss = { showSignOutConfirm = false }
+                    )
+                }
+
+                if (showDeleteAccountConfirm && !isLocalMode) {
+                    BunnyMemoConfirmModal(
+                        title = "Delete account & all data?",
+                        message = if (isDeletingAccount) {
+                            "Deleting your cloud planner data and account…"
+                        } else {
+                            "This permanently deletes your cloud memos, habits, shared calendar invites, local data, and Firebase account. This cannot be undone."
+                        },
+                        confirmLabel = if (isDeletingAccount) "Deleting…" else "Delete forever",
+                        cancelLabel = "Keep account",
+                        isDestructive = true,
+                        confirmTestTag = "confirm_delete_account_button",
+                        onConfirm = {
+                            if (!isDeletingAccount) {
+                                isDeletingAccount = true
+                                scope.launch {
+                                    syncService.stopCloudSync()
+                                    ReminderScheduler(context).cancelAll()
+                                    DoomscrollGuardManager.setGuardEnabled(context, false)
+                                    FocusSessionManager.reset(context)
+                                    FocusSessionManager.resetInMemoryForReload()
+                                    AppUsageTracker.getInstance(context).resetAllUsage()
+                                    val res = deleteAccountAndCloudData(context, credentialManager)
+                                    isDeletingAccount = false
+                                    showDeleteAccountConfirm = false
+                                    res.onSuccess {
+                                        WidgetUpdateManager.refreshAllWidgetsSuspend(context)
+                                        onSignedOutAndWiped("Your account and all planner data have been deleted.")
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar(
+                                            err.localizedMessage
+                                                ?: "Please sign in again recently before deleting your account."
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            if (!isDeletingAccount) showDeleteAccountConfirm = false
                         }
                     )
                 }
@@ -1743,17 +2237,21 @@ private fun TabIcon(
         PlannerTab.REPORTS -> if (selected) Icons.Filled.AutoStories else Icons.Outlined.AutoStories
         PlannerTab.PROFILE -> if (selected) Icons.Filled.Person else Icons.Outlined.Person
     }
+    val tint = if (selected) DeepBlue else MutedNavy
     if (badgeCount > 0) {
         BadgedBox(
             badge = {
-                Badge(containerColor = DeepBlue, contentColor = PureWhite) {
+                Badge(
+                    containerColor = OverdueTerracotta,
+                    contentColor = MaterialTheme.colorScheme.onError
+                ) {
                     Text(badgeCount.coerceAtMost(99).toString())
                 }
             }
         ) {
-            Icon(imageVector = icon, contentDescription = null)
+            Icon(imageVector = icon, contentDescription = null, tint = tint)
         }
     } else {
-        Icon(imageVector = icon, contentDescription = null)
+        Icon(imageVector = icon, contentDescription = null, tint = tint)
     }
 }

@@ -3,7 +3,10 @@ package com.example.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,11 +19,12 @@ import kotlin.math.roundToInt
  * Local storage manager for pictures attached to Tasks, Plans, and Events.
  *
  * Uses the zero-permission Android Photo Picker (`PickMultipleVisualMedia`) and copies
- * downscaled JPEG images into app-private storage (`filesDir/planner_photos/`) so photos
- * remain permanently viewable without requesting storage permissions.
+ * EXIF-corrected, downscaled JPEG images into app-private storage (`filesDir/planner_photos/`)
+ * so photos remain permanently viewable without requesting storage permissions.
  */
 object PhotoAttachmentStore {
     const val MAX_PHOTOS_PER_ITEM = 4
+    private const val TAG = "PhotoAttachmentStore"
     private const val MAX_DIMENSION_PX = 1440
     private const val JPEG_QUALITY = 85
     private const val DIR_NAME = "planner_photos"
@@ -69,9 +73,44 @@ object PhotoAttachmentStore {
         savedPaths
     }
 
+    private fun readExifOrientation(context: Context, uri: Uri): Int {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                ExifInterface(stream).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+    }
+
+    private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+        return runCatching {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        }.getOrDefault(bitmap)
+    }
+
     private fun saveSingleUri(context: Context, uri: Uri, dir: File): String? {
         return try {
             val resolver = context.contentResolver
+            val orientation = readExifOrientation(context, uri)
             val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             resolver.openInputStream(uri)?.use { input ->
                 BitmapFactory.decodeStream(input, null, boundsOpts)
@@ -95,18 +134,23 @@ object PhotoAttachmentStore {
                 BitmapFactory.decodeStream(input, null, decodeOpts)
             } ?: return null
 
-            val finalBitmap = scaleDownIfNeeded(decoded, MAX_DIMENSION_PX)
+            val oriented = applyExifOrientation(decoded, orientation)
+            if (oriented !== decoded) {
+                decoded.recycle()
+            }
+            val finalBitmap = scaleDownIfNeeded(oriented, MAX_DIMENSION_PX)
             val fileName = "photo_${UUID.randomUUID().toString().replace("-", "").take(16)}.jpg"
             val targetFile = File(dir, fileName)
             FileOutputStream(targetFile).use { out ->
                 finalBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
             }
-            if (finalBitmap !== decoded) {
+            if (finalBitmap !== oriented) {
                 finalBitmap.recycle()
             }
-            decoded.recycle()
+            oriented.recycle()
             targetFile.absolutePath
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed importing picked photo: ${e.message}")
             null
         }
     }
@@ -129,6 +173,28 @@ object PhotoAttachmentStore {
                 if (f.exists() && f.parentFile?.name == DIR_NAME) {
                     f.delete()
                 }
+            }
+        }
+    }
+
+    /**
+     * Garbage-collects orphaned photo files left behind by cancelled editor dialogs or crashes.
+     * Skips files younger than [gracePeriodMs] to avoid racing with an open editor dialog.
+     */
+    suspend fun cleanupOrphanedPhotos(
+        context: Context,
+        referencedPaths: Set<String>,
+        gracePeriodMs: Long = 10 * 60_000L
+    ) = withContext(Dispatchers.IO) {
+        val dir = File(context.applicationContext.filesDir, DIR_NAME)
+        if (!dir.exists() || !dir.isDirectory) return@withContext
+        val cutoff = System.currentTimeMillis() - gracePeriodMs
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile &&
+                file.absolutePath !in referencedPaths &&
+                file.lastModified() < cutoff
+            ) {
+                runCatching { file.delete() }
             }
         }
     }

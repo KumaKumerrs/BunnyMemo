@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audio.TaskAudioMemoManager
 import com.example.data.CalendarDate
 import com.example.data.ClassColorKey
 import com.example.data.ClassRepeatMode
@@ -10,6 +11,7 @@ import com.example.data.ClassScheduleItem
 import com.example.data.InboxNotificationEntry
 import com.example.data.ItemProgress
 import com.example.data.ItemType
+import com.example.data.PhotoAttachmentStore
 import com.example.data.PlannerDataSource
 import com.example.data.PlannerItem
 import com.example.data.PlannerLogic
@@ -28,19 +30,28 @@ import com.example.notifications.ReminderScheduler
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 sealed interface PlannerUiState {
     data object Loading : PlannerUiState
@@ -56,14 +67,41 @@ sealed interface PlannerUiState {
         val dailyReminderConfig: DailyReminderConfig,
         val dailyDigestSummary: DailyDigestSummary
     ) : PlannerUiState {
-        fun progressFor(item: PlannerItem): ItemProgress =
-            PlannerLogic.computeProgress(item, steps, items, nowMillis)
+        // Pre-indexed O(1) lookup tables avoid O(N) scans during Compose recompositions
+        private val stepsByItemId: Map<String, List<PlannerStep>> by lazy(LazyThreadSafetyMode.NONE) {
+            steps.groupBy { it.itemId }
+        }
+        private val linkedTasksByPlanId: Map<String, List<PlannerItem>> by lazy(LazyThreadSafetyMode.NONE) {
+            items.filter { it.itemType() == ItemType.TASK && !it.parentPlanId.isNullOrBlank() }
+                .groupBy { it.parentPlanId!! }
+        }
+        private val remindersByItemId: Map<String, List<PlannerReminder>> by lazy(LazyThreadSafetyMode.NONE) {
+            reminders.groupBy { it.itemId }
+                .mapValues { (_, list) -> list.sortedBy { it.effectiveTriggerMillis() } }
+        }
 
-        fun stepsFor(item: PlannerItem): List<UnifiedStep> =
-            PlannerLogic.stepsForItem(item, steps, items)
+        fun progressFor(item: PlannerItem): ItemProgress {
+            val ownSteps = stepsByItemId[item.id].orEmpty()
+            val linked = if (item.itemType() == ItemType.PLAN) {
+                linkedTasksByPlanId[item.id].orEmpty()
+            } else {
+                emptyList()
+            }
+            return PlannerLogic.computeProgress(item, ownSteps, linked, nowMillis)
+        }
+
+        fun stepsFor(item: PlannerItem): List<UnifiedStep> {
+            val ownSteps = stepsByItemId[item.id].orEmpty()
+            val linked = if (item.itemType() == ItemType.PLAN) {
+                linkedTasksByPlanId[item.id].orEmpty()
+            } else {
+                emptyList()
+            }
+            return PlannerLogic.stepsForItem(item, ownSteps, linked)
+        }
 
         fun remindersFor(itemId: String): List<PlannerReminder> =
-            reminders.filter { it.itemId == itemId }.sortedBy { it.effectiveTriggerMillis() }
+            remindersByItemId[itemId].orEmpty()
 
         fun classesOnDate(date: CalendarDate): List<ClassScheduleItem> =
             classSchedules.filter { it.occursOnDate(date) }.sortedBy { it.startTimeMinutes }
@@ -80,12 +118,14 @@ private data class PlannerDataSnapshot(
     val classSchedules: List<ClassScheduleItem>
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlannerViewModel(
     private val repository: PlannerDataSource,
     private val reminderScheduler: ReminderScheduler,
     private val currentUserId: String
 ) : ViewModel() {
 
+    private val reloadNonce = MutableStateFlow(0)
     private val nowMillisFlow = MutableStateFlow(System.currentTimeMillis())
     private val dailyConfigFlow = MutableStateFlow(reminderScheduler.loadDailyConfig())
 
@@ -95,18 +135,29 @@ class PlannerViewModel(
     private val _feedbackMessage = MutableStateFlow<String?>(null)
     val feedbackMessage: StateFlow<String?> = _feedbackMessage.asStateFlow()
 
+    private val _feedbackEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val feedbackEvents: SharedFlow<String> = _feedbackEvents.asSharedFlow()
+
+    private val activeSaves = AtomicInteger(0)
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
-    private val baseDataFlow = combine(
-        repository.observeProfile(currentUserId),
-        repository.observeItems(currentUserId),
-        repository.observeSteps(currentUserId),
-        repository.observeReminders(currentUserId),
-        repository.observeClassSchedules(currentUserId)
-    ) { profile, items, steps, reminders, classSchedules ->
-        PlannerDataSnapshot(profile, items, steps, reminders, classSchedules)
-    }
+    // Single shared upstream subscription avoids doubling Room/Firestore flow collectors
+    private val sharedBaseDataFlow = reloadNonce.flatMapLatest {
+        combine(
+            repository.observeProfile(currentUserId),
+            repository.observeItems(currentUserId),
+            repository.observeSteps(currentUserId),
+            repository.observeReminders(currentUserId),
+            repository.observeClassSchedules(currentUserId)
+        ) { profile, items, steps, reminders, classSchedules ->
+            PlannerDataSnapshot(profile, items, steps, reminders, classSchedules)
+        }
+    }.shareIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        replay = 1
+    )
 
     init {
         viewModelScope.launch {
@@ -121,12 +172,17 @@ class PlannerViewModel(
                 nowMillisFlow.value = System.currentTimeMillis()
             }
         }
-        // Sync OS alarms strictly off the main UI thread whenever schedules/reminders/config change
+        // Sync OS alarms off the Main thread with retryWhen so transient stream errors never kill alarms
         viewModelScope.launch(Dispatchers.Default) {
-            combine(baseDataFlow, dailyConfigFlow) { snapshot, dailyConfig ->
+            combine(sharedBaseDataFlow, dailyConfigFlow) { snapshot, dailyConfig ->
                 snapshot to dailyConfig
             }
-                .catch { /* Handled by uiState stream */ }
+                .retryWhen { cause, attempt ->
+                    if (cause is CancellationException) return@retryWhen false
+                    Log.w(TAG, "Alarm sync stream transient error (attempt $attempt): ${cause.message}")
+                    delay((attempt.coerceAtMost(5) + 1L) * 2_000L)
+                    true
+                }
                 .collectLatest { (snapshot, dailyConfig) ->
                     val now = System.currentTimeMillis()
                     reminderScheduler.syncReminders(snapshot.reminders, snapshot.items, snapshot.steps, now)
@@ -137,74 +193,99 @@ class PlannerViewModel(
         }
     }
 
-    val uiState: StateFlow<PlannerUiState> = combine(
-        baseDataFlow,
-        nowMillisFlow,
-        dailyConfigFlow
-    ) { snapshot, nowMillis, dailyConfig ->
-        val effectiveProfile = snapshot.profile ?: UserProfile(
-            id = currentUserId,
-            userId = currentUserId,
-            dedicationText = UserProfile.DEFAULT_DEDICATION,
-            hasSeenDedication = false
-        )
-        val digestSummary = reminderScheduler.buildDailyDigestSummary(snapshot.items, snapshot.steps, nowMillis)
-        val inbox = PlannerLogic.buildInboxEntries(snapshot.reminders, snapshot.items, snapshot.steps, nowMillis)
-        PlannerUiState.Ready(
-            profile = effectiveProfile,
-            items = snapshot.items,
-            steps = snapshot.steps,
-            reminders = snapshot.reminders,
-            classSchedules = snapshot.classSchedules,
-            nowMillis = nowMillis,
-            inboxEntries = inbox,
-            dailyReminderConfig = dailyConfig,
-            dailyDigestSummary = digestSummary
-        )
-    }
-        .flowOn(Dispatchers.Default)
-        .map<PlannerUiState.Ready, PlannerUiState> { it }
-        .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing planner streams", rootError)
-            emit(PlannerUiState.Error(rootError.message ?: "Unable to sync your planner right now."))
+    val uiState: StateFlow<PlannerUiState> = reloadNonce.flatMapLatest {
+        combine(
+            sharedBaseDataFlow,
+            nowMillisFlow,
+            dailyConfigFlow
+        ) { snapshot, nowMillis, dailyConfig ->
+            val effectiveProfile = snapshot.profile ?: UserProfile(
+                id = currentUserId,
+                userId = currentUserId,
+                dedicationText = UserProfile.DEFAULT_DEDICATION,
+                hasSeenDedication = false
+            )
+            val digestSummary = reminderScheduler.buildDailyDigestSummary(snapshot.items, snapshot.steps, nowMillis)
+            val inbox = PlannerLogic.buildInboxEntries(snapshot.reminders, snapshot.items, snapshot.steps, nowMillis)
+            PlannerUiState.Ready(
+                profile = effectiveProfile,
+                items = snapshot.items,
+                steps = snapshot.steps,
+                reminders = snapshot.reminders,
+                classSchedules = snapshot.classSchedules,
+                nowMillis = nowMillis,
+                inboxEntries = inbox,
+                dailyReminderConfig = dailyConfig,
+                dailyDigestSummary = digestSummary
+            )
         }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-            initialValue = PlannerUiState.Loading
-        )
+            .flowOn(Dispatchers.Default)
+            .map<PlannerUiState.Ready, PlannerUiState> { it }
+            .catch { error ->
+                val firestoreError = generateSequence(error) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreError == null && error is CancellationException) throw error
+                val rootError = firestoreError ?: error
+                Log.w(TAG, "Error observing planner streams", rootError)
+                emit(PlannerUiState.Error(rootError.message ?: "Unable to sync your planner right now."))
+            }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = PlannerUiState.Loading
+    )
+
+    private fun emitFeedback(message: String) {
+        _feedbackMessage.value = message
+        _feedbackEvents.tryEmit(message)
+    }
+
+    private suspend inline fun <T> withSavingState(block: () -> T): T {
+        if (activeSaves.incrementAndGet() > 0) {
+            _isSaving.value = true
+        }
+        return try {
+            block()
+        } finally {
+            if (activeSaves.decrementAndGet() <= 0) {
+                activeSaves.set(0)
+                _isSaving.value = false
+            }
+        }
+    }
+
+    fun retryLoad() {
+        reloadNonce.value = reloadNonce.value + 1
+        viewModelScope.launch {
+            repository.ensureProfileExists(currentUserId)
+        }
+    }
 
     fun setDailyDigestEnabled(enabled: Boolean) {
         val updated = dailyConfigFlow.value.copy(enabled = enabled)
         dailyConfigFlow.value = updated
         reminderScheduler.saveDailyConfig(updated)
-        _feedbackMessage.value = if (enabled) {
-            "Gentle daily forget-me-not reminders enabled."
-        } else {
-            "Daily forget-me-not reminders paused."
-        }
+        emitFeedback(
+            if (enabled) "Gentle daily forget-me-not reminders enabled."
+            else "Daily forget-me-not reminders paused."
+        )
     }
 
     fun updateDailyDigestTime(hour: Int, minute: Int) {
         val updated = dailyConfigFlow.value.copy(hour = hour, minute = minute, enabled = true)
         dailyConfigFlow.value = updated
         reminderScheduler.saveDailyConfig(updated)
-        _feedbackMessage.value = "Daily forget-me-not reminder time updated."
+        emitFeedback("Daily forget-me-not reminder time updated.")
     }
 
     fun sendDailyDigestPreview(): Boolean {
         val ready = uiState.value as? PlannerUiState.Ready ?: return false
         val sent = reminderScheduler.postDailyDigestPreview(ready.dailyDigestSummary)
-        _feedbackMessage.value = if (sent) {
-            "Sent a gentle forget-me-not preview notification."
-        } else {
-            "Allow device notifications to preview your daily forget-me-not alert."
-        }
+        emitFeedback(
+            if (sent) "Sent a gentle forget-me-not preview notification."
+            else "Allow device notifications to preview your daily forget-me-not alert."
+        )
         return sent
     }
 
@@ -218,23 +299,23 @@ class PlannerViewModel(
 
     fun saveDedication(text: String, markSeen: Boolean) {
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.saveDedication(currentUserId, text, markSeen)
-                .onSuccess {
-                    if (!markSeen) _feedbackMessage.value = "Dedication note saved."
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not save dedication."
-                }
-            _isSaving.value = false
+            withSavingState {
+                repository.saveDedication(currentUserId, text, markSeen)
+                    .onSuccess {
+                        if (!markSeen) emitFeedback("Dedication note saved.")
+                    }
+                    .onFailure { e ->
+                        emitFeedback(e.localizedMessage ?: "Could not save dedication.")
+                    }
+            }
         }
     }
 
     fun updateDefaultReminderTime(hour: Int, minute: Int) {
         viewModelScope.launch {
             repository.updateDefaultReminderTime(currentUserId, hour, minute)
-                .onSuccess { _feedbackMessage.value = "Default reminder time updated." }
-                .onFailure { e -> _feedbackMessage.value = e.localizedMessage ?: "Update failed." }
+                .onSuccess { emitFeedback("Default reminder time updated.") }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Update failed.") }
         }
     }
 
@@ -256,30 +337,30 @@ class PlannerViewModel(
         onCreated: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.createItemWithStepsAndReminders(
-                userId = currentUserId,
-                type = type,
-                title = title,
-                notes = notes,
-                startDate = startDate,
-                dueDate = dueDate,
-                dueTimeMinutes = dueTimeMinutes,
-                startAtUtcMillis = startAtUtcMillis,
-                endAtUtcMillis = endAtUtcMillis,
-                parentPlanId = parentPlanId,
-                steps = steps,
-                reminders = reminders,
-                imagePaths = imagePaths,
-                priority = priority,
-                category = category
-            ).onSuccess { newId ->
-                _feedbackMessage.value = "${type.label} added."
-                onCreated(newId)
-            }.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not save item."
+            withSavingState {
+                repository.createItemWithStepsAndReminders(
+                    userId = currentUserId,
+                    type = type,
+                    title = title,
+                    notes = notes,
+                    startDate = startDate,
+                    dueDate = dueDate,
+                    dueTimeMinutes = dueTimeMinutes,
+                    startAtUtcMillis = startAtUtcMillis,
+                    endAtUtcMillis = endAtUtcMillis,
+                    parentPlanId = parentPlanId,
+                    steps = steps,
+                    reminders = reminders,
+                    imagePaths = imagePaths,
+                    priority = priority,
+                    category = category
+                ).onSuccess { newId ->
+                    emitFeedback("${type.label} added.")
+                    onCreated(newId)
+                }.onFailure { e ->
+                    emitFeedback(e.localizedMessage ?: "Could not save item.")
+                }
             }
-            _isSaving.value = false
         }
     }
 
@@ -320,33 +401,32 @@ class PlannerViewModel(
         }
 
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.createItemWithStepsAndReminders(
-                userId = currentUserId,
-                type = ItemType.TASK,
-                title = title,
-                notes = notes,
-                startDate = null,
-                dueDate = dueDateIso?.takeIf { it.isNotBlank() },
-                dueTimeMinutes = null,
-                startAtUtcMillis = null,
-                endAtUtcMillis = null,
-                parentPlanId = null,
-                steps = emptyList(),
-                reminders = emptyList(),
-                priority = priority,
-                category = category
-            ).onSuccess { newId ->
-                _feedbackMessage.value = if (dueDateIso.isNullOrBlank()) {
-                    "Quick note saved."
-                } else {
-                    "Quick note added for today."
+            withSavingState {
+                repository.createItemWithStepsAndReminders(
+                    userId = currentUserId,
+                    type = ItemType.TASK,
+                    title = title,
+                    notes = notes,
+                    startDate = null,
+                    dueDate = dueDateIso?.takeIf { it.isNotBlank() },
+                    dueTimeMinutes = null,
+                    startAtUtcMillis = null,
+                    endAtUtcMillis = null,
+                    parentPlanId = null,
+                    steps = emptyList(),
+                    reminders = emptyList(),
+                    priority = priority,
+                    category = category
+                ).onSuccess { newId ->
+                    emitFeedback(
+                        if (dueDateIso.isNullOrBlank()) "Quick note saved."
+                        else "Quick note added for today."
+                    )
+                    onCreated(newId)
+                }.onFailure { e ->
+                    emitFeedback(e.localizedMessage ?: "Could not save quick note.")
                 }
-                onCreated(newId)
-            }.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not save quick note."
             }
-            _isSaving.value = false
         }
     }
 
@@ -371,56 +451,48 @@ class PlannerViewModel(
         val existingReminders = currentState?.remindersFor(item.id) ?: emptyList()
 
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.updateItemAndRebuildReminders(
-                userId = currentUserId,
-                itemId = item.id,
-                type = type,
-                title = title,
-                notes = notes,
-                completed = item.completed,
-                startDate = startDate,
-                dueDate = dueDate,
-                dueTimeMinutes = dueTimeMinutes,
-                startAtUtcMillis = startAtUtcMillis,
-                endAtUtcMillis = endAtUtcMillis,
-                parentPlanId = parentPlanId,
-                existingReminders = existingReminders,
-                updatedReminderDrafts = updatedReminders,
-                imagePaths = imagePaths,
-                priority = priority,
-                category = category
-            ).onSuccess {
-                _feedbackMessage.value = "Changes saved and reminders updated."
-                onUpdated()
-            }.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not update item."
+            withSavingState {
+                repository.updateItemAndRebuildReminders(
+                    userId = currentUserId,
+                    itemId = item.id,
+                    type = type,
+                    title = title,
+                    notes = notes,
+                    completed = item.completed,
+                    startDate = startDate,
+                    dueDate = dueDate,
+                    dueTimeMinutes = dueTimeMinutes,
+                    startAtUtcMillis = startAtUtcMillis,
+                    endAtUtcMillis = endAtUtcMillis,
+                    parentPlanId = parentPlanId,
+                    existingReminders = existingReminders,
+                    updatedReminderDrafts = updatedReminders,
+                    imagePaths = imagePaths,
+                    priority = priority,
+                    category = category
+                ).onSuccess {
+                    emitFeedback("Changes saved and reminders updated.")
+                    onUpdated()
+                }.onFailure { e ->
+                    emitFeedback(e.localizedMessage ?: "Could not update item.")
+                }
             }
-            _isSaving.value = false
         }
     }
 
     fun updateItemPriority(item: PlannerItem, priority: TaskPriority) {
         viewModelScope.launch {
             repository.updateItemPriority(currentUserId, item.id, priority)
-                .onSuccess {
-                    _feedbackMessage.value = "Priority set to ${priority.label}."
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not update priority."
-                }
+                .onSuccess { emitFeedback("Priority set to ${priority.label}.") }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not update priority.") }
         }
     }
 
     fun updateItemCategory(item: PlannerItem, category: TaskCategory) {
         viewModelScope.launch {
             repository.updateItemCategory(currentUserId, item.id, category)
-                .onSuccess {
-                    _feedbackMessage.value = "Category set to ${category.label}."
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not update category."
-                }
+                .onSuccess { emitFeedback("Category set to ${category.label}.") }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not update category.") }
         }
     }
 
@@ -430,16 +502,17 @@ class PlannerViewModel(
             repository.updateItemImages(currentUserId, item.id, newPaths)
                 .onSuccess {
                     if (removed.isNotEmpty()) {
-                        com.example.data.PhotoAttachmentStore.deletePhotoFiles(removed)
+                        withContext(Dispatchers.IO) {
+                            PhotoAttachmentStore.deletePhotoFiles(removed)
+                        }
                     }
-                    _feedbackMessage.value = if (newPaths.size > item.imagePaths.size) {
-                        "Picture added to ${item.title}."
-                    } else {
-                        "Pictures updated."
-                    }
+                    emitFeedback(
+                        if (newPaths.size > item.imagePaths.size) "Picture added to ${item.title}."
+                        else "Pictures updated."
+                    )
                 }
                 .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not update pictures."
+                    emitFeedback(e.localizedMessage ?: "Could not update pictures.")
                 }
         }
     }
@@ -450,43 +523,51 @@ class PlannerViewModel(
             repository.updateItemAudioMemo(currentUserId, item.id, audioMemoPath, durationSeconds)
                 .onSuccess {
                     if (!oldPath.isNullOrBlank() && oldPath != audioMemoPath) {
-                        com.example.audio.TaskAudioMemoManager.deleteMemoFile(oldPath)
+                        withContext(Dispatchers.IO) {
+                            TaskAudioMemoManager.deleteMemoFile(oldPath)
+                        }
                     }
-                    _feedbackMessage.value = if (!audioMemoPath.isNullOrBlank()) {
-                        "Voice memo saved (${com.example.audio.TaskAudioMemoManager.formatSeconds(durationSeconds)})."
-                    } else {
-                        "Voice memo removed."
-                    }
+                    emitFeedback(
+                        if (!audioMemoPath.isNullOrBlank()) {
+                            "Voice memo saved (${TaskAudioMemoManager.formatSeconds(durationSeconds)})."
+                        } else {
+                            "Voice memo removed."
+                        }
+                    )
                 }
                 .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not update voice memo."
+                    emitFeedback(e.localizedMessage ?: "Could not update voice memo.")
                 }
         }
     }
 
     fun toggleItemCompleted(item: PlannerItem, completed: Boolean) {
         val ready = uiState.value as? PlannerUiState.Ready
-        // Check if toggling a linked task completes its parent plan
         val parentPlan = if (item.itemType() == ItemType.TASK && !item.parentPlanId.isNullOrBlank()) {
             ready?.items?.firstOrNull { it.id == item.parentPlanId }
         } else null
 
-        if (completed && parentPlan != null && ready != null) {
-            val before = ready.progressFor(parentPlan)
-            if (before.totalCount > 0 && before.completedCount + 1 == before.totalCount) {
-                _celebratingItemId.value = parentPlan.id
+        val celebrateId = when {
+            completed && parentPlan != null && ready != null -> {
+                val before = ready.progressFor(parentPlan)
+                if (before.totalCount > 0 && before.completedCount + 1 == before.totalCount) parentPlan.id else null
             }
-        } else if (completed && item.itemType() == ItemType.PLAN && ready != null) {
-            val before = ready.progressFor(item)
-            if (before.totalCount == 0) {
-                _celebratingItemId.value = item.id
+            completed && item.itemType() == ItemType.PLAN && ready != null -> {
+                val before = ready.progressFor(item)
+                if (before.totalCount == 0) item.id else null
             }
+            else -> null
         }
 
         viewModelScope.launch {
             repository.toggleItemCompleted(currentUserId, item.id, completed)
+                .onSuccess {
+                    if (celebrateId != null) {
+                        _celebratingItemId.value = celebrateId
+                    }
+                }
                 .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not update status."
+                    emitFeedback(e.localizedMessage ?: "Could not update status.")
                 }
         }
     }
@@ -497,17 +578,19 @@ class PlannerViewModel(
         val itemReminders = ready?.reminders?.filter { it.itemId == item.id } ?: emptyList()
 
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.deleteItemCascade(currentUserId, item.id, itemSteps, itemReminders)
-                .onSuccess {
-                    com.example.audio.TaskAudioMemoManager.deleteMemoFile(item.audioMemoPath)
-                    _feedbackMessage.value = "${item.itemType().label} deleted."
-                    onDeleted()
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not delete item."
-                }
-            _isSaving.value = false
+            withSavingState {
+                repository.deleteItemCascade(currentUserId, item.id, itemSteps, itemReminders)
+                    .onSuccess {
+                        withContext(Dispatchers.IO) {
+                            TaskAudioMemoManager.deleteMemoFile(item.audioMemoPath)
+                        }
+                        emitFeedback("${item.itemType().label} deleted.")
+                        onDeleted()
+                    }
+                    .onFailure { e ->
+                        emitFeedback(e.localizedMessage ?: "Could not delete item.")
+                    }
+            }
         }
     }
 
@@ -518,7 +601,7 @@ class PlannerViewModel(
         viewModelScope.launch {
             repository.addStep(currentUserId, itemId, title, dueDate, dueTimeMinutes, nextOrder)
                 .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not add step."
+                    emitFeedback(e.localizedMessage ?: "Could not add step.")
                 }
         }
     }
@@ -527,12 +610,12 @@ class PlannerViewModel(
         val ready = uiState.value as? PlannerUiState.Ready
         val parentItem = ready?.items?.firstOrNull { it.id == step.parentItemId }
 
-        if (completed && parentItem != null && ready != null) {
+        val celebrateId = if (completed && parentItem != null && ready != null) {
             val before = ready.progressFor(parentItem)
             if (!step.completed && before.totalCount > 0 && before.completedCount + 1 == before.totalCount) {
-                _celebratingItemId.value = parentItem.id
-            }
-        }
+                parentItem.id
+            } else null
+        } else null
 
         viewModelScope.launch {
             val result = if (step.isLinkedTask) {
@@ -540,8 +623,12 @@ class PlannerViewModel(
             } else {
                 repository.toggleStepCompleted(currentUserId, step.id, completed)
             }
-            result.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not update step."
+            result.onSuccess {
+                if (celebrateId != null) {
+                    _celebratingItemId.value = celebrateId
+                }
+            }.onFailure { e ->
+                emitFeedback(e.localizedMessage ?: "Could not update step.")
             }
         }
     }
@@ -550,12 +637,8 @@ class PlannerViewModel(
         if (step.isLinkedTask || addedMinutes <= 0) return
         viewModelScope.launch {
             repository.addStepTimeSpent(currentUserId, step.id, addedMinutes)
-                .onSuccess {
-                    _feedbackMessage.value = "Logged +${addedMinutes}m on “${step.title}”."
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not log milestone time."
-                }
+                .onSuccess { emitFeedback("Logged +${addedMinutes}m on “${step.title}”.") }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not log milestone time.") }
         }
     }
 
@@ -576,7 +659,7 @@ class PlannerViewModel(
                 repository.deleteStep(currentUserId, step.id)
             }
             result.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not remove step."
+                emitFeedback(e.localizedMessage ?: "Could not remove step.")
             }
         }
     }
@@ -584,8 +667,8 @@ class PlannerViewModel(
     fun addReminder(item: PlannerItem, kind: ReminderKind, offsetMinutes: Int, localHour: Int, localMinute: Int) {
         viewModelScope.launch {
             repository.addReminder(currentUserId, item, kind, offsetMinutes, localHour, localMinute)
-                .onSuccess { _feedbackMessage.value = "${kind.label} added." }
-                .onFailure { e -> _feedbackMessage.value = e.localizedMessage ?: "Could not add reminder." }
+                .onSuccess { emitFeedback("${kind.label} added.") }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not add reminder.") }
         }
     }
 
@@ -600,10 +683,10 @@ class PlannerViewModel(
                         1440 -> "tomorrow"
                         else -> "$snoozeMinutes min"
                     }
-                    _feedbackMessage.value = "Snoozed this reminder for $label."
+                    emitFeedback("Snoozed this reminder for $label.")
                 }
                 .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not snooze reminder."
+                    emitFeedback(e.localizedMessage ?: "Could not snooze reminder.")
                 }
         }
     }
@@ -611,18 +694,14 @@ class PlannerViewModel(
     fun dismissReminder(reminder: PlannerReminder) {
         viewModelScope.launch {
             repository.dismissReminder(currentUserId, reminder.id)
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not dismiss reminder."
-                }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not dismiss reminder.") }
         }
     }
 
     fun deleteReminder(reminder: PlannerReminder) {
         viewModelScope.launch {
             repository.deleteReminder(currentUserId, reminder.id)
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not delete reminder."
-                }
+                .onFailure { e -> emitFeedback(e.localizedMessage ?: "Could not delete reminder.") }
         }
     }
 
@@ -642,32 +721,31 @@ class PlannerViewModel(
         onSaved: () -> Unit = {}
     ) {
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.createClassSchedule(
-                userId = currentUserId,
-                subject = subject,
-                room = room,
-                repeatMode = repeatMode,
-                daysOfWeek = daysOfWeek,
-                dayOfMonth = dayOfMonth,
-                startTimeMinutes = startTimeMinutes,
-                endTimeMinutes = endTimeMinutes,
-                semesterStartDate = semesterStartDate,
-                semesterMonths = semesterMonths,
-                notifyEnabled = notifyEnabled,
-                notifyOffsetMinutes = notifyOffsetMinutes,
-                colorKey = colorKey
-            ).onSuccess {
-                _feedbackMessage.value = if (notifyEnabled) {
-                    "$subject added to your class schedule with reminders."
-                } else {
-                    "$subject added to your class schedule."
+            withSavingState {
+                repository.createClassSchedule(
+                    userId = currentUserId,
+                    subject = subject,
+                    room = room,
+                    repeatMode = repeatMode,
+                    daysOfWeek = daysOfWeek,
+                    dayOfMonth = dayOfMonth,
+                    startTimeMinutes = startTimeMinutes,
+                    endTimeMinutes = endTimeMinutes,
+                    semesterStartDate = semesterStartDate,
+                    semesterMonths = semesterMonths,
+                    notifyEnabled = notifyEnabled,
+                    notifyOffsetMinutes = notifyOffsetMinutes,
+                    colorKey = colorKey
+                ).onSuccess {
+                    emitFeedback(
+                        if (notifyEnabled) "$subject added to your class schedule with reminders."
+                        else "$subject added to your class schedule."
+                    )
+                    onSaved()
+                }.onFailure { e ->
+                    emitFeedback(e.localizedMessage ?: "Could not save class.")
                 }
-                onSaved()
-            }.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not save class."
             }
-            _isSaving.value = false
         }
     }
 
@@ -688,49 +766,45 @@ class PlannerViewModel(
         onSaved: () -> Unit = {}
     ) {
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.updateClassSchedule(
-                userId = currentUserId,
-                scheduleId = scheduleId,
-                subject = subject,
-                room = room,
-                repeatMode = repeatMode,
-                daysOfWeek = daysOfWeek,
-                dayOfMonth = dayOfMonth,
-                startTimeMinutes = startTimeMinutes,
-                endTimeMinutes = endTimeMinutes,
-                semesterStartDate = semesterStartDate,
-                semesterMonths = semesterMonths,
-                notifyEnabled = notifyEnabled,
-                notifyOffsetMinutes = notifyOffsetMinutes,
-                colorKey = colorKey
-            ).onSuccess {
-                _feedbackMessage.value = "Updated $subject."
-                onSaved()
-            }.onFailure { e ->
-                _feedbackMessage.value = e.localizedMessage ?: "Could not update class."
+            withSavingState {
+                repository.updateClassSchedule(
+                    userId = currentUserId,
+                    scheduleId = scheduleId,
+                    subject = subject,
+                    room = room,
+                    repeatMode = repeatMode,
+                    daysOfWeek = daysOfWeek,
+                    dayOfMonth = dayOfMonth,
+                    startTimeMinutes = startTimeMinutes,
+                    endTimeMinutes = endTimeMinutes,
+                    semesterStartDate = semesterStartDate,
+                    semesterMonths = semesterMonths,
+                    notifyEnabled = notifyEnabled,
+                    notifyOffsetMinutes = notifyOffsetMinutes,
+                    colorKey = colorKey
+                ).onSuccess {
+                    emitFeedback("Updated $subject.")
+                    onSaved()
+                }.onFailure { e ->
+                    emitFeedback(e.localizedMessage ?: "Could not update class.")
+                }
             }
-            _isSaving.value = false
         }
     }
 
     fun deleteClassSchedule(schedule: ClassScheduleItem, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {
-            _isSaving.value = true
-            repository.deleteClassSchedule(currentUserId, schedule.id)
-                .onSuccess {
-                    _feedbackMessage.value = "Removed ${schedule.subject} from class schedule."
-                    onDeleted()
-                }
-                .onFailure { e ->
-                    _feedbackMessage.value = e.localizedMessage ?: "Could not remove class."
-                }
-            _isSaving.value = false
+            withSavingState {
+                repository.deleteClassSchedule(currentUserId, schedule.id)
+                    .onSuccess {
+                        emitFeedback("Removed ${schedule.subject} from class schedule.")
+                        onDeleted()
+                    }
+                    .onFailure { e ->
+                        emitFeedback(e.localizedMessage ?: "Could not remove class.")
+                    }
+            }
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
     }
 
     private companion object {

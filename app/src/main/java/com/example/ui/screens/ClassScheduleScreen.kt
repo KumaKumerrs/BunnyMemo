@@ -43,10 +43,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.audio.BunnyFeedbackManager
 import com.example.data.CalendarDate
 import com.example.data.ClassRepeatMode
 import com.example.data.ClassScheduleItem
@@ -82,6 +84,8 @@ fun ClassScheduleScreen(
     onEditClass: (ClassScheduleItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     val today = state.todayDate()
     val todayDayOfWeek = today.dayOfWeekIndex()
     val allClasses = state.classSchedules
@@ -105,7 +109,7 @@ fun ClassScheduleScreen(
         contentAlignment = Alignment.TopCenter
     ) {
         val horizontalPad = adaptiveHorizontalPadding(maxWidth)
-        val fitAllSevenDays = maxWidth >= 840.dp
+        val fitAllSevenDays = maxWidth >= 960.dp
         val subjectColumns = if (maxWidth >= 660.dp) 2 else 1
 
         LazyColumn(
@@ -158,10 +162,13 @@ fun ClassScheduleScreen(
                     }
                 }
                 Button(
-                    onClick = { onAddClassForDay(todayDayOfWeek) },
+                    onClick = {
+                        feedback.onPopOpen()
+                        onAddClassForDay(todayDayOfWeek)
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -209,10 +216,13 @@ fun ClassScheduleScreen(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Button(
-                            onClick = onRequestNotificationPermission,
+                            onClick = {
+                                feedback.onLightTick()
+                                onRequestNotificationPermission()
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DeepBlue,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(100.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -273,8 +283,14 @@ fun ClassScheduleScreen(
                                     dayIndex = dayIndex,
                                     isToday = dayIndex == todayDayOfWeek,
                                     classes = weeklyClassesByDay[dayIndex].orEmpty(),
-                                    onAddForDay = { onAddClassForDay(dayIndex) },
-                                    onEditClass = onEditClass,
+                                    onAddForDay = {
+                                        feedback.onPopOpen()
+                                        onAddClassForDay(dayIndex)
+                                    },
+                                    onEditClass = { cls ->
+                                        feedback.onPopOpen()
+                                        onEditClass(cls)
+                                    },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -293,8 +309,14 @@ fun ClassScheduleScreen(
                                     dayIndex = dayIndex,
                                     isToday = dayIndex == todayDayOfWeek,
                                     classes = weeklyClassesByDay[dayIndex].orEmpty(),
-                                    onAddForDay = { onAddClassForDay(dayIndex) },
-                                    onEditClass = onEditClass,
+                                    onAddForDay = {
+                                        feedback.onPopOpen()
+                                        onAddClassForDay(dayIndex)
+                                    },
+                                    onEditClass = { cls ->
+                                        feedback.onPopOpen()
+                                        onEditClass(cls)
+                                    },
                                     modifier = Modifier.width(136.dp)
                                 )
                             }
@@ -308,7 +330,7 @@ fun ClassScheduleScreen(
         if (monthlyClasses.isNotEmpty()) {
             item(key = "monthly_classes_header") {
                 ModernSectionHeader(
-                    title = "Day-of-Month Classes",
+                    title = "Monthly Subjects",
                     count = monthlyClasses.size
                 )
             }
@@ -320,13 +342,17 @@ fun ClassScheduleScreen(
                     SemesterClassSummaryCard(
                         schedule = cls,
                         today = today,
-                        onClick = { onEditClass(cls) }
+                        tagPrefix = "monthly_class_card",
+                        onClick = {
+                            feedback.onPopOpen()
+                            onEditClass(cls)
+                        }
                     )
                 }
             }
         }
 
-        // Empty state or All Semester Subjects overview
+        // Empty state or Weekly Subjects overview (deduplicated from Monthly Subjects)
         if (allClasses.isEmpty()) {
             item(key = "empty_class_schedule") {
                 ModernPanel(
@@ -357,10 +383,13 @@ fun ClassScheduleScreen(
                             color = MutedNavy
                         )
                         Button(
-                            onClick = { onAddClassForDay(1) },
+                            onClick = {
+                                feedback.onPopOpen()
+                                onAddClassForDay(todayDayOfWeek)
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DeepBlue,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(100.dp)
                         ) {
@@ -371,22 +400,26 @@ fun ClassScheduleScreen(
                     }
                 }
             }
-        } else {
+        } else if (weeklyClasses.isNotEmpty()) {
             item(key = "all_semester_classes_header") {
                 ModernSectionHeader(
-                    title = "All Semester Subjects",
-                    count = allClasses.size
+                    title = "Weekly Subjects",
+                    count = weeklyClasses.size
                 )
             }
             item(key = "all_semester_classes_grid") {
                 ResponsiveCardGrid(
-                    items = allClasses,
+                    items = weeklyClasses,
                     columns = subjectColumns
                 ) { cls ->
                     SemesterClassSummaryCard(
                         schedule = cls,
                         today = today,
-                        onClick = { onEditClass(cls) }
+                        tagPrefix = "semester_class_card",
+                        onClick = {
+                            feedback.onPopOpen()
+                            onEditClass(cls)
+                        }
                     )
                 }
             }
@@ -439,13 +472,13 @@ private fun TimetableDayColumn(
                     Text(
                         text = PlannerDateUtils.weekdayShortLabel(dayIndex),
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = if (isToday) PureWhite else MidnightNavy
+                        color = if (isToday) MaterialTheme.colorScheme.onPrimary else MidnightNavy
                     )
                     if (isToday) {
                         Text(
                             text = "Today",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = PureWhite.copy(alpha = 0.92f)
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.92f)
                         )
                     } else if (classes.isNotEmpty()) {
                         Text(
@@ -617,6 +650,7 @@ private fun TimetableClassCell(
 private fun SemesterClassSummaryCard(
     schedule: ClassScheduleItem,
     today: CalendarDate,
+    tagPrefix: String = "semester_class_card",
     onClick: () -> Unit
 ) {
     val (fill, accent) = classColorPalette(schedule.colorKeyEnum())
@@ -629,7 +663,7 @@ private fun SemesterClassSummaryCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("semester_class_card_${schedule.id}")
+            .testTag("${tagPrefix}_${schedule.id}")
     ) {
         Row(
             modifier = Modifier

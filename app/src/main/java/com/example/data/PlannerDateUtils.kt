@@ -83,7 +83,7 @@ data class CalendarDate(
     }
 
     fun daysInMonth(): Int {
-        return toLocalCalendar(12, 0).getActualMaximum(Calendar.DAY_OF_MONTH)
+        return daysInMonth(year, month)
     }
 
     fun daysUntil(other: CalendarDate): Int {
@@ -92,6 +92,16 @@ data class CalendarDate(
     }
 
     companion object {
+        fun isLeapYear(year: Int): Boolean =
+            (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+
+        fun daysInMonth(year: Int, month: Int): Int = when (month) {
+            1, 3, 5, 7, 8, 10, 12 -> 31
+            4, 6, 9, 11 -> 30
+            2 -> if (isLeapYear(year)) 29 else 28
+            else -> 0
+        }
+
         fun today(nowMillis: Long = System.currentTimeMillis()): CalendarDate {
             return fromUtcMillis(nowMillis)
         }
@@ -114,7 +124,9 @@ data class CalendarDate(
             val y = parts[0].toIntOrNull() ?: return null
             val m = parts[1].toIntOrNull() ?: return null
             val d = parts[2].toIntOrNull() ?: return null
-            if (m !in 1..12 || d !in 1..31) return null
+            if (y !in 1900..2199 || m !in 1..12) return null
+            val maxDay = daysInMonth(y, m)
+            if (d !in 1..maxDay) return null
             return CalendarDate(y, m, d)
         }
     }
@@ -122,46 +134,55 @@ data class CalendarDate(
 
 object PlannerDateUtils {
 
+    private val formatCache = object : ThreadLocal<MutableMap<String, SimpleDateFormat>>() {
+        override fun initialValue(): MutableMap<String, SimpleDateFormat> = HashMap()
+    }
+
+    private fun cachedFormat(pattern: String, tz: TimeZone = TimeZone.getDefault()): SimpleDateFormat {
+        val locale = Locale.getDefault()
+        val key = "$pattern|${locale.toLanguageTag()}|${tz.id}"
+        val map = formatCache.get()!!
+        return map.getOrPut(key) {
+            SimpleDateFormat(pattern, locale).apply { timeZone = tz }
+        }
+    }
+
     fun formatFullDateHeader(date: CalendarDate): String {
-        val fmt = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
-        return fmt.format(Date(date.toLocalEpochMillis(12, 0)))
+        return cachedFormat("EEEE, MMMM d").format(Date(date.toLocalEpochMillis(12, 0)))
     }
 
     fun formatMonthYear(date: CalendarDate): String {
-        val fmt = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-        return fmt.format(Date(date.toLocalEpochMillis(12, 0)))
+        return cachedFormat("MMMM yyyy").format(Date(date.toLocalEpochMillis(12, 0)))
     }
 
     fun formatShortDate(date: CalendarDate): String {
-        val fmt = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
-        return fmt.format(Date(date.toLocalEpochMillis(12, 0)))
+        return cachedFormat("EEE, MMM d").format(Date(date.toLocalEpochMillis(12, 0)))
     }
 
     fun formatCompactDate(date: CalendarDate): String {
-        val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
-        return fmt.format(Date(date.toLocalEpochMillis(12, 0)))
+        return cachedFormat("MMM d").format(Date(date.toLocalEpochMillis(12, 0)))
     }
 
+    /**
+     * Formats minutes-since-midnight using a fixed UTC reference date so DST spring-forward
+     * skipped hours (e.g. 2:30 AM) never roll forward to 3:30 AM.
+     */
     fun formatTimeOfDay(minutesSinceMidnight: Int): String {
         val clamped = minutesSinceMidnight.coerceIn(0, 1439)
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, clamped / 60)
-            set(Calendar.MINUTE, clamped % 60)
+        val utc = TimeZone.getTimeZone("UTC")
+        val cal = Calendar.getInstance(utc).apply {
+            clear()
+            set(2026, Calendar.JANUARY, 1, clamped / 60, clamped % 60, 0)
         }
-        val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-        return fmt.format(cal.time)
+        return cachedFormat("h:mm a", utc).format(cal.time)
     }
 
     fun formatUtcMillisTime(utcMillis: Long): String {
-        val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-        fmt.timeZone = TimeZone.getDefault()
-        return fmt.format(Date(utcMillis))
+        return cachedFormat("h:mm a").format(Date(utcMillis))
     }
 
     fun formatUtcMillisDateTime(utcMillis: Long): String {
-        val fmt = SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault())
-        fmt.timeZone = TimeZone.getDefault()
-        return fmt.format(Date(utcMillis))
+        return cachedFormat("EEE, MMM d · h:mm a").format(Date(utcMillis))
     }
 
     fun formatEventTimeRange(startUtcMillis: Long?, endUtcMillis: Long?): String {
@@ -208,7 +229,7 @@ object PlannerDateUtils {
             0 -> "Today"
             1 -> "Tomorrow"
             -1 -> "Yesterday"
-            in 2..6 -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(date.toLocalEpochMillis(12, 0)))
+            in 2..6 -> cachedFormat("EEEE").format(Date(date.toLocalEpochMillis(12, 0)))
             else -> formatShortDate(date)
         }
     }
@@ -240,6 +261,8 @@ object PlannerDateUtils {
 
     /**
      * Computes a trigger timestamp in UTC millis for a reminder rule on an item.
+     * Day-multiple offsets (e.g., 1 day / 1 week before) are computed in local calendar space so
+     * DST transitions do not shift local reminder hours by +/- 1 hour.
      */
     fun computeScheduledAtUtcMillis(
         item: PlannerItem,
@@ -247,25 +270,35 @@ object PlannerDateUtils {
         localHour: Int,
         localMinute: Int
     ): Long {
-        val baseMillis = when (item.itemType()) {
-            ItemType.EVENT -> {
-                item.startAtUtcMillis
-                    ?: CalendarDate.parse(item.dueDate)?.toLocalEpochMillis(localHour, localMinute)
-                    ?: (System.currentTimeMillis() + 3_600_000L)
+        val safeOffset = offsetMinutes.coerceAtLeast(0)
+        val isWholeDays = safeOffset > 0 && safeOffset % 1440 == 0
+        val offsetDays = safeOffset / 1440
+
+        if (item.itemType() != ItemType.EVENT || item.startAtUtcMillis == null) {
+            val targetDate = CalendarDate.parse(item.dueDate)
+                ?: CalendarDate.parse(item.startDate)
+                ?: CalendarDate.today()
+            val dueMins = if (item.itemType() != ItemType.EVENT) item.dueTimeMinutes else null
+            val targetHour = dueMins?.div(60) ?: localHour
+            val targetMinute = dueMins?.rem(60) ?: localMinute
+            if (isWholeDays) {
+                return targetDate.plusDays(-offsetDays)
+                    .toLocalEpochMillis(targetHour, targetMinute)
+                    .coerceAtLeast(0L)
             }
-            ItemType.PLAN, ItemType.TASK -> {
-                val targetDate = CalendarDate.parse(item.dueDate)
-                    ?: CalendarDate.parse(item.startDate)
-                    ?: CalendarDate.today()
-                val dueMins = item.dueTimeMinutes
-                if (dueMins != null) {
-                    targetDate.toLocalEpochMillis(dueMins / 60, dueMins % 60)
-                } else {
-                    targetDate.toLocalEpochMillis(localHour, localMinute)
-                }
-            }
+            val baseMillis = targetDate.toLocalEpochMillis(targetHour, targetMinute)
+            return (baseMillis - safeOffset.toLong() * 60_000L).coerceAtLeast(0L)
         }
-        return (baseMillis - offsetMinutes.toLong() * 60_000L).coerceAtLeast(0L)
+
+        val startMillis = item.startAtUtcMillis
+        if (isWholeDays) {
+            val cal = Calendar.getInstance(TimeZone.getDefault()).apply {
+                timeInMillis = startMillis
+                add(Calendar.DAY_OF_MONTH, -offsetDays)
+            }
+            return cal.timeInMillis.coerceAtLeast(0L)
+        }
+        return (startMillis - safeOffset.toLong() * 60_000L).coerceAtLeast(0L)
     }
 
     fun formatOffsetLabel(offsetMinutes: Int): String {

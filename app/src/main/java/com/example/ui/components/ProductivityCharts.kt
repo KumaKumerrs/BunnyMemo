@@ -42,11 +42,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.CalendarDate
 import com.example.data.MonthlyAccomplishmentReport
 import com.example.ui.theme.CalmSage
 import com.example.ui.theme.CalmSageContainer
@@ -149,7 +152,16 @@ fun MonthlyCompletedTasksChartCard(
                         .background(SoftIceSurface.copy(alpha = 0.55f))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 ) {
-                    Canvas(modifier = Modifier.matchParentSize()) {
+                    val tasksChartDescription = remember(weeklyData) {
+                        "Completed tasks per week: " + weeklyData.mapIndexed { idx, value ->
+                            "${weekLabels[idx]} $value"
+                        }.joinToString(", ")
+                    }
+                    Canvas(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .semantics { contentDescription = tasksChartDescription }
+                    ) {
                         val chartW = size.width
                         val chartH = size.height
                         val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
@@ -273,12 +285,17 @@ fun MonthlyCompletedTasksChartCard(
                 }
 
                 if (selectedWeekIndex in 0..4) {
+                    val daysInMonth = CalendarDate.daysInMonth(report.year, report.month)
                     val dayRange = when (selectedWeekIndex) {
                         0 -> "Days 1–7"
                         1 -> "Days 8–14"
                         2 -> "Days 15–21"
                         3 -> "Days 22–28"
-                        else -> "Days 29–31"
+                        else -> when {
+                            daysInMonth <= 28 -> "No Week 5"
+                            daysInMonth == 29 -> "Day 29"
+                            else -> "Days 29–$daysInMonth"
+                        }
                     }
                     Text(
                         text = "${weekLabels[selectedWeekIndex]} ($dayRange): ${weeklyData[selectedWeekIndex]} tasks completed",
@@ -435,7 +452,16 @@ fun MonthlyMilestoneTimeChartCard(
                         .background(SoftIceSurface.copy(alpha = 0.55f))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 ) {
-                    Canvas(modifier = Modifier.matchParentSize()) {
+                    val milestoneChartDescription = remember(weeklyMinutes) {
+                        "Milestone time per week: " + weeklyMinutes.mapIndexed { idx, mins ->
+                            "${weekLabels[idx]} ${formatCompactDuration(mins)}"
+                        }.joinToString(", ")
+                    }
+                    Canvas(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .semantics { contentDescription = milestoneChartDescription }
+                    ) {
                         val chartW = size.width
                         val chartH = size.height
                         val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)

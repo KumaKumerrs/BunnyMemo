@@ -1,44 +1,80 @@
 package com.example.data
 
+import android.content.Context
+import androidx.room.withTransaction
+import com.example.audio.TaskAudioMemoManager
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Date
 import java.util.UUID
 
-data class LocalMigrationSnapshot(
-    val profile: LocalProfileEntity?,
-    val items: List<LocalItemEntity>,
-    val steps: List<LocalStepEntity>,
-    val reminders: List<LocalReminderEntity>,
-    val classSchedules: List<LocalClassScheduleEntity> = emptyList()
-) {
-    val hasUserContent: Boolean
-        get() = items.isNotEmpty() ||
-            classSchedules.isNotEmpty() ||
-            (profile != null && (profile.hasSeenDedication || profile.dedicationText != UserProfile.DEFAULT_DEDICATION))
+internal suspend inline fun <T> suspendRunCatching(block: () -> T): Result<T> {
+    return try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 }
 
 /**
  * Offline-first Room implementation of [PlannerDataSource].
- * Every write persists immediately to Room and records a [PendingSyncOperationEntity] in the
- * local outbox (`pending_sync_ops`) so [RoomFirestoreSyncService] can push pending local changes
- * to Firestore automatically whenever signed in and a network connection is available/restored.
+ * Every write persists atomically with its [PendingSyncOperationEntity] outbox entry inside a
+ * Room transaction so [RoomFirestoreSyncService] can push pending local changes to Firestore
+ * without drift or lost mutations.
  */
 class LocalPlannerRepository(
     private val dao: LocalPlannerDao,
+    private val database: LocalPlannerDatabase? = null,
     private val onMutationEnqueued: (() -> Unit)? = null
 ) : PlannerDataSource {
 
     companion object {
         const val LOCAL_USER_ID = "local_guest"
+
+        /**
+         * Wipes all user-specific local state on sign-out (Room tables, local photo/audio files,
+         * and user-scoped SharedPreferences) to guarantee zero cross-account data leakage.
+         */
+        suspend fun wipeAllUserLocalData(context: Context) {
+            val appCtx = context.applicationContext
+            withContext(Dispatchers.IO) {
+                LocalPlannerDatabase.getInstance(appCtx).plannerDao().clearAllLocalPlannerData()
+                runCatching { File(appCtx.filesDir, "planner_photos").deleteRecursively() }
+                runCatching { File(appCtx.filesDir, "task_audio_memos").deleteRecursively() }
+                runCatching { AppUsageTracker.getInstance(appCtx).resetAllUsage() }
+                runCatching {
+                    appCtx.getSharedPreferences("bunny_shared_calendar_seen_v1", Context.MODE_PRIVATE)
+                        .edit().clear().apply()
+                }
+                runCatching {
+                    appCtx.getSharedPreferences("bunny_memo_focus_session_v1", Context.MODE_PRIVATE)
+                        .edit().clear().apply()
+                }
+            }
+        }
+    }
+
+    private suspend fun <T> inTransaction(block: suspend () -> T): T {
+        val db = database
+        return if (db != null) db.withTransaction { block() } else block()
     }
 
     private fun newId(prefix: String): String =
         "${prefix}_${UUID.randomUUID().toString().replace("-", "").take(20)}"
 
     private fun Long.toTimestamp(): Timestamp = Timestamp(Date(this))
+
+    private fun sanitizeDateOrNull(raw: String?): String? {
+        val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return CalendarDate.parse(trimmed)?.toIsoString()
+    }
 
     private fun LocalProfileEntity.toModel(effectiveUserId: String): UserProfile = UserProfile(
         id = effectiveUserId,
@@ -128,86 +164,66 @@ class LocalPlannerRepository(
         updatedAt = updatedAtMillis.toTimestamp()
     )
 
-    private suspend fun enqueueUpsert(entityType: String, entityId: String, now: Long) {
-        dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(entityType, entityId, now))
-        onMutationEnqueued?.invoke()
-    }
-
-    private suspend fun enqueueDelete(entityType: String, entityId: String, now: Long) {
-        dao.upsertPendingSyncOp(PendingSyncOperationEntity.delete(entityType, entityId, now))
-        onMutationEnqueued?.invoke()
-    }
-
-    private suspend fun enqueueBatch(ops: List<PendingSyncOperationEntity>) {
-        if (ops.isEmpty()) return
-        dao.upsertPendingSyncOps(ops)
-        onMutationEnqueued?.invoke()
-    }
-
-    // --- Migration & Backfill helpers ---
-
-    suspend fun readMigrationSnapshot(): LocalMigrationSnapshot {
-        return LocalMigrationSnapshot(
-            profile = dao.getProfile(LOCAL_USER_ID),
-            items = dao.getAllItems(),
-            steps = dao.getAllSteps(),
-            reminders = dao.getAllReminders(),
-            classSchedules = dao.getAllClassSchedules()
-        )
-    }
-
     /**
-     * Ensures any pre-existing local records (e.g., created in guest mode before sync outbox
-     * existed) are queued as pending UPSERTs so [RoomFirestoreSyncService] pushes them cleanly.
+     * Ensures pre-existing local guest records (created before sign-in) are queued as pending
+     * UPSERTs so [RoomFirestoreSyncService] pushes them cleanly. Only queues the profile when
+     * the user explicitly customized their dedication or reminder defaults ([hasCustomLocalEdits]).
      */
     suspend fun enqueueUnqueuedLocalDataForSync() {
         val now = System.currentTimeMillis()
-        val existingKeys = dao.getAllPendingSyncOps().map { it.opKey }.toSet()
-        val ops = mutableListOf<PendingSyncOperationEntity>()
+        inTransaction {
+            val existingKeys = dao.getAllPendingSyncOps().map { it.opKey }.toSet()
+            val ops = mutableListOf<PendingSyncOperationEntity>()
 
-        val profile = dao.getProfile(LOCAL_USER_ID)
-        if (profile != null &&
-            (profile.hasSeenDedication || profile.dedicationText != UserProfile.DEFAULT_DEDICATION ||
-                profile.defaultReminderHour != 9 || profile.defaultReminderMinute != 0)
-        ) {
-            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.PROFILE, LOCAL_USER_ID)
-            if (key !in existingKeys) {
-                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now))
+            val profile = dao.getProfile(LOCAL_USER_ID)
+            if (profile != null && profile.hasCustomLocalEdits) {
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.PROFILE, LOCAL_USER_ID)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now))
+                }
             }
-        }
 
-        dao.getAllItems().forEach { item ->
-            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.ITEM, item.id)
-            if (key !in existingKeys) {
-                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, item.id, now))
+            dao.getAllItems().forEach { item ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.ITEM, item.id)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, item.id, now))
+                }
             }
-        }
-        dao.getAllSteps().forEach { step ->
-            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.STEP, step.id)
-            if (key !in existingKeys) {
-                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, step.id, now))
+            dao.getAllSteps().forEach { step ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.STEP, step.id)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, step.id, now))
+                }
             }
-        }
-        dao.getAllReminders().forEach { rem ->
-            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.REMINDER, rem.id)
-            if (key !in existingKeys) {
-                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, rem.id, now))
+            dao.getAllReminders().forEach { rem ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.REMINDER, rem.id)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, rem.id, now))
+                }
             }
-        }
-        dao.getAllClassSchedules().forEach { cls ->
-            val key = PendingSyncOperationEntity.keyFor(SyncEntityType.CLASS_SCHEDULE, cls.id)
-            if (key !in existingKeys) {
-                ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.CLASS_SCHEDULE, cls.id, now))
+            dao.getAllClassSchedules().forEach { cls ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.CLASS_SCHEDULE, cls.id)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.CLASS_SCHEDULE, cls.id, now))
+                }
             }
-        }
+            dao.getAllDailyHabits().forEach { habit ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.DAILY_HABIT, habit.id)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.DAILY_HABIT, habit.id, now))
+                }
+            }
+            dao.getAllHabitCheckIns().forEach { checkIn ->
+                val key = PendingSyncOperationEntity.keyFor(SyncEntityType.HABIT_CHECKIN, checkIn.checkInKey)
+                if (key !in existingKeys) {
+                    ops.add(PendingSyncOperationEntity.upsert(SyncEntityType.HABIT_CHECKIN, checkIn.checkInKey, now))
+                }
+            }
 
-        if (ops.isNotEmpty()) {
-            dao.upsertPendingSyncOps(ops)
+            if (ops.isNotEmpty()) {
+                dao.upsertPendingSyncOps(ops)
+            }
         }
-    }
-
-    suspend fun clearAllAfterMigration() {
-        dao.clearAllLocalPlannerData()
     }
 
     // --- Reactive Observations ---
@@ -241,7 +257,7 @@ class LocalPlannerRepository(
 
     // --- Profile & Dedication ---
 
-    override suspend fun ensureProfileExists(userId: String): Result<Unit> = runCatching {
+    override suspend fun ensureProfileExists(userId: String): Result<Unit> = suspendRunCatching {
         val existing = dao.getProfile(LOCAL_USER_ID)
         if (existing == null) {
             val now = System.currentTimeMillis()
@@ -253,7 +269,8 @@ class LocalPlannerRepository(
                     defaultReminderHour = 9,
                     defaultReminderMinute = 0,
                     createdAtMillis = now,
-                    updatedAtMillis = now
+                    updatedAtMillis = now,
+                    hasCustomLocalEdits = false
                 )
             )
         }
@@ -263,42 +280,53 @@ class LocalPlannerRepository(
         userId: String,
         dedicationText: String,
         markSeen: Boolean
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val cleaned = dedicationText.trim().take(500).ifBlank { UserProfile.DEFAULT_DEDICATION }
         val now = System.currentTimeMillis()
-        val existing = dao.getProfile(LOCAL_USER_ID)
-        if (existing == null) {
-            dao.upsertProfile(
-                LocalProfileEntity(
-                    id = LOCAL_USER_ID,
-                    dedicationText = cleaned,
-                    hasSeenDedication = markSeen,
-                    defaultReminderHour = 9,
-                    defaultReminderMinute = 0,
-                    createdAtMillis = now,
-                    updatedAtMillis = now
+        inTransaction {
+            val existing = dao.getProfile(LOCAL_USER_ID)
+            val isCustomized = cleaned != UserProfile.DEFAULT_DEDICATION ||
+                (existing?.hasCustomLocalEdits == true)
+            if (existing == null) {
+                dao.upsertProfile(
+                    LocalProfileEntity(
+                        id = LOCAL_USER_ID,
+                        dedicationText = cleaned,
+                        hasSeenDedication = markSeen,
+                        defaultReminderHour = 9,
+                        defaultReminderMinute = 0,
+                        createdAtMillis = now,
+                        updatedAtMillis = now,
+                        hasCustomLocalEdits = isCustomized
+                    )
                 )
-            )
-        } else {
-            dao.updateDedication(LOCAL_USER_ID, cleaned, markSeen, now)
+            } else {
+                dao.updateDedication(LOCAL_USER_ID, cleaned, markSeen, isCustomized, now)
+            }
+            if (isCustomized || userId != LOCAL_USER_ID) {
+                dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now))
+            }
         }
-        enqueueUpsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now)
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun updateDefaultReminderTime(
         userId: String,
         hour: Int,
         minute: Int
-    ): Result<Unit> = runCatching {
-        ensureProfileExists(LOCAL_USER_ID)
+    ): Result<Unit> = suspendRunCatching {
+        ensureProfileExists(LOCAL_USER_ID).getOrThrow()
         val now = System.currentTimeMillis()
-        dao.updateDefaultReminderTime(
-            profileId = LOCAL_USER_ID,
-            hour = hour.coerceIn(0, 23),
-            minute = minute.coerceIn(0, 59),
-            now = now
-        )
-        enqueueUpsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now)
+        inTransaction {
+            dao.updateDefaultReminderTime(
+                profileId = LOCAL_USER_ID,
+                hour = hour.coerceIn(0, 23),
+                minute = minute.coerceIn(0, 59),
+                now = now
+            )
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.PROFILE, LOCAL_USER_ID, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     // --- Items, Steps, and Reminders CRUD ---
@@ -319,92 +347,88 @@ class LocalPlannerRepository(
         imagePaths: List<String>,
         priority: TaskPriority,
         category: TaskCategory
-    ): Result<String> {
-        return try {
-            val cleanTitle = title.trim().take(200)
-            require(cleanTitle.isNotBlank()) { "Title is required." }
+    ): Result<String> = suspendRunCatching {
+        val cleanTitle = title.trim().take(200)
+        require(cleanTitle.isNotBlank()) { "Title is required." }
 
-            val now = System.currentTimeMillis()
-            val itemId = newId("item")
-            val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
-            val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK }
-            val encodedPhotos = PhotoAttachmentStore.encodePaths(imagePaths)
+        val now = System.currentTimeMillis()
+        val itemId = newId("item")
+        val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
+        val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK && it != itemId }
+        val encodedPhotos = PhotoAttachmentStore.encodePaths(imagePaths)
 
-            val itemEntity = LocalItemEntity(
-                id = itemId,
-                type = type.name,
-                title = cleanTitle,
-                notes = cleanNotes,
+        val itemEntity = LocalItemEntity(
+            id = itemId,
+            type = type.name,
+            title = cleanTitle,
+            notes = cleanNotes,
+            completed = false,
+            startDate = sanitizeDateOrNull(startDate),
+            dueDate = sanitizeDateOrNull(dueDate),
+            dueTimeMinutes = dueTimeMinutes?.coerceIn(0, 1439),
+            startAtUtcMillis = startAtUtcMillis?.coerceAtLeast(0L),
+            endAtUtcMillis = endAtUtcMillis?.coerceAtLeast(0L),
+            parentPlanId = cleanParent,
+            createdAtMillis = now,
+            updatedAtMillis = now,
+            imagePathsCsv = encodedPhotos,
+            priority = priority.name,
+            category = category.name
+        )
+
+        val draftItem = itemEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
+
+        val stepEntities = steps.filter { it.title.isNotBlank() }.take(50).mapIndexed { idx, step ->
+            LocalStepEntity(
+                id = newId("step"),
+                itemId = itemId,
+                title = step.title.trim().take(200),
                 completed = false,
-                startDate = startDate?.takeIf { it.isNotBlank() },
-                dueDate = dueDate?.takeIf { it.isNotBlank() },
-                dueTimeMinutes = dueTimeMinutes?.coerceIn(0, 1439),
-                startAtUtcMillis = startAtUtcMillis?.coerceAtLeast(0L),
-                endAtUtcMillis = endAtUtcMillis?.coerceAtLeast(0L),
-                parentPlanId = cleanParent,
+                dueDate = sanitizeDateOrNull(step.dueDate),
+                dueTimeMinutes = step.dueTimeMinutes?.coerceIn(0, 1439),
+                sortOrder = idx,
                 createdAtMillis = now,
-                updatedAtMillis = now,
-                imagePathsCsv = encodedPhotos,
-                priority = priority.name,
-                category = category.name
+                updatedAtMillis = now
             )
-
-            val draftItem = itemEntity.toModel(userId.ifBlank { LOCAL_USER_ID })
-
-            val stepEntities = steps.filter { it.title.isNotBlank() }.take(50).mapIndexed { idx, step ->
-                LocalStepEntity(
-                    id = newId("step"),
-                    itemId = itemId,
-                    title = step.title.trim().take(200),
-                    completed = false,
-                    dueDate = step.dueDate?.takeIf { it.isNotBlank() },
-                    dueTimeMinutes = step.dueTimeMinutes?.coerceIn(0, 1439),
-                    sortOrder = idx,
-                    createdAtMillis = now,
-                    updatedAtMillis = now
-                )
-            }
-
-            val remEntities = reminders.take(10).map { rem ->
-                val safeOffset = rem.offsetMinutes.coerceIn(0, 525600)
-                val safeHour = rem.localHour.coerceIn(0, 23)
-                val safeMin = rem.localMinute.coerceIn(0, 59)
-                val scheduledAt = PlannerDateUtils.computeScheduledAtUtcMillis(
-                    draftItem, safeOffset, safeHour, safeMin
-                )
-                val occKey = "${itemId}_${rem.kind.name}_${safeOffset}_${scheduledAt}".take(128)
-                LocalReminderEntity(
-                    id = newId("rem"),
-                    itemId = itemId,
-                    kind = rem.kind.name,
-                    offsetMinutes = safeOffset,
-                    localHour = safeHour,
-                    localMinute = safeMin,
-                    scheduledAtUtcMillis = scheduledAt,
-                    snoozedUntilUtcMillis = null,
-                    occurrenceKey = occKey,
-                    dismissed = false,
-                    deliveredAtUtcMillis = null,
-                    createdAtMillis = now,
-                    updatedAtMillis = now
-                )
-            }
-
-            dao.insertItemBundle(itemEntity, stepEntities, remEntities)
-
-            val syncOps = buildList {
-                add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
-                stepEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, it.id, now)) }
-                remEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, it.id, now)) }
-            }
-            enqueueBatch(syncOps)
-
-            Result.success(itemId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        val remEntities = reminders.take(10).map { rem ->
+            val safeOffset = rem.offsetMinutes.coerceIn(0, 525600)
+            val safeHour = rem.localHour.coerceIn(0, 23)
+            val safeMin = rem.localMinute.coerceIn(0, 59)
+            val scheduledAt = PlannerDateUtils.computeScheduledAtUtcMillis(
+                draftItem, safeOffset, safeHour, safeMin
+            )
+            val occKey = "${itemId}_${rem.kind.name}_${safeOffset}_${scheduledAt}".take(128)
+            LocalReminderEntity(
+                id = newId("rem"),
+                itemId = itemId,
+                kind = rem.kind.name,
+                offsetMinutes = safeOffset,
+                localHour = safeHour,
+                localMinute = safeMin,
+                scheduledAtUtcMillis = scheduledAt,
+                snoozedUntilUtcMillis = null,
+                occurrenceKey = occKey,
+                dismissed = false,
+                deliveredAtUtcMillis = null,
+                createdAtMillis = now,
+                updatedAtMillis = now
+            )
+        }
+
+        val syncOps = buildList {
+            add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
+            stepEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, it.id, now)) }
+            remEntities.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, it.id, now)) }
+        }
+
+        inTransaction {
+            dao.insertItemBundle(itemEntity, stepEntities, remEntities)
+            dao.upsertPendingSyncOps(syncOps)
+        }
+        onMutationEnqueued?.invoke()
+        itemId
     }
 
     override suspend fun updateItemAndRebuildReminders(
@@ -425,18 +449,23 @@ class LocalPlannerRepository(
         imagePaths: List<String>?,
         priority: TaskPriority?,
         category: TaskCategory?
-    ): Result<Unit> {
-        return try {
-            require(itemId.isNotBlank()) { "Item ID must not be blank." }
-            val cleanTitle = title.trim().take(200)
-            require(cleanTitle.isNotBlank()) { "Title is required." }
+    ): Result<Unit> = suspendRunCatching {
+        require(itemId.isNotBlank()) { "Item ID must not be blank." }
+        val cleanTitle = title.trim().take(200)
+        require(cleanTitle.isNotBlank()) { "Title is required." }
 
-            val now = System.currentTimeMillis()
-            val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
-            val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK }
+        val now = System.currentTimeMillis()
+        val cleanNotes = notes?.trim()?.take(1000)?.takeIf { it.isNotEmpty() }
+        val cleanParent = parentPlanId?.trim()?.takeIf { it.isNotEmpty() && type == ItemType.TASK && it != itemId }
+        var removedPhotoPaths: List<String> = emptyList()
+
+        inTransaction {
             val existingEntity = dao.getItemById(itemId)
             val oldCreated = existingEntity?.createdAtMillis ?: now
+            val oldPhotoPaths = PhotoAttachmentStore.parsePaths(existingEntity?.imagePathsCsv)
             val resolvedPhotosCsv = if (imagePaths != null) {
+                val keptSet = imagePaths.toSet()
+                removedPhotoPaths = oldPhotoPaths.filter { it !in keptSet }
                 PhotoAttachmentStore.encodePaths(imagePaths)
             } else {
                 existingEntity?.imagePathsCsv
@@ -450,8 +479,8 @@ class LocalPlannerRepository(
                 title = cleanTitle,
                 notes = cleanNotes,
                 completed = completed,
-                startDate = startDate?.takeIf { it.isNotBlank() },
-                dueDate = dueDate?.takeIf { it.isNotBlank() },
+                startDate = sanitizeDateOrNull(startDate),
+                dueDate = sanitizeDateOrNull(dueDate),
                 dueTimeMinutes = dueTimeMinutes?.coerceIn(0, 1439),
                 startAtUtcMillis = startAtUtcMillis?.coerceAtLeast(0L),
                 endAtUtcMillis = endAtUtcMillis?.coerceAtLeast(0L),
@@ -471,8 +500,9 @@ class LocalPlannerRepository(
                 PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now)
             )
 
+            val dbExistingRems = dao.getRemindersByItemId(itemId)
             if (updatedReminderDrafts != null) {
-                val oldRemIds = (dao.getRemindersByItemId(itemId).map { it.id } +
+                val oldRemIds = (dbExistingRems.map { it.id } +
                     existingReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
                 dao.deleteRemindersByItemId(itemId)
                 oldRemIds.forEach { oldId ->
@@ -510,7 +540,12 @@ class LocalPlannerRepository(
                     }
                 }
             } else {
-                val rebuilt = existingReminders.filter { it.itemId == itemId }.map { oldRem ->
+                val sourceRems = if (dbExistingRems.isNotEmpty()) {
+                    dbExistingRems.map { it.toModel(userId.ifBlank { LOCAL_USER_ID }) }
+                } else {
+                    existingReminders.filter { it.itemId == itemId }
+                }
+                val rebuilt = sourceRems.map { oldRem ->
                     val newScheduledAt = PlannerDateUtils.computeScheduledAtUtcMillis(
                         updatedModel,
                         oldRem.offsetMinutes,
@@ -543,20 +578,22 @@ class LocalPlannerRepository(
                 }
             }
 
-            enqueueBatch(syncOps)
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
+            dao.upsertPendingSyncOps(syncOps)
         }
+
+        if (removedPhotoPaths.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                PhotoAttachmentStore.deletePhotoFiles(removedPhotoPaths)
+            }
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun updateItemImages(
         userId: String,
         itemId: String,
         imagePaths: List<String>
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
         dao.updateItemImages(itemId, PhotoAttachmentStore.encodePaths(imagePaths), now)
     }
@@ -566,7 +603,7 @@ class LocalPlannerRepository(
         itemId: String,
         audioMemoPath: String?,
         durationSeconds: Int
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
         dao.updateItemAudioMemo(
             itemId = itemId,
@@ -580,30 +617,39 @@ class LocalPlannerRepository(
         userId: String,
         itemId: String,
         priority: TaskPriority
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.updateItemPriority(itemId, priority.name, now)
-        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
+        inTransaction {
+            dao.updateItemPriority(itemId, priority.name, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun updateItemCategory(
         userId: String,
         itemId: String,
         category: TaskCategory
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.updateItemCategory(itemId, category.name, now)
-        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
+        inTransaction {
+            dao.updateItemCategory(itemId, category.name, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun toggleItemCompleted(
         userId: String,
         itemId: String,
         completed: Boolean
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.updateItemCompleted(itemId, completed, now)
-        enqueueUpsert(SyncEntityType.ITEM, itemId, now)
+        inTransaction {
+            dao.updateItemCompleted(itemId, completed, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, itemId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun deleteItemCascade(
@@ -611,28 +657,52 @@ class LocalPlannerRepository(
         itemId: String,
         itemSteps: List<PlannerStep>,
         itemReminders: List<PlannerReminder>
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        val existingEntity = dao.getItemById(itemId)
-        val existingPhotos = PhotoAttachmentStore.parsePaths(existingEntity?.imagePathsCsv)
-        val existingAudioMemo = existingEntity?.audioMemoPath
-        val stepIds = (dao.getStepsByItemId(itemId).map { it.id } +
-            itemSteps.filter { it.itemId == itemId }.map { it.id }).distinct()
-        val remIds = (dao.getRemindersByItemId(itemId).map { it.id } +
-            itemReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
+        var existingPhotos: List<String> = emptyList()
+        var existingAudioMemo: String? = null
 
-        dao.deleteItemCascade(itemId)
-        if (existingPhotos.isNotEmpty()) {
-            PhotoAttachmentStore.deletePhotoFiles(existingPhotos)
-        }
-        com.example.audio.TaskAudioMemoManager.deleteMemoFile(existingAudioMemo)
+        inTransaction {
+            val existingEntity = dao.getItemById(itemId)
+            existingPhotos = PhotoAttachmentStore.parsePaths(existingEntity?.imagePathsCsv)
+            existingAudioMemo = existingEntity?.audioMemoPath
 
-        val syncOps = buildList {
-            remIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, it, now)) }
-            stepIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.STEP, it, now)) }
-            add(PendingSyncOperationEntity.delete(SyncEntityType.ITEM, itemId, now))
+            val stepIds = (dao.getStepsByItemId(itemId).map { it.id } +
+                itemSteps.filter { it.itemId == itemId }.map { it.id }).distinct()
+            val remIds = (dao.getRemindersByItemId(itemId).map { it.id } +
+                itemReminders.filter { it.itemId == itemId }.map { it.id }).distinct()
+            val linkedTasks = dao.getTasksLinkedToPlan(itemId)
+
+            if (linkedTasks.isNotEmpty()) {
+                dao.clearParentPlanId(itemId, now)
+            }
+            dao.deleteItemCascade(itemId)
+            dao.upsertTombstone(
+                DeletedTombstoneEntity(
+                    opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.ITEM, itemId),
+                    entityType = SyncEntityType.ITEM,
+                    entityId = itemId,
+                    deletedAtMillis = now
+                )
+            )
+
+            val syncOps = buildList {
+                remIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, it, now)) }
+                stepIds.forEach { add(PendingSyncOperationEntity.delete(SyncEntityType.STEP, it, now)) }
+                linkedTasks.forEach { add(PendingSyncOperationEntity.upsert(SyncEntityType.ITEM, it.id, now)) }
+                add(PendingSyncOperationEntity.delete(SyncEntityType.ITEM, itemId, now))
+            }
+            dao.upsertPendingSyncOps(syncOps)
         }
-        enqueueBatch(syncOps)
+
+        // Delete disk media only after the DB transaction has committed cleanly
+        withContext(Dispatchers.IO) {
+            if (existingPhotos.isNotEmpty()) {
+                PhotoAttachmentStore.deletePhotoFiles(existingPhotos)
+            }
+            TaskAudioMemoManager.deleteMemoFile(existingAudioMemo)
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun addStep(
@@ -642,25 +712,30 @@ class LocalPlannerRepository(
         dueDate: String?,
         dueTimeMinutes: Int?,
         sortOrder: Int
-    ): Result<String> = runCatching {
+    ): Result<String> = suspendRunCatching {
         val cleanTitle = title.trim().take(200)
         require(cleanTitle.isNotBlank()) { "Step title cannot be empty." }
         val now = System.currentTimeMillis()
         val id = newId("step")
-        dao.upsertStep(
-            LocalStepEntity(
-                id = id,
-                itemId = itemId,
-                title = cleanTitle,
-                completed = false,
-                dueDate = dueDate?.takeIf { it.isNotBlank() },
-                dueTimeMinutes = dueTimeMinutes?.coerceIn(0, 1439),
-                sortOrder = sortOrder.coerceIn(0, 1000),
-                createdAtMillis = now,
-                updatedAtMillis = now
+        inTransaction {
+            val existingMaxOrder = dao.getStepsByItemId(itemId).maxOfOrNull { it.sortOrder }
+            val resolvedOrder = maxOf(sortOrder, (existingMaxOrder ?: -1) + 1).coerceIn(0, 1000)
+            dao.upsertStep(
+                LocalStepEntity(
+                    id = id,
+                    itemId = itemId,
+                    title = cleanTitle,
+                    completed = false,
+                    dueDate = sanitizeDateOrNull(dueDate),
+                    dueTimeMinutes = dueTimeMinutes?.coerceIn(0, 1439),
+                    sortOrder = resolvedOrder,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
             )
-        )
-        enqueueUpsert(SyncEntityType.STEP, id, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, id, now))
+        }
+        onMutationEnqueued?.invoke()
         id
     }
 
@@ -668,29 +743,46 @@ class LocalPlannerRepository(
         userId: String,
         stepId: String,
         completed: Boolean
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.updateStepCompleted(stepId, completed, now)
-        enqueueUpsert(SyncEntityType.STEP, stepId, now)
+        inTransaction {
+            dao.updateStepCompleted(stepId, completed, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, stepId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun addStepTimeSpent(
         userId: String,
         stepId: String,
         addedMinutes: Int
-    ): Result<Unit> = runCatching {
-        val step = dao.getStepById(stepId) ?: error("Step not found.")
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        val updatedTotal = (step.timeSpentMinutes + addedMinutes.coerceIn(1, 1440))
-            .coerceIn(0, 100_000)
-        dao.updateStepTimeSpent(stepId, updatedTotal, now)
-        enqueueUpsert(SyncEntityType.STEP, stepId, now)
+        inTransaction {
+            val step = dao.getStepById(stepId) ?: error("Step not found.")
+            val updatedTotal = (step.timeSpentMinutes + addedMinutes.coerceIn(1, 1440))
+                .coerceIn(0, 100_000)
+            dao.updateStepTimeSpent(stepId, updatedTotal, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.STEP, stepId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
-    override suspend fun deleteStep(userId: String, stepId: String): Result<Unit> = runCatching {
+    override suspend fun deleteStep(userId: String, stepId: String): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.deleteStepById(stepId)
-        enqueueDelete(SyncEntityType.STEP, stepId, now)
+        inTransaction {
+            dao.deleteStepById(stepId)
+            dao.upsertTombstone(
+                DeletedTombstoneEntity(
+                    opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.STEP, stepId),
+                    entityType = SyncEntityType.STEP,
+                    entityId = stepId,
+                    deletedAtMillis = now
+                )
+            )
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.delete(SyncEntityType.STEP, stepId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun addReminder(
@@ -700,7 +792,7 @@ class LocalPlannerRepository(
         offsetMinutes: Int,
         localHour: Int,
         localMinute: Int
-    ): Result<String> = runCatching {
+    ): Result<String> = suspendRunCatching {
         val now = System.currentTimeMillis()
         val safeOffset = offsetMinutes.coerceIn(0, 525600)
         val safeHour = localHour.coerceIn(0, 23)
@@ -710,24 +802,27 @@ class LocalPlannerRepository(
         )
         val occKey = "${item.id}_${kind.name}_${safeOffset}_${scheduledAt}".take(128)
         val id = newId("rem")
-        dao.upsertReminder(
-            LocalReminderEntity(
-                id = id,
-                itemId = item.id,
-                kind = kind.name,
-                offsetMinutes = safeOffset,
-                localHour = safeHour,
-                localMinute = safeMin,
-                scheduledAtUtcMillis = scheduledAt,
-                snoozedUntilUtcMillis = null,
-                occurrenceKey = occKey,
-                dismissed = false,
-                deliveredAtUtcMillis = null,
-                createdAtMillis = now,
-                updatedAtMillis = now
+        inTransaction {
+            dao.upsertReminder(
+                LocalReminderEntity(
+                    id = id,
+                    itemId = item.id,
+                    kind = kind.name,
+                    offsetMinutes = safeOffset,
+                    localHour = safeHour,
+                    localMinute = safeMin,
+                    scheduledAtUtcMillis = scheduledAt,
+                    snoozedUntilUtcMillis = null,
+                    occurrenceKey = occKey,
+                    dismissed = false,
+                    deliveredAtUtcMillis = null,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
             )
-        )
-        enqueueUpsert(SyncEntityType.REMINDER, id, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, id, now))
+        }
+        onMutationEnqueued?.invoke()
         id
     }
 
@@ -735,22 +830,39 @@ class LocalPlannerRepository(
         userId: String,
         reminderId: String,
         snoozedUntilUtcMillis: Long
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.snoozeReminder(reminderId, snoozedUntilUtcMillis.coerceAtLeast(0L), now)
-        enqueueUpsert(SyncEntityType.REMINDER, reminderId, now)
+        inTransaction {
+            dao.snoozeReminder(reminderId, snoozedUntilUtcMillis.coerceAtLeast(0L), now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, reminderId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
-    override suspend fun dismissReminder(userId: String, reminderId: String): Result<Unit> = runCatching {
+    override suspend fun dismissReminder(userId: String, reminderId: String): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.dismissReminder(reminderId, now)
-        enqueueUpsert(SyncEntityType.REMINDER, reminderId, now)
+        inTransaction {
+            dao.dismissReminder(reminderId, now)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.REMINDER, reminderId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
-    override suspend fun deleteReminder(userId: String, reminderId: String): Result<Unit> = runCatching {
+    override suspend fun deleteReminder(userId: String, reminderId: String): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.deleteReminderById(reminderId)
-        enqueueDelete(SyncEntityType.REMINDER, reminderId, now)
+        inTransaction {
+            dao.deleteReminderById(reminderId)
+            dao.upsertTombstone(
+                DeletedTombstoneEntity(
+                    opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.REMINDER, reminderId),
+                    entityType = SyncEntityType.REMINDER,
+                    entityId = reminderId,
+                    deletedAtMillis = now
+                )
+            )
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.delete(SyncEntityType.REMINDER, reminderId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 
     override suspend fun createClassSchedule(
@@ -767,15 +879,15 @@ class LocalPlannerRepository(
         notifyEnabled: Boolean,
         notifyOffsetMinutes: Int,
         colorKey: ClassColorKey
-    ): Result<String> {
-        return try {
-            val cleanSubject = subject.trim().take(160)
-            require(cleanSubject.isNotBlank()) { "Subject name is required." }
-            val cleanDays = daysOfWeek.filter { it in 0..6 }.distinct().sorted()
-            val cleanStart = CalendarDate.parse(semesterStartDate)?.toIsoString()
-                ?: CalendarDate.today().toIsoString()
-            val now = System.currentTimeMillis()
-            val id = newId("cls")
+    ): Result<String> = suspendRunCatching {
+        val cleanSubject = subject.trim().take(160)
+        require(cleanSubject.isNotBlank()) { "Subject name is required." }
+        val cleanDays = daysOfWeek.filter { it in 0..6 }.distinct().sorted()
+        val cleanStart = CalendarDate.parse(semesterStartDate)?.toIsoString()
+            ?: CalendarDate.today().toIsoString()
+        val now = System.currentTimeMillis()
+        val id = newId("cls")
+        inTransaction {
             dao.upsertClassSchedule(
                 LocalClassScheduleEntity(
                     id = id,
@@ -795,13 +907,10 @@ class LocalPlannerRepository(
                     updatedAtMillis = now
                 )
             )
-            enqueueUpsert(SyncEntityType.CLASS_SCHEDULE, id, now)
-            Result.success(id)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.CLASS_SCHEDULE, id, now))
         }
+        onMutationEnqueued?.invoke()
+        id
     }
 
     override suspend fun updateClassSchedule(
@@ -819,15 +928,15 @@ class LocalPlannerRepository(
         notifyEnabled: Boolean,
         notifyOffsetMinutes: Int,
         colorKey: ClassColorKey
-    ): Result<Unit> {
-        return try {
-            require(scheduleId.isNotBlank()) { "Schedule ID must not be blank." }
-            val cleanSubject = subject.trim().take(160)
-            require(cleanSubject.isNotBlank()) { "Subject name is required." }
-            val cleanDays = daysOfWeek.filter { it in 0..6 }.distinct().sorted()
-            val cleanStart = CalendarDate.parse(semesterStartDate)?.toIsoString()
-                ?: CalendarDate.today().toIsoString()
-            val now = System.currentTimeMillis()
+    ): Result<Unit> = suspendRunCatching {
+        require(scheduleId.isNotBlank()) { "Schedule ID must not be blank." }
+        val cleanSubject = subject.trim().take(160)
+        require(cleanSubject.isNotBlank()) { "Subject name is required." }
+        val cleanDays = daysOfWeek.filter { it in 0..6 }.distinct().sorted()
+        val cleanStart = CalendarDate.parse(semesterStartDate)?.toIsoString()
+            ?: CalendarDate.today().toIsoString()
+        val now = System.currentTimeMillis()
+        inTransaction {
             val oldCreated = dao.getClassScheduleById(scheduleId)?.createdAtMillis ?: now
             dao.upsertClassSchedule(
                 LocalClassScheduleEntity(
@@ -848,18 +957,25 @@ class LocalPlannerRepository(
                     updatedAtMillis = now
                 )
             )
-            enqueueUpsert(SyncEntityType.CLASS_SCHEDULE, scheduleId, now)
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.upsert(SyncEntityType.CLASS_SCHEDULE, scheduleId, now))
         }
+        onMutationEnqueued?.invoke()
     }
 
-    override suspend fun deleteClassSchedule(userId: String, scheduleId: String): Result<Unit> = runCatching {
+    override suspend fun deleteClassSchedule(userId: String, scheduleId: String): Result<Unit> = suspendRunCatching {
         val now = System.currentTimeMillis()
-        dao.deleteClassScheduleById(scheduleId)
-        enqueueDelete(SyncEntityType.CLASS_SCHEDULE, scheduleId, now)
+        inTransaction {
+            dao.deleteClassScheduleById(scheduleId)
+            dao.upsertTombstone(
+                DeletedTombstoneEntity(
+                    opKey = PendingSyncOperationEntity.keyFor(SyncEntityType.CLASS_SCHEDULE, scheduleId),
+                    entityType = SyncEntityType.CLASS_SCHEDULE,
+                    entityId = scheduleId,
+                    deletedAtMillis = now
+                )
+            )
+            dao.upsertPendingSyncOp(PendingSyncOperationEntity.delete(SyncEntityType.CLASS_SCHEDULE, scheduleId, now))
+        }
+        onMutationEnqueued?.invoke()
     }
 }

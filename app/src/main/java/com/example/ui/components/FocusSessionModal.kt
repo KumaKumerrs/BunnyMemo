@@ -49,9 +49,12 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +68,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.audio.BunnyFeedbackManager
@@ -222,7 +228,7 @@ fun LiveFocusSessionBannerCard(
                     Icon(
                         imageVector = if (focusState.isRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (focusState.isRunning) "Pause focus timer" else "Start focus timer",
-                        tint = PureWhite,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -243,6 +249,7 @@ fun FocusSessionModal(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
 
     LaunchedEffect(context) {
@@ -252,7 +259,16 @@ fun FocusSessionModal(
 
     val focusState by FocusSessionManager.state.collectAsStateWithLifecycle()
     val guardConfig by DoomscrollGuardManager.config.collectAsStateWithLifecycle()
-    val permsReady = DoomscrollGuardManager.hasAllRequiredPermissions(context)
+    var permsReady by remember { mutableStateOf(DoomscrollGuardManager.hasAllRequiredPermissions(context)) }
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permsReady = DoomscrollGuardManager.hasAllRequiredPermissions(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val animatedProgress by animateFloatAsState(
         targetValue = focusState.progressFraction,
@@ -356,7 +372,7 @@ fun FocusSessionModal(
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (focusState.phase == FocusPhase.BREAK) CalmSage else DeepBlue,
-                        contentColor = PureWhite
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(100.dp),
                     contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
@@ -711,7 +727,7 @@ private fun PomodoroRingCanvas(
         for (i in 0 until 5) {
             val pRad = (-90.0 + i * 72.0) * PI / 180.0
             drawCircle(
-                color = if (isBreak) CalmSage else BunnyFlowerCrown,
+                color = if (isBreak) CalmSage else ForgetMeNotBlue,
                 radius = petalR,
                 center = Offset(cx + (petalDist * cos(pRad)).toFloat(), cy + (petalDist * sin(pRad)).toFloat())
             )

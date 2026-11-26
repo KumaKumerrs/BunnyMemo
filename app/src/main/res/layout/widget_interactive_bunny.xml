@@ -30,7 +30,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/widget_bunny_family_name"
-            android:textColor="#2B4360"
+            android:textColor="@color/widget_text_primary"
             android:textSize="13sp"
             android:textStyle="bold" />
 
@@ -42,7 +42,7 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="2dp"
             android:text="0d · 3 kits"
-            android:textColor="#35917A"
+            android:textColor="@color/widget_text_sage"
             android:textSize="10sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -61,7 +61,8 @@
             android:layout_height="match_parent"
             android:adjustViewBounds="true"
             android:contentDescription="@string/widget_bunny_family_desc"
-            android:scaleType="fitCenter" />
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_flower" />
 
         <!-- Direct-on-rabbit invisible interaction zones (Head Pat, Left Cheek Pinch, Right Cheek Pinch, Belly Talk) -->
         <LinearLayout
@@ -141,7 +142,7 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:text="@string/widget_bunny_default_greeting"
-            android:textColor="#2B4360"
+            android:textColor="@color/widget_text_primary"
             android:textSize="11sp" />
     </LinearLayout>
 
@@ -164,7 +165,7 @@
             android:maxLines="1"
             android:paddingHorizontal="6dp"
             android:text="@string/widget_bunny_pat_btn"
-            android:textColor="#2B4360"
+            android:textColor="@color/widget_text_primary"
             android:textSize="11sp"
             android:textStyle="bold" />
 
@@ -180,7 +181,7 @@
             android:maxLines="1"
             android:paddingHorizontal="6dp"
             android:text="@string/widget_bunny_pinch_btn"
-            android:textColor="#2B4360"
+            android:textColor="@color/widget_text_primary"
             android:textSize="11sp"
             android:textStyle="bold" />
 
@@ -196,7 +197,7 @@
             android:maxLines="1"
             android:paddingHorizontal="6dp"
             android:text="@string/widget_bunny_talk_btn"
-            android:textColor="#FCFEFF"
+            android:textColor="@color/widget_text_on_accent"
             android:textSize="11sp"
             android:textStyle="bold" />
     </LinearLayout>

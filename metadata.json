@@ -2,5 +2,5 @@
   "name": "Bunny Memo",
   "description": "A calm, private personal planner with plans, milestones, tasks, timed events, blooming forget-me-not progress, gentle reminders, monthly & year-end reports, and cloud sync.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

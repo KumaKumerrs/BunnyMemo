@@ -1,7 +1,10 @@
 package com.example.ui.components
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -35,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +82,8 @@ fun TaskAudioMemoCard(
     val playbackState by audioManager.playbackState.collectAsStateWithLifecycle()
 
     var permissionDeniedMessage by remember { mutableStateOf(false) }
+    var confirmDeleteMemo by remember { mutableStateOf(false) }
+    var confirmOverwriteMemo by remember { mutableStateOf(false) }
 
     val beginRecording = remember(audioManager, item.id, item.title, item.completed, item.audioMemoPath) {
         {
@@ -138,7 +144,10 @@ fun TaskAudioMemoCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Outlined.Mic,
                         contentDescription = null,
@@ -146,11 +155,18 @@ fun TaskAudioMemoCard(
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.audio_memo_section_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MidnightNavy
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = stringResource(R.string.audio_memo_section_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MidnightNavy
+                        )
+                        ModernPillBadge(
+                            text = stringResource(R.string.saved_on_device_only),
+                            containerColor = SoftIceSurface,
+                            contentColor = MutedNavy
+                        )
+                    }
                 }
 
                 when {
@@ -212,7 +228,7 @@ fun TaskAudioMemoCard(
                             onClick = { audioManager.stopRecording() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = OverdueTerracotta,
-                                contentColor = PureWhite
+                                contentColor = MaterialTheme.colorScheme.onError
                             ),
                             shape = RoundedCornerShape(100.dp),
                             modifier = Modifier
@@ -259,7 +275,7 @@ fun TaskAudioMemoCard(
                                     Icon(
                                         imageVector = if (isPlayingThis) Icons.Default.Stop else Icons.Default.PlayArrow,
                                         contentDescription = if (isPlayingThis) "Stop voice memo" else "Play voice memo",
-                                        tint = PureWhite,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -295,11 +311,8 @@ fun TaskAudioMemoCard(
 
                             IconButton(
                                 onClick = {
-                                    feedback.onDeleteAction()
-                                    if (isPlayingThis) {
-                                        audioManager.stopPlayback(emitFeedback = false)
-                                    }
-                                    onUpdateAudioMemo(null, 0)
+                                    feedback.onLightTick()
+                                    confirmDeleteMemo = true
                                 },
                                 modifier = Modifier.testTag("audio_memo_delete_button")
                             ) {
@@ -312,7 +325,10 @@ fun TaskAudioMemoCard(
                         }
 
                         OutlinedButton(
-                            onClick = { onRecordClicked() },
+                            onClick = {
+                                feedback.onLightTick()
+                                confirmOverwriteMemo = true
+                            },
                             border = BorderStroke(1.dp, SubtleBorder),
                             shape = RoundedCornerShape(100.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
@@ -367,12 +383,31 @@ fun TaskAudioMemoCard(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = stringResource(R.string.audio_memo_permission_denied),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = OverdueTerracotta,
-                        modifier = Modifier.padding(10.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.audio_memo_permission_denied),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OverdueTerracotta,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.fromParts("package", context.packageName, null)
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { context.startActivity(intent) }
+                            }
+                        ) {
+                            Text("Open settings", color = OverdueTerracotta)
+                        }
+                    }
                 }
             } else if (!playbackState.errorMessage.isNullOrBlank()) {
                 Surface(
@@ -390,5 +425,39 @@ fun TaskAudioMemoCard(
                 }
             }
         }
+    }
+
+    if (confirmDeleteMemo) {
+        BunnyMemoConfirmModal(
+            title = "Delete voice memo?",
+            message = "This permanently removes the saved voice memo from this device.",
+            confirmLabel = "Delete",
+            cancelLabel = "Keep it",
+            isDestructive = true,
+            onConfirm = {
+                confirmDeleteMemo = false
+                feedback.onDeleteAction()
+                if (isPlayingThis) {
+                    audioManager.stopPlayback(emitFeedback = false)
+                }
+                onUpdateAudioMemo(null, 0)
+            },
+            onDismiss = { confirmDeleteMemo = false }
+        )
+    }
+
+    if (confirmOverwriteMemo) {
+        BunnyMemoConfirmModal(
+            title = "Replace voice memo?",
+            message = "Recording a new voice note will replace the current saved memo once finished.",
+            confirmLabel = "Record new",
+            cancelLabel = "Keep current",
+            isDestructive = false,
+            onConfirm = {
+                confirmOverwriteMemo = false
+                onRecordClicked()
+            },
+            onDismiss = { confirmOverwriteMemo = false }
+        )
     }
 }

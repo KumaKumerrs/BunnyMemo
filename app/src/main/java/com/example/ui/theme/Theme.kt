@@ -13,13 +13,13 @@ import androidx.compose.ui.unit.dp
 
 val LocalIsDarkTheme = compositionLocalOf { false }
 
-private val ForgetMeNotLightColorScheme = lightColorScheme(
+internal val ForgetMeNotLightColorScheme = lightColorScheme(
     primary = LightDeepBlue,
     onPrimary = LightPureWhite,
     primaryContainer = LightSkyBlue,
     onPrimaryContainer = LightMidnightNavy,
     secondary = LightForgetMeNotBlue,
-    onSecondary = LightPureWhite,
+    onSecondary = LightMidnightNavy,
     secondaryContainer = LightSoftIceSurface,
     onSecondaryContainer = LightMidnightNavy,
     tertiary = LightPollenYellow,
@@ -44,17 +44,17 @@ private val ForgetMeNotLightColorScheme = lightColorScheme(
     onErrorContainer = LightOverdueTerracotta
 )
 
-private val ForgetMeNotDarkColorScheme = darkColorScheme(
+internal val ForgetMeNotDarkColorScheme = darkColorScheme(
     primary = DarkDeepBlue,
-    onPrimary = DarkPureWhite,
+    onPrimary = DarkCloudWhite,
     primaryContainer = DarkSkyBlue,
     onPrimaryContainer = DarkMidnightNavy,
     secondary = DarkForgetMeNotBlue,
-    onSecondary = DarkPureWhite,
+    onSecondary = DarkCloudWhite,
     secondaryContainer = DarkSoftIceSurface,
     onSecondaryContainer = DarkMidnightNavy,
     tertiary = DarkPollenYellow,
-    onTertiary = DarkPureWhite,
+    onTertiary = DarkCloudWhite,
     tertiaryContainer = DarkPollenSoft,
     onTertiaryContainer = DarkMidnightNavy,
     background = DarkCloudWhite,
@@ -70,7 +70,7 @@ private val ForgetMeNotDarkColorScheme = darkColorScheme(
     outline = DarkSubtleBorder,
     outlineVariant = DarkSubtleBorder,
     error = DarkOverdueTerracotta,
-    onError = DarkPureWhite,
+    onError = DarkCloudWhite,
     errorContainer = DarkOverdueContainer,
     onErrorContainer = DarkOverdueTerracotta
 )
@@ -87,11 +87,14 @@ fun ForgetMeNotTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Synchronously update reactive palette flag before composing children
-    isDarkPaletteActive = darkTheme
+    val palette = if (darkTheme) DarkForgetMeNotColors else LightForgetMeNotColors
+    activeDrawScopePalette = palette
 
     val scheme = if (darkTheme) ForgetMeNotDarkColorScheme else ForgetMeNotLightColorScheme
-    CompositionLocalProvider(LocalIsDarkTheme provides darkTheme) {
+    CompositionLocalProvider(
+        LocalIsDarkTheme provides darkTheme,
+        LocalForgetMeNotColors provides palette
+    ) {
         MaterialTheme(
             colorScheme = scheme,
             typography = Typography,

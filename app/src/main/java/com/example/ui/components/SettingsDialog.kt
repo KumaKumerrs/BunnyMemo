@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -35,14 +37,12 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.ViewWeek
-import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -815,7 +815,7 @@ private fun SensoryFeedbackSettingsCard() {
                     checked = prefs.hapticsEnabled,
                     onCheckedChange = { feedbackManager.setHapticsEnabled(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PureWhite,
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = DeepBlue,
                         uncheckedBorderColor = SubtleBorder
                     ),
@@ -836,7 +836,7 @@ private fun SensoryFeedbackSettingsCard() {
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.VolumeUp,
+                        imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
                         contentDescription = null,
                         tint = DeepBlue,
                         modifier = Modifier.size(18.dp)
@@ -860,7 +860,7 @@ private fun SensoryFeedbackSettingsCard() {
                     checked = prefs.sfxEnabled,
                     onCheckedChange = { feedbackManager.setSfxEnabled(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PureWhite,
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = DeepBlue,
                         uncheckedBorderColor = SubtleBorder
                     ),
@@ -905,7 +905,7 @@ private fun SensoryFeedbackSettingsCard() {
                     checked = prefs.bgmEnabled,
                     onCheckedChange = { feedbackManager.setBgmEnabled(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PureWhite,
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = DeepBlue,
                         uncheckedBorderColor = SubtleBorder
                     ),
@@ -1070,7 +1070,7 @@ private fun SensoryFeedbackSettingsCard() {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 OutlinedButton(
-                                    onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                    onClick = { runCatching { audioPickerLauncher.launch(arrayOf("audio/*")) } },
                                     border = BorderStroke(1.dp, SubtleBorder),
                                     shape = RoundedCornerShape(100.dp),
                                     modifier = Modifier
@@ -1107,7 +1107,7 @@ private fun SensoryFeedbackSettingsCard() {
                                         .testTag("settings_bgm_youtube_button")
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Outlined.OpenInNew,
+                                        imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                                         contentDescription = null,
                                         tint = MidnightNavy,
                                         modifier = Modifier.size(15.dp)

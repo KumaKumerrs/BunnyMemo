@@ -3,6 +3,7 @@ package com.example.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import com.example.R
 import com.example.data.PlannerDateUtils
@@ -27,6 +28,8 @@ class WeeklyCalendarAppWidgetProvider : AppWidgetProvider() {
             try {
                 val snapshot = WidgetDataLoader.load(context)
                 updateWidgets(context, appWidgetManager, appWidgetIds, snapshot)
+            } catch (e: Exception) {
+                Log.w(TAG, "Weekly calendar widget update failed: ${e.message}")
             } finally {
                 pendingResult.finish()
             }
@@ -34,6 +37,8 @@ class WeeklyCalendarAppWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "WeekWidgetProvider"
+
         fun updateWidgets(
             context: Context,
             appWidgetManager: AppWidgetManager,
@@ -62,7 +67,8 @@ class WeeklyCalendarAppWidgetProvider : AppWidgetProvider() {
                 weekDates = weekDates,
                 scheduledDates = snapshot.scheduledDatesInCurrentWeek,
                 habitBloomDates = snapshot.habitBloomDates,
-                itemCountByDate = snapshot.weekItemCountByDate
+                itemCountByDate = snapshot.weekItemCountByDate,
+                isDark = WidgetBitmapRenderer.isDarkMode(context)
             )
 
             val footerText = buildString {

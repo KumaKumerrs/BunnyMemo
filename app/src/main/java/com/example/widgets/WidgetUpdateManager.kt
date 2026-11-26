@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class PlannerWidgetKind(val providerClass: Class<*>) {
     INTERACTIVE_BUNNY(InteractiveBunnyAppWidgetProvider::class.java),
@@ -29,41 +30,50 @@ object WidgetUpdateManager {
     fun refreshAllWidgets(context: Context) {
         val appContext = context.applicationContext
         scope.launch {
-            try {
-                val manager = AppWidgetManager.getInstance(appContext)
-                val bunnyIds = manager.getAppWidgetIds(ComponentName(appContext, InteractiveBunnyAppWidgetProvider::class.java))
-                val weekIds = manager.getAppWidgetIds(ComponentName(appContext, WeeklyCalendarAppWidgetProvider::class.java))
-                val calIds = manager.getAppWidgetIds(ComponentName(appContext, CalendarAppWidgetProvider::class.java))
-                val clsIds = manager.getAppWidgetIds(ComponentName(appContext, ClassScheduleAppWidgetProvider::class.java))
-                val taskIds = manager.getAppWidgetIds(ComponentName(appContext, TasksAppWidgetProvider::class.java))
-                val quickIds = manager.getAppWidgetIds(ComponentName(appContext, QuickActionsAppWidgetProvider::class.java))
+            refreshAllWidgetsSuspend(appContext)
+        }
+    }
 
-                if (bunnyIds.isEmpty() && weekIds.isEmpty() && calIds.isEmpty() && clsIds.isEmpty() && taskIds.isEmpty() && quickIds.isEmpty()) {
-                    return@launch
-                }
+    /**
+     * Awaitable refresh used inside BroadcastReceiver `goAsync()` blocks so Android never
+     * terminates the receiver before widget updates finish pushing to the launcher.
+     */
+    suspend fun refreshAllWidgetsSuspend(context: Context) = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        try {
+            val manager = AppWidgetManager.getInstance(appContext)
+            val bunnyIds = manager.getAppWidgetIds(ComponentName(appContext, InteractiveBunnyAppWidgetProvider::class.java))
+            val weekIds = manager.getAppWidgetIds(ComponentName(appContext, WeeklyCalendarAppWidgetProvider::class.java))
+            val calIds = manager.getAppWidgetIds(ComponentName(appContext, CalendarAppWidgetProvider::class.java))
+            val clsIds = manager.getAppWidgetIds(ComponentName(appContext, ClassScheduleAppWidgetProvider::class.java))
+            val taskIds = manager.getAppWidgetIds(ComponentName(appContext, TasksAppWidgetProvider::class.java))
+            val quickIds = manager.getAppWidgetIds(ComponentName(appContext, QuickActionsAppWidgetProvider::class.java))
 
-                val snapshot = WidgetDataLoader.load(appContext)
-                if (bunnyIds.isNotEmpty()) {
-                    InteractiveBunnyAppWidgetProvider.updateWidgets(appContext, manager, bunnyIds, snapshot)
-                }
-                if (weekIds.isNotEmpty()) {
-                    WeeklyCalendarAppWidgetProvider.updateWidgets(appContext, manager, weekIds, snapshot)
-                }
-                if (calIds.isNotEmpty()) {
-                    CalendarAppWidgetProvider.updateWidgets(appContext, manager, calIds, snapshot)
-                }
-                if (clsIds.isNotEmpty()) {
-                    ClassScheduleAppWidgetProvider.updateWidgets(appContext, manager, clsIds, snapshot)
-                }
-                if (taskIds.isNotEmpty()) {
-                    TasksAppWidgetProvider.updateWidgets(appContext, manager, taskIds, snapshot)
-                }
-                if (quickIds.isNotEmpty()) {
-                    QuickActionsAppWidgetProvider.updateWidgets(appContext, manager, quickIds, snapshot)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Widget refresh skipped: ${e.message}")
+            if (bunnyIds.isEmpty() && weekIds.isEmpty() && calIds.isEmpty() && clsIds.isEmpty() && taskIds.isEmpty() && quickIds.isEmpty()) {
+                return@withContext
             }
+
+            val snapshot = WidgetDataLoader.load(appContext)
+            if (bunnyIds.isNotEmpty()) {
+                InteractiveBunnyAppWidgetProvider.updateWidgets(appContext, manager, bunnyIds, snapshot)
+            }
+            if (weekIds.isNotEmpty()) {
+                WeeklyCalendarAppWidgetProvider.updateWidgets(appContext, manager, weekIds, snapshot)
+            }
+            if (calIds.isNotEmpty()) {
+                CalendarAppWidgetProvider.updateWidgets(appContext, manager, calIds, snapshot)
+            }
+            if (clsIds.isNotEmpty()) {
+                ClassScheduleAppWidgetProvider.updateWidgets(appContext, manager, clsIds, snapshot)
+            }
+            if (taskIds.isNotEmpty()) {
+                TasksAppWidgetProvider.updateWidgets(appContext, manager, taskIds, snapshot)
+            }
+            if (quickIds.isNotEmpty()) {
+                QuickActionsAppWidgetProvider.updateWidgets(appContext, manager, quickIds, snapshot)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Widget refresh skipped: ${e.message}")
         }
     }
 

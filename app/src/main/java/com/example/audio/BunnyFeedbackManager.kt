@@ -1,9 +1,14 @@
 package com.example.audio
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.media.SoundPool
@@ -75,8 +80,9 @@ enum class BunnyHaptic {
  *   inside `cacheDir/bunny_audio/`.
  * - Uses [SoundPool] (`USAGE_MEDIA`) for instant low-latency SFX mixing, with a minimum-buffer-clamped
  *   [AudioTrack] fallback so short chimes never fail AudioTrack buffer validation on emulators.
- * - Uses [MediaPlayer] (`USAGE_MEDIA`, `isLooping = true`) for seamless 8-bit lullaby BGM playback
- *   across devices and emulators, pausing cleanly on background pause and resuming on foreground resume.
+ * - Uses [MediaPlayer] (`USAGE_MEDIA`, `isLooping = true`) with proper [AudioFocusRequest] and
+ *   [AudioManager.ACTION_AUDIO_BECOMING_NOISY] handling so BGM respectfully pauses or ducks for
+ *   phone calls, external media apps, and unplugged headphones.
  */
 class BunnyFeedbackManager private constructor(context: Context) {
 
@@ -85,6 +91,8 @@ class BunnyFeedbackManager private constructor(context: Context) {
         PREFS_NAME,
         Context.MODE_PRIVATE
     )
+    private val audioManager: AudioManager? =
+        appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable !is CancellationException) {
             Log.w(TAG, "Audio feedback background warning: ${throwable.message}")
@@ -150,6 +158,9 @@ class BunnyFeedbackManager private constructor(context: Context) {
     private val bgmPrepMutex = Mutex()
     private val bgmGeneration = AtomicLong(0L)
     private var bgmPlayer: MediaPlayer? = null
+    private var bgmFocusRequest: AudioFocusRequest? = null
+    private var hasBgmAudioFocus: Boolean = false
+    private var isNoisyReceiverRegistered: Boolean = false
 
     @Volatile
     private var isForeground: Boolean = false
@@ -159,6 +170,43 @@ class BunnyFeedbackManager private constructor(context: Context) {
 
     @Volatile
     private var bgmPausedForMemo: Boolean = false
+
+    @Volatile
+    private var isDucked: Boolean = false
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                isDucked = false
+                hasBgmAudioFocus = false
+                pauseBgmInternal(abandonFocus = false)
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                isDucked = false
+                pauseBgmInternal(abandonFocus = false)
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                isDucked = true
+                applyCurrentBgmVolume()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                isDucked = false
+                hasBgmAudioFocus = true
+                applyCurrentBgmVolume()
+                if (isForeground && _preferences.value.bgmEnabled && !bgmPausedForMemo) {
+                    ensureBgmPlayingAsync()
+                }
+            }
+        }
+    }
+
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                pauseBgmInternal(abandonFocus = true)
+            }
+        }
+    }
 
     init {
         // Synthesize and pre-load cached .wav SFX & 8-bit bunny voice clips asynchronously
@@ -240,12 +288,13 @@ class BunnyFeedbackManager private constructor(context: Context) {
             isForeground = true
             ensureBgmPlayingAsync()
         } else {
-            pauseBgmInternal()
+            pauseBgmInternal(abandonFocus = true)
         }
     }
 
     fun setBgmTrackStyle(style: BgmTrackStyle) {
-        val hasCustom = customBgmFile().let { it.exists() && it.length() > 0L }
+        val hasCustom = _preferences.value.customBgmName != null ||
+            runCatching { customBgmFile().let { it.exists() && it.length() > 0L } }.getOrDefault(false)
         val target = if (style == BgmTrackStyle.CUSTOM_FILE && !hasCustom) {
             BgmTrackStyle.PAPER_MORNING
         } else {
@@ -264,6 +313,7 @@ class BunnyFeedbackManager private constructor(context: Context) {
 
     fun importCustomBgm(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
         scope.launch(Dispatchers.IO) {
+            val tmpFile = File(persistentAudioDir, "$CUSTOM_BGM_FILENAME.tmp")
             val result = runCatching {
                 val resolver = appContext.contentResolver
                 val displayName = resolver.query(
@@ -279,7 +329,6 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     } else null
                 }?.trim()?.take(80)?.ifBlank { null } ?: "Custom BGM"
 
-                val tmpFile = File(persistentAudioDir, "$CUSTOM_BGM_FILENAME.tmp")
                 var totalBytes = 0L
                 val maxBytes = 40L * 1024L * 1024L
                 resolver.openInputStream(uri)?.use { input ->
@@ -299,7 +348,6 @@ class BunnyFeedbackManager private constructor(context: Context) {
                 } ?: throw IllegalStateException("Could not open selected audio file.")
 
                 if (totalBytes <= 0L) {
-                    tmpFile.delete()
                     throw IllegalArgumentException("Selected audio file is empty.")
                 }
 
@@ -312,6 +360,8 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     runCatching { probe.release() }
                 }
 
+                // Release any active custom MediaPlayer before replacing the backing file
+                releaseBgmPlayer()
                 val dest = customBgmFile()
                 if (!tmpFile.renameTo(dest)) {
                     tmpFile.copyTo(dest, overwrite = true)
@@ -329,10 +379,13 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     bgmTrackStyle = BgmTrackStyle.CUSTOM_FILE,
                     customBgmName = displayName
                 )
-                releaseBgmPlayer()
                 isForeground = true
                 ensureBgmPlayingAsync()
                 displayName
+            }.also { res ->
+                if (res.isFailure) {
+                    runCatching { tmpFile.delete() }
+                }
             }
             withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
@@ -344,26 +397,29 @@ class BunnyFeedbackManager private constructor(context: Context) {
     }
 
     fun clearCustomBgm() {
-        runCatching { customBgmFile().delete() }
-        val nextStyle = if (_preferences.value.bgmTrackStyle == BgmTrackStyle.CUSTOM_FILE) {
+        val wasCustom = _preferences.value.bgmTrackStyle == BgmTrackStyle.CUSTOM_FILE
+        val nextStyle = if (wasCustom) {
             BgmTrackStyle.PAPER_MORNING
         } else {
             _preferences.value.bgmTrackStyle
+        }
+        // Always stop & release active player before deleting the backing custom file
+        if (wasCustom) {
+            releaseBgmPlayer()
         }
         prefs.edit()
             .remove(KEY_CUSTOM_BGM_NAME)
             .putString(KEY_BGM_STYLE, nextStyle.name)
             .apply()
-        val wasCustom = _preferences.value.bgmTrackStyle == BgmTrackStyle.CUSTOM_FILE
         _preferences.value = _preferences.value.copy(
             bgmTrackStyle = nextStyle,
             customBgmName = null
         )
-        if (wasCustom) {
-            releaseBgmPlayer()
-            if (_preferences.value.bgmEnabled && isForeground) {
-                ensureBgmPlayingAsync()
-            }
+        scope.launch(Dispatchers.IO) {
+            runCatching { customBgmFile().delete() }
+        }
+        if (wasCustom && _preferences.value.bgmEnabled && isForeground) {
+            ensureBgmPlayingAsync()
         }
     }
 
@@ -377,9 +433,7 @@ class BunnyFeedbackManager private constructor(context: Context) {
         val clamped = volume.coerceIn(MIN_BGM_VOLUME, MAX_BGM_VOLUME)
         prefs.edit().putFloat(KEY_BGM_VOLUME, clamped).apply()
         _preferences.value = _preferences.value.copy(bgmVolume = clamped)
-        synchronized(bgmLock) {
-            runCatching { bgmPlayer?.setVolume(clamped, clamped) }
-        }
+        applyCurrentBgmVolume()
     }
 
     fun onForegroundResume() {
@@ -391,12 +445,12 @@ class BunnyFeedbackManager private constructor(context: Context) {
 
     fun onForegroundPause() {
         isForeground = false
-        pauseBgmInternal()
+        pauseBgmInternal(abandonFocus = true)
     }
 
     fun pauseBgmForVoiceMemo() {
         bgmPausedForMemo = true
-        pauseBgmInternal()
+        pauseBgmInternal(abandonFocus = true)
     }
 
     fun resumeBgmAfterVoiceMemo() {
@@ -692,12 +746,12 @@ class BunnyFeedbackManager private constructor(context: Context) {
         }
 
         // Safe fallback path via AudioTrack with buffer size >= getMinBufferSize
-        playPcmFallbackAsync {
+        playPcmFallbackAsync(volume = SFX_VOLUME) {
             sfxCache.computeIfAbsent(sfx) { ChiptuneSynthesizer.synthesizeSfx(it) }
         }
     }
 
-    private fun playPcmFallbackAsync(loadPcm: () -> ShortArray) {
+    private fun playPcmFallbackAsync(volume: Float = VOICE_VOLUME, loadPcm: () -> ShortArray) {
         if (activeSfxCount.get() >= MAX_CONCURRENT_SFX) return
         scope.launch(Dispatchers.IO) {
             if (activeSfxCount.incrementAndGet() > MAX_CONCURRENT_SFX) {
@@ -745,7 +799,7 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     return@launch
                 }
                 track.write(payload, 0, payload.size)
-                track.setVolume(VOICE_VOLUME)
+                track.setVolume(volume)
                 track.play()
 
                 val durationMs = ((pcm.size * 1_000L) / ChiptuneSynthesizer.SAMPLE_RATE) + 60L
@@ -753,10 +807,9 @@ class BunnyFeedbackManager private constructor(context: Context) {
             } catch (err: Throwable) {
                 Log.w(TAG, "AudioTrack fallback failed: ${err.message}")
             } finally {
-                runCatching {
-                    track?.stop()
-                    track?.release()
-                }
+                // Separate stop() and release() so an IllegalStateException on stop() never leaks the AudioTrack
+                runCatching { track?.stop() }
+                runCatching { track?.release() }
                 activeSfxCount.decrementAndGet()
             }
         }
@@ -820,25 +873,101 @@ class BunnyFeedbackManager private constructor(context: Context) {
         player.setDataSource(cachedRaw.absolutePath)
     }
 
-    private fun releaseBgmPlayer() {
-        bgmGeneration.incrementAndGet()
+    private fun effectiveBgmVolume(): Float {
+        val base = _preferences.value.bgmVolume
+        return if (isDucked) (base * 0.28f).coerceAtLeast(0.02f) else base
+    }
+
+    private fun applyCurrentBgmVolume() {
+        val vol = effectiveBgmVolume()
         synchronized(bgmLock) {
-            runCatching {
-                bgmPlayer?.stop()
-            }
-            runCatching {
-                bgmPlayer?.release()
-            }
-            bgmPlayer = null
-            isPreparingBgm = false
+            runCatching { bgmPlayer?.setVolume(vol, vol) }
         }
     }
 
+    private fun requestBgmAudioFocus(): Boolean {
+        val am = audioManager ?: return true
+        if (hasBgmAudioFocus) return true
+        val granted = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val req = bgmFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    .setWillPauseWhenDucked(false)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                    .build()
+                    .also { bgmFocusRequest = it }
+                am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        }.getOrDefault(true)
+        hasBgmAudioFocus = granted
+        if (granted) registerNoisyReceiver()
+        return granted
+    }
+
+    private fun abandonBgmAudioFocus() {
+        unregisterNoisyReceiver()
+        if (!hasBgmAudioFocus) return
+        val am = audioManager ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                bgmFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusChangeListener)
+            }
+        }
+        hasBgmAudioFocus = false
+        isDucked = false
+    }
+
+    private fun registerNoisyReceiver() {
+        if (isNoisyReceiverRegistered) return
+        runCatching {
+            val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(becomingNoisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                appContext.registerReceiver(becomingNoisyReceiver, filter)
+            }
+            isNoisyReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (!isNoisyReceiverRegistered) return
+        runCatching { appContext.unregisterReceiver(becomingNoisyReceiver) }
+        isNoisyReceiverRegistered = false
+    }
+
+    private fun releaseBgmPlayer() {
+        bgmGeneration.incrementAndGet()
+        synchronized(bgmLock) {
+            runCatching { bgmPlayer?.stop() }
+            runCatching { bgmPlayer?.release() }
+            bgmPlayer = null
+            isPreparingBgm = false
+        }
+        abandonBgmAudioFocus()
+    }
+
     private fun ensureBgmPlayingAsync() {
+        if (!requestBgmAudioFocus()) return
         synchronized(bgmLock) {
             val existing = bgmPlayer
             if (existing != null) {
-                val vol = _preferences.value.bgmVolume
+                val vol = effectiveBgmVolume()
                 runCatching {
                     existing.setVolume(vol, vol)
                     if (!existing.isPlaying) {
@@ -883,7 +1012,7 @@ class BunnyFeedbackManager private constructor(context: Context) {
                         }
                         isLooping = true
                         prepare()
-                        val vol = _preferences.value.bgmVolume
+                        val vol = effectiveBgmVolume()
                         setVolume(vol, vol)
                         setOnErrorListener { mp, what, extra ->
                             Log.w(TAG, "BGM MediaPlayer error what=$what extra=$extra")
@@ -896,12 +1025,12 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     }
 
                     synchronized(bgmLock) {
-                        if (bgmGeneration.get() != targetGeneration || !isForeground || !_preferences.value.bgmEnabled || bgmPausedForMemo) {
+                        if (bgmGeneration.get() != targetGeneration || !isForeground || !_preferences.value.bgmEnabled || bgmPausedForMemo || !hasBgmAudioFocus) {
                             runCatching { player.release() }
                             return@synchronized
                         }
                         runCatching { bgmPlayer?.release() }
-                        val vol = _preferences.value.bgmVolume
+                        val vol = effectiveBgmVolume()
                         player.setVolume(vol, vol)
                         player.start()
                         bgmPlayer = player
@@ -910,25 +1039,31 @@ class BunnyFeedbackManager private constructor(context: Context) {
                     if (err is CancellationException) throw err
                     Log.w(TAG, "Failed starting BGM: ${err.message}")
                     if (_preferences.value.bgmTrackStyle == BgmTrackStyle.CUSTOM_FILE) {
-                        // Gracefully fall back to built-in Paper Morning if custom audio fails to play
                         prefs.edit().putString(KEY_BGM_STYLE, BgmTrackStyle.PAPER_MORNING.name).apply()
                         _preferences.value = _preferences.value.copy(bgmTrackStyle = BgmTrackStyle.PAPER_MORNING)
                     }
                 } finally {
-                    isPreparingBgm = false
+                    synchronized(bgmLock) {
+                        isPreparingBgm = false
+                    }
                 }
             }
         }
     }
 
-    private fun pauseBgmInternal() {
+    private fun pauseBgmInternal(abandonFocus: Boolean = false) {
         synchronized(bgmLock) {
-            val player = bgmPlayer ?: return
-            runCatching {
-                if (player.isPlaying) {
-                    player.pause()
+            val player = bgmPlayer
+            if (player != null) {
+                runCatching {
+                    if (player.isPlaying) {
+                        player.pause()
+                    }
                 }
             }
+        }
+        if (abandonFocus) {
+            abandonBgmAudioFocus()
         }
     }
 

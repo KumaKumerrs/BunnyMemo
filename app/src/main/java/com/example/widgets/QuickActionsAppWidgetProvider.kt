@@ -3,6 +3,7 @@ package com.example.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import com.example.R
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,8 @@ class QuickActionsAppWidgetProvider : AppWidgetProvider() {
             try {
                 val snapshot = WidgetDataLoader.load(context)
                 updateWidgets(context, appWidgetManager, appWidgetIds, snapshot)
+            } catch (e: Exception) {
+                Log.w(TAG, "Quick Actions widget update failed: ${e.message}")
             } finally {
                 pendingResult.finish()
             }
@@ -29,6 +32,8 @@ class QuickActionsAppWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "QuickWidgetProvider"
+
         fun updateWidgets(
             context: Context,
             appWidgetManager: AppWidgetManager,
@@ -37,7 +42,8 @@ class QuickActionsAppWidgetProvider : AppWidgetProvider() {
         ) {
             val habitBitmap = WidgetBitmapRenderer.renderWeeklyHabitStripBitmap(
                 today = snapshot.today,
-                habitBloomDates = snapshot.habitBloomDates
+                habitBloomDates = snapshot.habitBloomDates,
+                isDark = WidgetBitmapRenderer.isDarkMode(context)
             )
 
             val streakText = when (snapshot.habitStreakDays) {
