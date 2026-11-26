@@ -41,7 +41,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,7 +88,6 @@ import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
-import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
 
@@ -103,6 +106,7 @@ fun TodayScreen(
     modifier: Modifier = Modifier
 ) {
     val today = state.todayDate()
+    var showActivity by rememberSaveable { mutableStateOf(false) }
     val nowMillis = state.nowMillis
 
     val todayClasses = remember(state.classSchedules, today) {
@@ -212,11 +216,11 @@ fun TodayScreen(
 
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
                 .widthIn(max = containerMaxWidth)
+                .fillMaxSize()
                 .testTag("today_screen_list"),
-            contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 10.dp, bottom = 148.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 20.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Editorial borderless hero header directly on the 60% neutral canvas
             item(key = "today_header") {
@@ -243,38 +247,13 @@ fun TodayScreen(
                             style = MaterialTheme.typography.headlineMedium,
                             color = MidnightNavy
                         )
-                        if (!isQuietDay) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (totalDueCount > 0) {
-                                    ModernPillBadge(
-                                        text = "$totalDueCount due",
-                                        containerColor = SoftIceSurface,
-                                        contentColor = MidnightNavy
-                                    )
-                                }
-                                if (todayClasses.isNotEmpty()) {
-                                    ModernPillBadge(
-                                        text = "${todayClasses.size} ${if (todayClasses.size == 1) "class" else "classes"}",
-                                        containerColor = CalmSageContainer,
-                                        contentColor = CalmSage
-                                    )
-                                }
-                                if (todayEvents.isNotEmpty()) {
-                                    ModernPillBadge(
-                                        text = "${todayEvents.size} ${if (todayEvents.size == 1) "event" else "events"}",
-                                        containerColor = SkyBlue.copy(alpha = 0.55f),
-                                        contentColor = DeepBlue
-                                    )
-                                }
-                                if (approachingPlans.isNotEmpty()) {
-                                    ModernPillBadge(
-                                        text = "${approachingPlans.size} ${if (approachingPlans.size == 1) "plan" else "plans"}",
-                                        containerColor = SoftIceSurface,
-                                        contentColor = MutedNavy
-                                    )
-                                }
-                            }
+                        val agendaSummary = listOfNotNull(
+                            "$totalDueCount due".takeIf { totalDueCount > 0 },
+                            "${todayClasses.size} ${if (todayClasses.size == 1) "class" else "classes"}".takeIf { todayClasses.isNotEmpty() },
+                            "${todayEvents.size} ${if (todayEvents.size == 1) "event" else "events"}".takeIf { todayEvents.isNotEmpty() }
+                        ).joinToString(" · ")
+                        if (agendaSummary.isNotEmpty()) {
+                            Text(agendaSummary, style = MaterialTheme.typography.bodyMedium, color = MutedNavy)
                         }
                     }
                     Spacer(modifier = Modifier.width(12.dp))
@@ -295,13 +274,6 @@ fun TodayScreen(
                 }
             }
 
-            // Live app usage duration strip (taps through to Reports breakdown)
-            item(key = "today_usage_strip") {
-                CompactAppUsageStrip(
-                    usage = usageSummary,
-                    onClick = onOpenReports
-                )
-            }
 
         if (isQuietDay) {
             // Calm elevated empty state card
@@ -515,14 +487,23 @@ fun TodayScreen(
                 }
             }
 
-            // Visual Habit Tracking Calendar — blooms a forget-me-not on every day a daily task is completed
-            item(key = "today_habit_garden") {
-                ForgetMeNotHabitCalendarCard(
-                    items = state.items,
-                    steps = state.steps,
-                    today = today,
-                    onAddTaskForDate = { d -> onAddClick(d) }
-                )
+            item(key = "activity_toggle") {
+                TextButton(onClick = { showActivity = !showActivity }) {
+                    Text(if (showActivity) "Hide activity & habit garden" else "Show activity & habit garden")
+                }
+            }
+            if (showActivity) {
+                item(key = "today_usage_strip") {
+                    CompactAppUsageStrip(usage = usageSummary, onClick = onOpenReports)
+                }
+                item(key = "today_habit_garden") {
+                    ForgetMeNotHabitCalendarCard(
+                        items = state.items,
+                        steps = state.steps,
+                        today = today,
+                        onAddTaskForDate = { d -> onAddClick(d) }
+                    )
+                }
             }
         }
     }
