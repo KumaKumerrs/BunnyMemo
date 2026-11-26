@@ -60,6 +60,9 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.Badge
@@ -703,10 +706,16 @@ private fun PlannerWorkspaceShell(
                                     drawerState = drawerState,
                                     gesturesEnabled = drawerState.isOpen,
                                     drawerContent = {
-                                        ModalDrawerSheet {
+                                        ModalDrawerSheet(drawerContainerColor = PureWhite) {
                                             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-                                                Text("Bunny Memo", style = MaterialTheme.typography.headlineSmall,
-                                                    modifier = Modifier.padding(12.dp))
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    ForgetMeNotFlower(bloomed = true, size = 32.dp)
+                                                    Text("Bunny Memo", style = MaterialTheme.typography.headlineSmall, color = MidnightNavy)
+                                                }
                                                 PlannerTab.entries.forEach { tab ->
                                                     NavigationDrawerItem(
                                                         label = { Text(stringResource(tab.labelRes)) },
@@ -722,21 +731,33 @@ private fun PlannerWorkspaceShell(
                                                     )
                                                 }
                                                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                                                DropdownMenuItem(text = { Text(if (isLocalMode) "Back up memos" else "Sync now") }, onClick = {
-                                                    scope.launch { drawerState.close() }
-                                                    if (isLocalMode) {
-                                                        cloudSignInError = null
-                                                        showCloudSyncModal = true
-                                                    } else onRequestManualSync()
-                                                })
-                                                DropdownMenuItem(text = { Text("Dedication") }, onClick = {
-                                                    scope.launch { drawerState.close() }
-                                                    forceShowDedication = true
-                                                })
-                                                DropdownMenuItem(text = { Text("Settings") }, onClick = {
-                                                    scope.launch { drawerState.close() }
-                                                    showSettingsDialog = true
-                                                })
+                                                DropdownMenuItem(
+                                                    text = { Text(if (isLocalMode) "Back up memos" else "Sync now") },
+                                                    leadingIcon = { Icon(if (isLocalMode) Icons.Outlined.CloudUpload else Icons.Outlined.CloudSync, contentDescription = null, tint = DeepBlue) },
+                                                    onClick = {
+                                                        scope.launch { drawerState.close() }
+                                                        if (isLocalMode) {
+                                                            cloudSignInError = null
+                                                            showCloudSyncModal = true
+                                                        } else onRequestManualSync()
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Dedication") },
+                                                    leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, tint = DeepBlue) },
+                                                    onClick = {
+                                                        scope.launch { drawerState.close() }
+                                                        forceShowDedication = true
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Settings") },
+                                                    leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = DeepBlue) },
+                                                    onClick = {
+                                                        scope.launch { drawerState.close() }
+                                                        showSettingsDialog = true
+                                                    }
+                                                )
                                             }
                                         }
                                     }
