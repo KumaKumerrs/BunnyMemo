@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "130307702843",
+    "project_id": "bunnymemo-9d132",
+    "storage_bucket": "bunnymemo-9d132.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:130307702843:android:813715c8ad4b34323d1c1e",
+        "android_client_info": {
+          "package_name": "com.forgetmenot.planner"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "130307702843-ml020fivn5ovhbtjtua2p8rsq43aqra3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.forgetmenot.planner",
+            "certificate_hash": "62732a42c540cf897df49da912c41a3409c57138"
+          }
+        },
+        {
+          "client_id": "130307702843-al3ctfb4eo9r925c7nv3p16i1nq2a59v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAH4Gsg1vVmHcwY88SSEsddO1J69i0luQ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "130307702843-al3ctfb4eo9r925c7nv3p16i1nq2a59v.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
