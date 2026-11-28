@@ -8,6 +8,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -34,11 +37,14 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.ui.theme.BunnyFlowerCrown
 import com.example.ui.theme.ForgetMeNotBlue
 import com.example.ui.theme.LocalIsDarkTheme
@@ -234,12 +240,35 @@ enum class BunnyPose {
     GREETING,
     RESTING,
     ENVELOPE,
-    CELEBRATING
+    CELEBRATING,
+    STUDYING,
+    PATTED,
+    GUARD
+}
+
+private fun studioBreedPortraitRes(breed: BunnyBreed): Int? = when (breed) {
+    BunnyBreed.HOLLAND_LOP -> R.drawable.bunny_breed_holland_lop
+    BunnyBreed.NETHERLAND_DWARF -> R.drawable.bunny_breed_netherland_dwarf
+    BunnyBreed.DUTCH -> R.drawable.bunny_breed_dutch
+    BunnyBreed.LIONHEAD -> R.drawable.bunny_breed_lionhead
+    BunnyBreed.HARLEQUIN -> R.drawable.bunny_breed_harlequin
+    BunnyBreed.ENGLISH_ANGORA -> R.drawable.bunny_breed_angora
+    else -> null
+}
+
+private fun studioPoseRes(pose: BunnyPose): Int = when (pose) {
+    BunnyPose.GREETING -> R.drawable.bunny_pose_greeting
+    BunnyPose.RESTING -> R.drawable.bunny_pose_resting
+    BunnyPose.ENVELOPE -> R.drawable.bunny_breed_dutch
+    BunnyPose.CELEBRATING -> R.drawable.bunny_pose_celebrating
+    BunnyPose.STUDYING -> R.drawable.bunny_pose_studying
+    BunnyPose.PATTED -> R.drawable.bunny_pose_patted
+    BunnyPose.GUARD -> R.drawable.bunny_pose_guard
 }
 
 /**
- * Monthly breed bunny illustration drawn with crisp Midnight Navy outline and breed-specific markings.
- * Defaults automatically to the current month's breed unless an explicit [breed] is passed.
+ * Studio Forget-Me-Not bunny illustration supporting both expressive mascot poses and
+ * seasonal breed portraits, falling back gracefully to custom Canvas breed art when needed.
  */
 @Composable
 fun SmallBunnyIllustration(
@@ -249,28 +278,29 @@ fun SmallBunnyIllustration(
     breed: BunnyBreed = BunnyBreed.forCurrentMonth(),
     contentDesc: String? = null
 ) {
-    val isDarkTheme = LocalIsDarkTheme.current
-    Canvas(
+    val breedPortrait = if (pose == BunnyPose.GREETING) studioBreedPortraitRes(breed) else null
+    if (breedPortrait != null) {
+        Image(
+            painter = painterResource(id = breedPortrait),
+            contentDescription = contentDesc,
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+        )
+        return
+    }
+
+    val poseDrawable = studioPoseRes(pose)
+    val isSquarePortrait = pose == BunnyPose.ENVELOPE
+    Image(
+        painter = painterResource(id = poseDrawable),
+        contentDescription = contentDesc,
+        contentScale = if (isSquarePortrait) ContentScale.Crop else ContentScale.Fit,
         modifier = modifier
             .size(size)
-            .then(
-                if (contentDesc != null) Modifier.semantics { contentDescription = contentDesc }
-                else Modifier
-            )
-    ) {
-        val w = this.size.width
-        val h = this.size.height
-        val strokeW = (w * 0.042f).coerceIn(1.8f, 3.6f)
-        val stroke = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        drawBreedBunnyPose(
-            pose = pose,
-            breed = breed,
-            isDarkTheme = isDarkTheme,
-            w = w,
-            h = h,
-            stroke = stroke
-        )
-    }
+            .then(if (isSquarePortrait) Modifier.clip(CircleShape) else Modifier)
+    )
 }
 
 @Composable

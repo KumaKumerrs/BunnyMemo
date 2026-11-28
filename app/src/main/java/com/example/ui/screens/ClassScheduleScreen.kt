@@ -102,6 +102,12 @@ fun ClassScheduleScreen(
         }
     }
     val notifiedCount = remember(allClasses) { allClasses.count { it.notifyEnabled } }
+    val nextClassToday = remember(allClasses, today) {
+        allClasses
+            .filter { it.occursOnDate(today) }
+            .sortedBy { it.startTimeMinutes }
+            .firstOrNull()
+    }
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -180,6 +186,57 @@ fun ClassScheduleScreen(
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text("Add class", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
+        // Flagship "Up Next" hero card for today's upcoming class
+        if (nextClassToday != null) {
+            item(key = "class_up_next_hero") {
+                ModernPanel(
+                    containerColor = DeepBlue,
+                    borderColor = DeepBlue,
+                    shape = MaterialTheme.shapes.large,
+                    elevation = 4.dp,
+                    onClick = {
+                        feedback.onPopOpen()
+                        onEditClass(nextClassToday)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("class_up_next_hero_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "UP NEXT TODAY",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                        )
+                        Text(
+                            text = nextClassToday.subject,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val timeAndRoom = buildString {
+                            append(PlannerDateUtils.formatMinutesRange(nextClassToday.startTimeMinutes, nextClassToday.endTimeMinutes))
+                            if (!nextClassToday.room.isNullOrBlank()) {
+                                append(" · ")
+                                append(nextClassToday.room)
+                            }
+                        }
+                        Text(
+                            text = timeAndRoom,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.90f)
+                        )
+                    }
                 }
             }
         }

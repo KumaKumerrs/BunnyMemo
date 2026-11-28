@@ -311,9 +311,10 @@ fun FocusSessionModal(
                         pose = when (focusState.phase) {
                             FocusPhase.COMPLETED -> BunnyPose.CELEBRATING
                             FocusPhase.BREAK -> BunnyPose.RESTING
-                            else -> BunnyPose.GREETING
+                            FocusPhase.FOCUS -> BunnyPose.STUDYING
+                            else -> BunnyPose.STUDYING
                         },
-                        size = 54.dp,
+                        size = 64.dp,
                         contentDesc = "Focus session bunny"
                     )
                     Text(

@@ -960,6 +960,27 @@ fun GrowingGuardBunnyIllustration(
     modifier: Modifier = Modifier
 ) {
     val p = progress.coerceIn(0f, 1f)
+    val visualScale = 0.62f + p * 0.38f
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        if (p > 0.2f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.76f * visualScale)
+                    .clip(CircleShape)
+                    .background(ForgetMeNotBlue.copy(alpha = (p * 0.36f).coerceIn(0.08f, 0.36f)))
+            )
+        }
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = R.drawable.bunny_pose_guard),
+            contentDescription = "Bunny Focus Guard",
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(visualScale)
+        )
+    }
+    return
     Canvas(modifier = modifier) {
         val sizePx = size.minDimension
         if (sizePx <= 4f) return@Canvas

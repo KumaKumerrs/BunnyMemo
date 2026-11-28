@@ -37,6 +37,9 @@ internal fun DrawScope.drawBreedBunnyPose(
             drawCircle(SkyBlue, radius = w * 0.028f, center = Offset(w * 0.90f, h * 0.34f))
             drawInlineForgetMeNot(Offset(w * 0.80f, h * 0.62f), w * 0.17f)
         }
+        BunnyPose.STUDYING, BunnyPose.PATTED, BunnyPose.GUARD -> {
+            drawGreetingBreedBunny(breed, palette, w, h, stroke)
+        }
     }
 }
 
