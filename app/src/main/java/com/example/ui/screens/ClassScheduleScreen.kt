@@ -22,10 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Room
@@ -170,12 +169,12 @@ fun ClassScheduleScreen(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     modifier = Modifier.testTag("class_schedule_add_top_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = Icons.Rounded.Add,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -191,7 +190,7 @@ fun ClassScheduleScreen(
                 ModernPanel(
                     containerColor = SkyBlue.copy(alpha = 0.35f),
                     borderColor = ForgetMeNotBlue.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     elevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -224,7 +223,7 @@ fun ClassScheduleScreen(
                                 containerColor = DeepBlue,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             Text("Allow", style = MaterialTheme.typography.labelMedium)
@@ -237,7 +236,7 @@ fun ClassScheduleScreen(
         // Day-at-top Timetable Grid (Days across top, Subject + Time cells below each day)
         item(key = "timetable_grid_panel") {
             ModernPanel(
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 elevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -356,7 +355,7 @@ fun ClassScheduleScreen(
         if (allClasses.isEmpty()) {
             item(key = "empty_class_schedule") {
                 ModernPanel(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = MaterialTheme.shapes.large,
                     elevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -391,9 +390,9 @@ fun ClassScheduleScreen(
                                 containerColor = DeepBlue,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            shape = RoundedCornerShape(100.dp)
+                            shape = CircleShape
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Create first class")
                         }
@@ -444,7 +443,7 @@ private fun TimetableDayColumn(
 ) {
     Surface(
         color = if (isToday) SkyBlue.copy(alpha = 0.24f) else SoftIceSurface.copy(alpha = 0.72f),
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(
             width = if (isToday) 1.25.dp else 0.75.dp,
             color = if (isToday) ForgetMeNotBlue.copy(alpha = 0.65f) else SubtleBorder
@@ -458,7 +457,7 @@ private fun TimetableDayColumn(
             // Day Header at the top
             Surface(
                 color = if (isToday) DeepBlue else PureWhite,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 border = if (isToday) null else BorderStroke(0.75.dp, SubtleBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -496,7 +495,7 @@ private fun TimetableDayColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(MaterialTheme.shapes.small)
                         .background(PureWhite.copy(alpha = 0.6f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -519,7 +518,7 @@ private fun TimetableDayColumn(
             Surface(
                 onClick = onAddForDay,
                 color = PureWhite,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 border = BorderStroke(1.dp, SubtleBorder),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -533,7 +532,7 @@ private fun TimetableDayColumn(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = Icons.Rounded.Add,
                         contentDescription = "Add class for ${PlannerDateUtils.weekdayShortLabel(dayIndex)}",
                         tint = DeepBlue,
                         modifier = Modifier.size(14.dp)
@@ -559,7 +558,7 @@ private fun TimetableClassCell(
     Surface(
         onClick = onClick,
         color = PureWhite,
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
         modifier = Modifier
             .fillMaxWidth()
@@ -621,7 +620,7 @@ private fun TimetableClassCell(
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.NotificationsActive,
+                                imageVector = Icons.Rounded.NotificationsActive,
                                 contentDescription = "Notification enabled",
                                 tint = DeepBlue,
                                 modifier = Modifier.size(12.dp)
@@ -657,7 +656,7 @@ private fun SemesterClassSummaryCard(
     val active = schedule.isActiveOnOrAfter(today)
 
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = accent.copy(alpha = 0.32f),
         elevation = 2.dp,
         onClick = onClick,
@@ -675,7 +674,7 @@ private fun SemesterClassSummaryCard(
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(fill),
                 contentAlignment = Alignment.Center
             ) {
@@ -784,7 +783,7 @@ private fun SemesterClassSummaryCard(
                                 horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.NotificationsActive,
+                                    imageVector = Icons.Rounded.NotificationsActive,
                                     contentDescription = null,
                                     tint = DeepBlue,
                                     modifier = Modifier.size(13.dp)

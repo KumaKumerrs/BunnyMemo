@@ -137,7 +137,7 @@ fun PhotoAttachmentPickerSection(
         modifier = modifier
             .fillMaxWidth()
             .testTag("photo_attachment_picker_section"),
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         color = SoftIceSurface,
         border = BorderStroke(1.dp, SubtleBorder)
     ) {
@@ -188,7 +188,7 @@ fun PhotoAttachmentPickerSection(
                             }
                         },
                         enabled = !isImporting,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("add_photo_button")
@@ -233,8 +233,8 @@ fun PhotoAttachmentPickerSection(
                         Box(
                             modifier = Modifier
                                 .size(88.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .border(1.dp, SubtleBorder, RoundedCornerShape(14.dp))
+                                .clip(MaterialTheme.shapes.medium)
+                                .border(1.dp, SubtleBorder, MaterialTheme.shapes.medium)
                                 .background(PureWhite)
                         ) {
                             AsyncImage(
@@ -343,7 +343,7 @@ fun PhotoThumbnailGalleryCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("detail_photos_card"),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         color = PureWhite,
         border = BorderStroke(1.dp, SubtleBorder)
     ) {
@@ -393,7 +393,7 @@ fun PhotoThumbnailGalleryCard(
                             }
                         },
                         enabled = !isImporting,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("detail_add_photo_button")
@@ -436,8 +436,8 @@ fun PhotoThumbnailGalleryCard(
                         Box(
                             modifier = Modifier
                                 .size(104.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .border(1.dp, SubtleBorder, RoundedCornerShape(16.dp))
+                                .clip(MaterialTheme.shapes.medium)
+                                .border(1.dp, SubtleBorder, MaterialTheme.shapes.medium)
                                 .background(SoftIceSurface)
                                 .clickable(role = Role.Image) {
                                     feedback.onLightTick()
@@ -531,7 +531,7 @@ fun PhotoLightboxModal(
                     .align(Alignment.Center)
                     .fillMaxWidth()
                     .padding(vertical = 64.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(MaterialTheme.shapes.medium)
             )
 
             Row(

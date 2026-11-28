@@ -1,10 +1,15 @@
 package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,48 +19,65 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.DeepBlue
-import com.example.ui.theme.MidnightNavy
-import com.example.ui.theme.MutedNavy
-import com.example.ui.theme.PureWhite
-import com.example.ui.theme.SkyBlue
-import com.example.ui.theme.SoftIceSurface
-import com.example.ui.theme.SubtleBorder
+import com.example.ui.theme.ForgetMeNotTheme
+import com.example.ui.theme.LocalForgetMeNotColors
+
+/**
+ * Subtle tactile press-scale micro-interaction respecting system reduced-motion preferences.
+ */
+@Composable
+fun Modifier.pressScale(
+    interactionSource: MutableInteractionSource,
+    pressedScale: Float = 0.985f
+): Modifier {
+    val reducedMotion = rememberReducedMotion()
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && !reducedMotion) pressedScale else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "press_scale"
+    )
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
 
 /**
  * Modern elevated card panel following a 60-30-10 aesthetic:
- * Crisp pure-white surface, whisper-soft ambient shadow, and hairline neutral border
- * instead of heavy saturated outlines.
+ * Semantic card surface, whisper-soft ambient shadow, hairline neutral border,
+ * and subtle spring press feedback when clickable.
  */
 @Composable
 fun ModernPanel(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(22.dp),
-    containerColor: Color = PureWhite,
-    borderColor: Color = SubtleBorder.copy(alpha = 0.85f),
+    shape: Shape = MaterialTheme.shapes.large,
+    containerColor: Color = LocalForgetMeNotColors.current.surfaceCard,
+    borderColor: Color = LocalForgetMeNotColors.current.borderSubtle.copy(alpha = 0.85f),
     borderWidth: Dp = 0.75.dp,
     elevation: Dp = 3.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
-    val shadowTint = if (isDark) Color.Black.copy(alpha = 0.34f) else MidnightNavy.copy(alpha = 0.08f)
+    val palette = LocalForgetMeNotColors.current
+    val shadowTint = if (palette.isDark) Color.Black.copy(alpha = 0.34f) else palette.inkPrimary.copy(alpha = 0.08f)
     val shadowModifier = modifier.shadow(
         elevation = elevation,
         shape = shape,
@@ -64,12 +86,14 @@ fun ModernPanel(
         spotColor = shadowTint
     )
     if (onClick != null) {
+        val interactionSource = remember { MutableInteractionSource() }
         Surface(
             onClick = onClick,
+            interactionSource = interactionSource,
             shape = shape,
             color = containerColor,
             border = BorderStroke(borderWidth, borderColor),
-            modifier = shadowModifier
+            modifier = shadowModifier.pressScale(interactionSource)
         ) {
             Column(content = content)
         }
@@ -92,8 +116,8 @@ fun ModernPanel(
 @Composable
 fun TonalInsetPanel(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(16.dp),
-    containerColor: Color = SoftIceSurface,
+    shape: Shape = MaterialTheme.shapes.medium,
+    containerColor: Color = LocalForgetMeNotColors.current.surfaceSubtle,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
@@ -116,11 +140,11 @@ fun <T> ModernSegmentedToggle(
     modifier: Modifier = Modifier,
     tagPrefix: String = "segment"
 ) {
-    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
-    val pillShadowTint = if (isDark) Color.Black.copy(alpha = 0.36f) else MidnightNavy.copy(alpha = 0.10f)
+    val palette = LocalForgetMeNotColors.current
+    val pillShadowTint = if (palette.isDark) Color.Black.copy(alpha = 0.36f) else palette.inkPrimary.copy(alpha = 0.10f)
     Surface(
-        color = SoftIceSurface,
-        shape = RoundedCornerShape(14.dp),
+        color = palette.surfaceSubtle,
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier
     ) {
         Row(
@@ -132,16 +156,16 @@ fun <T> ModernSegmentedToggle(
             options.forEach { (value, label) ->
                 val isSelected = value == selected
                 val bgColor by animateColorAsState(
-                    targetValue = if (isSelected) PureWhite else Color.Transparent,
+                    targetValue = if (isSelected) palette.surfaceCard else Color.Transparent,
                     animationSpec = tween(180),
                     label = "segment_bg"
                 )
                 val textColor by animateColorAsState(
-                    targetValue = if (isSelected) MidnightNavy else MutedNavy,
+                    targetValue = if (isSelected) palette.inkPrimary else palette.inkMuted,
                     animationSpec = tween(180),
                     label = "segment_fg"
                 )
-                val pillShape = RoundedCornerShape(11.dp)
+                val pillShape = MaterialTheme.shapes.small
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -188,6 +212,7 @@ fun ModernSectionHeader(
     count: Int? = null,
     modifier: Modifier = Modifier
 ) {
+    val palette = LocalForgetMeNotColors.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -198,17 +223,17 @@ fun ModernSectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MidnightNavy
+            color = palette.inkPrimary
         )
         if (count != null) {
             Surface(
-                color = SoftIceSurface,
+                color = palette.surfaceSubtle,
                 shape = CircleShape
             ) {
                 Text(
                     text = count.toString(),
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MutedNavy,
+                    color = palette.inkMuted,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                 )
             }
@@ -222,8 +247,8 @@ fun ModernSectionHeader(
 @Composable
 fun ModernPillBadge(
     text: String,
-    containerColor: Color = SoftIceSurface,
-    contentColor: Color = MutedNavy,
+    containerColor: Color = LocalForgetMeNotColors.current.surfaceSubtle,
+    contentColor: Color = LocalForgetMeNotColors.current.inkMuted,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -243,12 +268,48 @@ fun ModernPillBadge(
 /**
  * Selected/accent card highlight color kept calm and restrained.
  */
-fun selectedPanelContainer(isSelected: Boolean): Color =
-    if (isSelected) SkyBlue.copy(alpha = 0.28f) else PureWhite
+@Composable
+fun selectedPanelContainer(isSelected: Boolean): Color {
+    val palette = LocalForgetMeNotColors.current
+    return if (isSelected) palette.accentContainer.copy(alpha = 0.28f) else palette.surfaceCard
+}
 
-fun selectedPanelBorder(isSelected: Boolean, isOverdue: Boolean = false, overdueColor: Color = Color.Unspecified): Color =
-    when {
-        isSelected -> DeepBlue.copy(alpha = 0.65f)
+@Composable
+fun selectedPanelBorder(
+    isSelected: Boolean,
+    isOverdue: Boolean = false,
+    overdueColor: Color = Color.Unspecified
+): Color {
+    val palette = LocalForgetMeNotColors.current
+    return when {
+        isSelected -> palette.accentPrimary.copy(alpha = 0.65f)
         isOverdue && overdueColor != Color.Unspecified -> overdueColor.copy(alpha = 0.35f)
-        else -> SubtleBorder.copy(alpha = 0.85f)
+        else -> palette.borderSubtle.copy(alpha = 0.85f)
     }
+}
+
+@BunnyPreview
+@Composable
+private fun ModernPanelsPreview() {
+    ForgetMeNotTheme {
+        Column(
+            modifier = Modifier
+                .background(LocalForgetMeNotColors.current.surfaceCanvas)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ModernSectionHeader(title = "Today's Tasks", count = 3)
+            ModernPanel(onClick = {}) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Submit biology lab report", style = MaterialTheme.typography.titleSmall)
+                    ModernPillBadge(text = "Study · Due 5:00 PM")
+                }
+            }
+            ModernSegmentedToggle(
+                options = listOf("month" to "Month", "week" to "Week"),
+                selected = "month",
+                onSelect = {}
+            )
+        }
+    }
+}

@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
@@ -400,7 +399,7 @@ private fun InboxEditorialHeader() {
 @Composable
 private fun NotificationsPermissionBanner(onRequestPermission: () -> Unit) {
     TonalInsetPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         containerColor = SoftIceSurface,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -434,7 +433,7 @@ private fun NotificationsPermissionBanner(onRequestPermission: () -> Unit) {
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                 modifier = Modifier.testTag("inbox_allow_notifications_button")
             ) {
@@ -450,7 +449,7 @@ private fun NotificationsPermissionBanner(onRequestPermission: () -> Unit) {
 @Composable
 private fun EmptyInboxPanel() {
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -492,7 +491,7 @@ private fun DailyForgetMeNotCard(
     onSendPreviewClick: () -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -565,7 +564,7 @@ private fun DailyForgetMeNotCard(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Borderless tonal inset memo preview
                     TonalInsetPanel(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         containerColor = SoftIceSurface,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -599,7 +598,7 @@ private fun DailyForgetMeNotCard(
                                 containerColor = SoftIceSurface,
                                 contentColor = MidnightNavy
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("daily_digest_time_button")
                         ) {
@@ -620,7 +619,7 @@ private fun DailyForgetMeNotCard(
                                 containerColor = DeepBlue,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("daily_digest_preview_button")
                         ) {
@@ -660,7 +659,7 @@ private fun InboxEntryCard(
     val isCheckIn = entry.reminder.reminderKind() == ReminderKind.PROGRESS_CHECKIN
 
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = if (isDueNow) DeepBlue.copy(alpha = 0.5f) else SubtleBorder.copy(alpha = 0.85f),
         borderWidth = if (isDueNow) 1.2.dp else 0.75.dp,
         elevation = 3.dp,
@@ -736,7 +735,7 @@ private fun InboxEntryCard(
                         contentColor = MidnightNavy
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier.testTag("inbox_snooze_1h_${entry.reminder.id}")
                 ) {
                     Text("Snooze 1h", style = MaterialTheme.typography.labelMedium)
@@ -748,7 +747,7 @@ private fun InboxEntryCard(
                         contentColor = MidnightNavy
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(100.dp)
+                    shape = CircleShape
                 ) {
                     Text("Tomorrow", style = MaterialTheme.typography.labelMedium)
                 }
@@ -759,7 +758,7 @@ private fun InboxEntryCard(
                         contentColor = MidnightNavy
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(100.dp)
+                    shape = CircleShape
                 ) {
                     Text("Reschedule", style = MaterialTheme.typography.labelMedium)
                 }
@@ -802,7 +801,7 @@ private fun SharedInvitesInboxHeader(
         OutlinedButton(
             onClick = onInviteFriend,
             border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.45f)),
-            shape = RoundedCornerShape(100.dp),
+            shape = CircleShape,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             modifier = Modifier.testTag("inbox_invite_friend_button")
         ) {

@@ -135,7 +135,7 @@ fun LiveFocusGuardBannerCard(
             feedback.onPopOpen()
             onClick()
         },
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         color = PureWhite,
         border = BorderStroke(
             width = 1.dp,
@@ -185,7 +185,7 @@ fun LiveFocusGuardBannerCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Surface(
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         color = if (isActive) CalmSageContainer else SoftIceSurface
                     ) {
                         Text(
@@ -308,7 +308,7 @@ fun DoomscrollGuardModal(
         ) {
             // 1. Master Enable Card
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = if (config.isEnabled && allPermsReady) CalmSageContainer else SoftIceSurface,
                 border = BorderStroke(
                     1.dp,
@@ -354,7 +354,7 @@ fun DoomscrollGuardModal(
                             DoomscrollGuardManager.setGuardEnabled(context, enable)
                         },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = PureWhite,
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                             checkedTrackColor = CalmSage
                         ),
                         modifier = Modifier.testTag("focus_guard_master_switch")
@@ -364,7 +364,7 @@ fun DoomscrollGuardModal(
 
             // 2. Interactive Live Bunny Growth Simulator
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = PureWhite,
                 border = BorderStroke(1.dp, SubtleBorder)
             ) {
@@ -442,7 +442,7 @@ fun DoomscrollGuardModal(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(176.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(MaterialTheme.shapes.medium)
                             .background(SoftIceSurface),
                         contentAlignment = Alignment.Center
                     ) {
@@ -475,7 +475,7 @@ fun DoomscrollGuardModal(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(74.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(MaterialTheme.shapes.small)
                                     .background(SubtleBorder.copy(alpha = 0.65f))
                             )
                             Box(
@@ -515,7 +515,7 @@ fun DoomscrollGuardModal(
 
                         // Live percentage pill
                         Surface(
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             color = MidnightNavy.copy(alpha = 0.85f),
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -713,7 +713,7 @@ fun DoomscrollGuardModal(
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = "Add custom app",
-                            tint = PureWhite
+                            tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
@@ -732,7 +732,7 @@ fun DoomscrollGuardModal(
                     simProgress = 1f
                     showFullTakeoverPreview = true
                 },
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 border = BorderStroke(1.dp, SubtleBorder),
                 modifier = Modifier.weight(1f)
             ) {
@@ -745,9 +745,9 @@ fun DoomscrollGuardModal(
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepBlue,
-                    contentColor = PureWhite
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("focus_guard_done_button")
@@ -775,7 +775,7 @@ private fun PermissionStatusRow(
     testTag: String
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         color = if (granted) CalmSageContainer.copy(alpha = 0.65f) else OverdueContainer.copy(alpha = 0.55f),
         border = BorderStroke(1.dp, if (granted) CalmSage.copy(alpha = 0.4f) else OverdueTerracotta.copy(alpha = 0.35f))
     ) {
@@ -815,7 +815,7 @@ private fun PermissionStatusRow(
             } else {
                 OutlinedButton(
                     onClick = onGrantClick,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier.testTag(testTag)
                 ) {
@@ -879,10 +879,12 @@ private fun FullScreenTakeoverPreviewDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val darkPalette = com.example.ui.theme.DarkForgetMeNotColors
+        val lightPalette = com.example.ui.theme.LightForgetMeNotColors
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xF20B1324))
+                .background(darkPalette.skyCanvasTop.copy(alpha = 0.95f))
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -892,13 +894,13 @@ private fun FullScreenTakeoverPreviewDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(100.dp),
-                    color = PollenYellow
+                    shape = CircleShape,
+                    color = darkPalette.pollenYellow
                 ) {
                     Text(
                         text = "$durationLabel of doomscrolling reached",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFF2B4360),
+                        color = lightPalette.inkPrimary,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
                     )
@@ -912,14 +914,14 @@ private fun FullScreenTakeoverPreviewDialog(
                 Text(
                     text = "Time to bloom, not doomscroll!",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color(0xFFFCFEFF),
+                    color = darkPalette.inkPrimary,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
                 Text(
                     text = "When your timer hits 100%, the giant Bunny Memo guardian fills your screen to bring you right back to your tasks and goals.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFDCECFD),
+                    color = darkPalette.inkMuted,
                     textAlign = TextAlign.Center
                 )
 
@@ -928,10 +930,10 @@ private fun FullScreenTakeoverPreviewDialog(
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF3B82DC),
-                        contentColor = Color(0xFFFCFEFF)
+                        containerColor = darkPalette.accentPrimary,
+                        contentColor = darkPalette.surfaceCanvas
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
@@ -941,7 +943,7 @@ private fun FullScreenTakeoverPreviewDialog(
                 }
 
                 TextButton(onClick = onDismiss) {
-                    Text("Close preview", color = Color(0xFFC7DFF8))
+                    Text("Close preview", color = darkPalette.accentPrimary)
                 }
             }
         }

@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CardGiftcard
@@ -238,7 +237,7 @@ fun YearBouquetCard(
     var showCeremony by remember { mutableStateOf(false) }
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -265,7 +264,7 @@ fun YearBouquetCard(
             ) {
                 Surface(
                     color = SoftIceSurface,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(1.dp, SubtleBorder.copy(alpha = 0.8f)),
                     modifier = Modifier.size(112.dp)
                 ) {
@@ -367,7 +366,7 @@ fun YearBouquetCard(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -387,7 +386,7 @@ fun YearBouquetCard(
                         feedback.onPopOpen()
                         showCeremony = true
                     },
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     modifier = Modifier
@@ -446,7 +445,7 @@ fun BouquetKeepsakeShelf(
     if (archive.isEmpty()) return
 
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 2.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -475,7 +474,7 @@ fun BouquetKeepsakeShelf(
             archive.forEach { entry ->
                 Surface(
                     onClick = { inspectedBouquet = entry },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = SoftIceSurface,
                     border = BorderStroke(0.75.dp, SubtleBorder),
                     modifier = Modifier.fillMaxWidth()
@@ -558,7 +557,7 @@ fun BouquetHandoutCeremonyDialog(
             contentAlignment = Alignment.Center
         ) {
             Surface(
-                shape = RoundedCornerShape(30.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 color = PureWhite,
                 border = BorderStroke(1.5.dp, PollenYellow.copy(alpha = 0.7f)),
                 modifier = Modifier
@@ -654,7 +653,7 @@ fun BouquetHandoutCeremonyDialog(
                     )
 
                     TonalInsetPanel(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -675,7 +674,7 @@ fun BouquetHandoutCeremonyDialog(
                                 containerColor = DeepBlue,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -714,7 +713,7 @@ fun BouquetHandoutCeremonyDialog(
                                     context.startActivity(Intent.createChooser(shareIntent, "Share bouquet keepsake"))
                                 }
                             },
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(

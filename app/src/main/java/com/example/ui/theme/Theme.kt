@@ -76,8 +76,8 @@ internal val ForgetMeNotDarkColorScheme = darkColorScheme(
 )
 
 val ForgetMeNotShapes = Shapes(
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(28.dp)
 )

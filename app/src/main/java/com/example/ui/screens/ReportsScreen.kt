@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -195,7 +194,7 @@ fun ReportsScreen(
         // Scope Toggle (Monthly Report vs Grand Year-End Report) & Period Switcher
         item(key = "reports_controls") {
             ModernPanel(
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 elevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -421,7 +420,7 @@ fun ReportsScreen(
             if (monthlyReport.highlights.isEmpty()) {
                 item(key = "monthly_highlights_empty") {
                     ModernPanel(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         elevation = 2.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -573,7 +572,7 @@ private fun MonthlyHeroCard(
 ) {
     val monthBreed = remember(report.month) { BunnyBreed.forMonth(report.month) }
     ModernPanel(
-        shape = RoundedCornerShape(26.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -687,7 +686,7 @@ private fun MonthlyHeroCard(
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                 modifier = Modifier.testTag("share_monthly_report_button")
             ) {
@@ -711,7 +710,7 @@ private fun GrandYearEndHeroCard(
     onShare: () -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         elevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -785,7 +784,7 @@ private fun GrandYearEndHeroCard(
             // 12-Month Forget-Me-Not Garden inside borderless tonal inset
             TonalInsetPanel(
                 containerColor = SoftIceSurface,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -808,7 +807,7 @@ private fun GrandYearEndHeroCard(
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .clip(MaterialTheme.shapes.small)
                                         .clickable { onJumpToMonth(m.month) }
                                         .padding(horizontal = 4.dp, vertical = 4.dp)
                                         .testTag("garden_flower_${m.month}")
@@ -843,7 +842,7 @@ private fun GrandYearEndHeroCard(
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -951,7 +950,7 @@ private fun MetricTile(
     modifier: Modifier = Modifier
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         modifier = modifier
     ) {
@@ -994,7 +993,7 @@ private fun YearEndBadgesRow(report: YearEndAccomplishmentReport) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ModernPanel(
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = 2.dp,
             modifier = Modifier.weight(1f)
         ) {
@@ -1029,7 +1028,7 @@ private fun YearEndBadgesRow(report: YearEndAccomplishmentReport) {
             }
         }
         ModernPanel(
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = 2.dp,
             modifier = Modifier.weight(1f)
         ) {
@@ -1074,7 +1073,7 @@ private fun WeeklyBloomChartCard(
     }
 
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1158,7 +1157,7 @@ private fun YearBloomTimelineCard(report: YearEndAccomplishmentReport) {
     }
 
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1234,7 +1233,7 @@ private fun MonthRollupRowCard(
         containerColor = PureWhite,
         borderColor = if (isPeak) PollenYellow else SubtleBorder.copy(alpha = 0.85f),
         borderWidth = if (isPeak) 1.dp else 0.75.dp,
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         onClick = onOpenMonth,
         modifier = Modifier
@@ -1290,7 +1289,7 @@ private fun HighlightRowCard(
     onClick: () -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         onClick = onClick,
         modifier = Modifier

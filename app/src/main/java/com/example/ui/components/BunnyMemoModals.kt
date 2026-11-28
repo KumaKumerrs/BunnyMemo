@@ -41,14 +41,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -215,7 +214,7 @@ fun BunnyMemoModalContainer(
                         .fillMaxWidth()
                         .widthIn(max = resolvedMaxWidth)
                         .heightIn(max = resolvedMaxHeight),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     color = PureWhite,
                     shadowElevation = 18.dp,
                     border = BorderStroke(0.75.dp, SubtleBorder)
@@ -303,7 +302,7 @@ fun BunnyMemoModalContainer(
                                     modifier = Modifier.testTag("modal_close_button")
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
+                                        imageVector = Icons.Rounded.Close,
                                         contentDescription = "Close",
                                         tint = MidnightNavy
                                     )
@@ -356,7 +355,7 @@ fun BunnyMemoConfirmModal(
         ) {
             Surface(
                 color = PureWhite,
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 border = BorderStroke(1.dp, SubtleBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -376,7 +375,7 @@ fun BunnyMemoConfirmModal(
             OutlinedButton(
                 onClick = requestDismiss,
                 enabled = !hasConfirmed,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(1f)
             ) {
                 Text(cancelLabel)
@@ -394,7 +393,7 @@ fun BunnyMemoConfirmModal(
                     containerColor = if (isDestructive) OverdueTerracotta else DeepBlue,
                     contentColor = if (isDestructive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .weight(1f)
                     .testTag(confirmTestTag)
@@ -469,7 +468,7 @@ fun BunnyMemoDatePickerModal(
             // Mini stationery calendar card
             Surface(
                 color = PureWhite,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 border = BorderStroke(1.dp, SubtleBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -556,7 +555,7 @@ fun BunnyMemoDatePickerModal(
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .height(40.dp)
-                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .clip(MaterialTheme.shapes.small)
                                                     .background(
                                                         when {
                                                             isSelected -> DeepBlue
@@ -603,7 +602,7 @@ fun BunnyMemoDatePickerModal(
             OutlinedButton(
                 onClick = requestDismiss,
                 enabled = !hasConfirmed,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Cancel")
@@ -621,7 +620,7 @@ fun BunnyMemoDatePickerModal(
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .weight(1.2f)
                     .testTag("modal_date_confirm_button")
@@ -670,7 +669,7 @@ fun BunnyMemoTimePickerModal(
             // Tactile Forget-Me-Not time dial card
             Surface(
                 color = PureWhite,
-                shape = RoundedCornerShape(22.dp),
+                shape = MaterialTheme.shapes.large,
                 border = BorderStroke(1.dp, SubtleBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -722,7 +721,7 @@ fun BunnyMemoTimePickerModal(
                             Surface(
                                 onClick = { if (isPm) hour24 -= 12 },
                                 color = if (!isPm) DeepBlue else SoftIceSurface,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 border = BorderStroke(1.dp, if (!isPm) DeepBlue else SubtleBorder)
                             ) {
                                 Text(
@@ -735,7 +734,7 @@ fun BunnyMemoTimePickerModal(
                             Surface(
                                 onClick = { if (!isPm) hour24 += 12 },
                                 color = if (isPm) DeepBlue else SoftIceSurface,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 border = BorderStroke(1.dp, if (isPm) DeepBlue else SubtleBorder)
                             ) {
                                 Text(
@@ -820,7 +819,7 @@ fun BunnyMemoTimePickerModal(
             OutlinedButton(
                 onClick = requestDismiss,
                 enabled = !hasConfirmed,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Cancel")
@@ -838,7 +837,7 @@ fun BunnyMemoTimePickerModal(
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .weight(1.2f)
                     .testTag("modal_time_confirm_button")
@@ -859,14 +858,14 @@ private fun TimeUnitStepper(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(onClick = onIncrement) {
             Icon(
-                imageVector = Icons.Default.KeyboardArrowUp,
+                imageVector = Icons.Rounded.KeyboardArrowUp,
                 contentDescription = "Increase $label",
                 tint = DeepBlue
             )
         }
         Surface(
             color = SoftIceSurface,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             border = BorderStroke(1.dp, SkyBlue),
             modifier = Modifier.size(width = 70.dp, height = 54.dp)
         ) {
@@ -880,7 +879,7 @@ private fun TimeUnitStepper(
         }
         IconButton(onClick = onDecrement) {
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
+                imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = "Decrease $label",
                 tint = DeepBlue
             )
@@ -915,7 +914,7 @@ fun BunnyMemoCloudSyncModal(
         }
     ) { requestDismiss ->
         TonalInsetPanel(
-            shape = RoundedCornerShape(18.dp),
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -939,7 +938,7 @@ fun BunnyMemoCloudSyncModal(
             Spacer(modifier = Modifier.height(10.dp))
             Surface(
                 color = com.example.ui.theme.OverdueContainer,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
@@ -961,7 +960,7 @@ fun BunnyMemoCloudSyncModal(
                 onClick = requestDismiss,
                 enabled = !isSigningIn,
                 border = BorderStroke(1.dp, SubtleBorder),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Maybe later", color = MidnightNavy)
@@ -973,7 +972,7 @@ fun BunnyMemoCloudSyncModal(
                     containerColor = DeepBlue,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .weight(1.3f)
                     .testTag("cloud_modal_sign_in_button")

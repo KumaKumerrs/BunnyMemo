@@ -289,10 +289,6 @@ class PlannerViewModel(
         return sent
     }
 
-    fun clearFeedback() {
-        _feedbackMessage.value = null
-    }
-
     fun clearCelebration() {
         _celebratingItemId.value = null
     }

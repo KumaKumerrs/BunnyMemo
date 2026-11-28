@@ -38,8 +38,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Button
@@ -627,7 +627,7 @@ private fun CalendarGridPanel(
     val monthBreed = remember(displayedDate.month) { BunnyBreed.forMonth(displayedDate.month) }
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -660,10 +660,10 @@ private fun CalendarGridPanel(
                     )
                     Surface(
                         color = SoftIceSurface,
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         border = BorderStroke(1.dp, SubtleBorder),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
+                            .clip(CircleShape)
                             .semantics { contentDescription = cdBadge }
                             .clickable(onClick = onOpenAlmanac)
                             .testTag("calendar_monthly_bunny_chip")
@@ -920,7 +920,7 @@ private fun SelectedDayHeaderRow(
         OutlinedButton(
             onClick = onInviteFriend,
             border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.45f)),
-            shape = RoundedCornerShape(100.dp),
+            shape = CircleShape,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier.testTag("calendar_invite_friend_button")
         ) {
@@ -940,12 +940,12 @@ private fun SelectedDayHeaderRow(
                 containerColor = DeepBlue,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ),
-            shape = RoundedCornerShape(100.dp),
+            shape = CircleShape,
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
             modifier = Modifier.testTag("calendar_add_for_date_button")
         ) {
             Icon(
-                imageVector = Icons.Default.Add,
+                imageVector = Icons.Rounded.Add,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp)
             )
@@ -958,7 +958,7 @@ private fun SelectedDayHeaderRow(
 @Composable
 private fun EmptyDayPanel(selectedDate: CalendarDate) {
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -977,7 +977,7 @@ private fun FilteredEmptyDayPanel(
     onClearFilter: () -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -998,7 +998,7 @@ private fun FilteredEmptyDayPanel(
             OutlinedButton(
                 onClick = onClearFilter,
                 border = BorderStroke(1.dp, SubtleBorder),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier.testTag("calendar_clear_filter_button")
             ) {
                 Text("Clear filter", color = DeepBlue)
@@ -1042,7 +1042,7 @@ private fun MonthDayCell(
         }
     }
 
-    val cellShape = RoundedCornerShape(12.dp)
+    val cellShape = MaterialTheme.shapes.small
     val highlightFill = when {
         hasOverdue -> OverdueContainer
         hasCompletedDailyTask -> SkyBlue.copy(alpha = 0.46f)
@@ -1208,7 +1208,7 @@ private fun WeekDayChip(
         }
     }
 
-    val shape = RoundedCornerShape(14.dp)
+    val shape = MaterialTheme.shapes.medium
     val bgColor = when {
         isToday -> DeepBlue
         hasCompletedDailyTask -> SkyBlue.copy(alpha = 0.56f)
@@ -1273,7 +1273,7 @@ private fun CalendarClassAgendaCard(
 ) {
     val (fill, accent) = classColorPalette(schedule.colorKeyEnum())
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = accent.copy(alpha = 0.35f),
         elevation = 2.dp,
         onClick = onClick,
@@ -1291,7 +1291,7 @@ private fun CalendarClassAgendaCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(fill),
                 contentAlignment = Alignment.Center
             ) {
@@ -1329,7 +1329,7 @@ private fun CalendarClassAgendaCard(
             ) {
                 if (schedule.notifyEnabled) {
                     Icon(
-                        imageVector = Icons.Default.NotificationsActive,
+                        imageVector = Icons.Rounded.NotificationsActive,
                         contentDescription = "Reminder active",
                         tint = DeepBlue,
                         modifier = Modifier.size(16.dp)
@@ -1366,7 +1366,7 @@ private fun CalendarAgendaCard(
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
         borderColor = selectedPanelBorder(isSelected),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
         modifier = Modifier
@@ -1432,7 +1432,7 @@ private fun WeekTimingsDayRow(
     onEditClass: (ClassScheduleItem) -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = if (isToday) DeepBlue.copy(alpha = 0.45f) else selectedPanelBorder(false),
         elevation = 2.dp,
         onClick = onSelectDate,
@@ -1470,7 +1470,7 @@ private fun WeekTimingsDayRow(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(CalmSageContainer)
                             .clickable { onEditClass(cls) }
                             .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -1502,7 +1502,7 @@ private fun WeekTimingsDayRow(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(SoftIceSurface)
                             .clickable { onSelectItem(item.id) }
                             .padding(horizontal = 12.dp, vertical = 9.dp),

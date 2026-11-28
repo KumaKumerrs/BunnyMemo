@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.EditNote
@@ -55,6 +54,7 @@ import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.shape.CircleShape
 
 private enum class QuickNoteTarget {
     IDEA,
@@ -89,7 +89,7 @@ fun QuickNoteModal(
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(PollenSoft),
                 contentAlignment = Alignment.Center
             ) {
@@ -128,7 +128,7 @@ fun QuickNoteModal(
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences
             ),
-            shape = RoundedCornerShape(18.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = SoftIceSurface.copy(alpha = 0.65f),
                 unfocusedContainerColor = SoftIceSurface.copy(alpha = 0.45f),
@@ -212,7 +212,7 @@ fun QuickNoteModal(
                 onClick = requestDismiss,
                 enabled = !isSaving,
                 border = BorderStroke(1.dp, SubtleBorder),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
@@ -237,7 +237,7 @@ fun QuickNoteModal(
                     containerColor = DeepBlue,
                     contentColor = PureWhite
                 ),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .weight(1.3f)
                     .heightIn(min = 48.dp)

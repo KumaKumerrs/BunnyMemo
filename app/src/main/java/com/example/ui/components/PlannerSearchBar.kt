@@ -24,13 +24,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Flag
@@ -84,6 +83,7 @@ import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
 import com.example.viewmodel.PlannerUiState
+import androidx.compose.foundation.shape.CircleShape
 
 enum class PlannerSearchFilter(val label: String) {
     ALL("All"),
@@ -111,7 +111,7 @@ fun PlannerSearchBar(
     val hasQuery = query.isNotBlank()
 
     ModernPanel(
-        shape = RoundedCornerShape(100.dp),
+        shape = CircleShape,
         containerColor = PureWhite,
         borderColor = if (hasQuery) DeepBlue.copy(alpha = 0.55f) else SubtleBorder.copy(alpha = 0.95f),
         borderWidth = if (hasQuery) 1.25.dp else 0.75.dp,
@@ -128,7 +128,7 @@ fun PlannerSearchBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.Search,
+                imageVector = Icons.Rounded.Search,
                 contentDescription = stringResource(R.string.search_icon_cd),
                 tint = if (hasQuery) DeepBlue else MutedNavy,
                 modifier = Modifier.size(20.dp)
@@ -173,7 +173,7 @@ fun PlannerSearchBar(
                     modifier = Modifier.testTag("planner_search_clear_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.search_clear_cd),
                         tint = MutedNavy,
                         modifier = Modifier.size(18.dp)
@@ -393,7 +393,7 @@ fun PlannerSearchResultsView(
             if (filteredItems.isEmpty() && filteredClasses.isEmpty()) {
                 item(key = "search_empty_state") {
                     ModernPanel(
-                        shape = RoundedCornerShape(24.dp),
+                        shape = MaterialTheme.shapes.large,
                         elevation = 3.dp,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -439,7 +439,7 @@ fun PlannerSearchResultsView(
                                             priorityFilter = TaskPriorityFilter.ALL
                                             categoryFilter = TaskCategoryFilter.ALL
                                         },
-                                        shape = RoundedCornerShape(100.dp),
+                                        shape = CircleShape,
                                         modifier = Modifier
                                             .heightIn(min = 48.dp)
                                             .testTag("search_reset_filters_button")
@@ -449,7 +449,7 @@ fun PlannerSearchResultsView(
                                 }
                                 OutlinedButton(
                                     onClick = onClearSearch,
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier.heightIn(min = 48.dp)
                                 ) {
                                     Text(stringResource(R.string.search_clear_action), color = MidnightNavy)
@@ -460,7 +460,7 @@ fun PlannerSearchResultsView(
                                         containerColor = DeepBlue,
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     ),
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier
                                         .heightIn(min = 48.dp)
                                         .testTag("search_save_quick_note_button")
@@ -577,7 +577,7 @@ private fun SearchResultItemCard(
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
         borderColor = selectedPanelBorder(isSelected),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         onClick = onClick,
         modifier = Modifier
@@ -617,7 +617,7 @@ private fun SearchResultItemCard(
                         modifier = Modifier
                             .padding(end = 10.dp, start = 4.dp)
                             .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(badgeContainer),
                         contentAlignment = Alignment.Center
                     ) {
@@ -723,7 +723,7 @@ private fun SearchResultClassCard(
 ) {
     val (fill, accent) = classColorPalette(cls.colorKeyEnum())
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = accent.copy(alpha = 0.35f),
         elevation = 2.dp,
         onClick = onClick,
@@ -741,7 +741,7 @@ private fun SearchResultClassCard(
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(fill),
                 contentAlignment = Alignment.Center
             ) {

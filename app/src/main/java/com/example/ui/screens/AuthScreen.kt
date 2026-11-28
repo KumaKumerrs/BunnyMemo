@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
@@ -62,6 +61,7 @@ import com.example.ui.theme.OverdueTerracotta
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SubtleBorder
+import androidx.compose.foundation.shape.CircleShape
 
 @Composable
 fun AuthScreen(
@@ -120,7 +120,7 @@ fun AuthScreen(
                     .fillMaxWidth()
                     .widthIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 elevation = 6.dp
             ) {
                 Column(
@@ -164,7 +164,7 @@ fun AuthScreen(
                     Spacer(modifier = Modifier.height(22.dp))
 
                     com.example.ui.components.TonalInsetPanel(
-                        shape = RoundedCornerShape(18.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -206,7 +206,7 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(14.dp))
                         Surface(
                             color = OverdueContainer,
-                            shape = RoundedCornerShape(14.dp),
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .semantics {
@@ -232,7 +232,7 @@ fun AuthScreen(
                             containerColor = DeepBlue,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
@@ -270,7 +270,7 @@ fun AuthScreen(
                         },
                         enabled = !isLoading && !isAutoChecking,
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
@@ -293,5 +293,16 @@ fun AuthScreen(
                 }
             }
         }
+    }
+}
+
+@com.example.ui.components.BunnyPreview
+@Composable
+private fun AuthScreenPreview() {
+    com.example.ui.theme.ForgetMeNotTheme {
+        AuthScreen(
+            onAuthSuccess = {},
+            onContinueLocally = {}
+        )
     }
 }

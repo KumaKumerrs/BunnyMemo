@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
@@ -347,7 +346,7 @@ private fun ProfileIdentityCard(
     }
 
     ModernPanel(
-        shape = RoundedCornerShape(26.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -421,7 +420,7 @@ private fun ProfileIdentityCard(
                     ) {
                         val badgeModifier = if (!isLocalMode) {
                             Modifier
-                                .clip(RoundedCornerShape(100.dp))
+                                .clip(CircleShape)
                                 .clickable(onClick = onTriggerSync)
                         } else {
                             Modifier
@@ -438,13 +437,13 @@ private fun ProfileIdentityCard(
 
                 // Current month's breed companion badge
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = PureWhite,
                     border = BorderStroke(1.dp, SubtleBorder),
                     shadowElevation = 2.dp,
                     modifier = Modifier
                         .size(width = 76.dp, height = 76.dp)
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .clickable(onClick = onOpenAlmanac)
                         .testTag("profile_monthly_bunny_badge")
                 ) {
@@ -484,7 +483,7 @@ private fun ProfileIdentityCard(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .weight(1.25f)
                         .heightIn(min = 48.dp)
@@ -505,7 +504,7 @@ private fun ProfileIdentityCard(
                 OutlinedButton(
                     onClick = onOpenSettings,
                     border = BorderStroke(1.dp, SubtleBorder),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -532,7 +531,7 @@ private fun ProfileIdentityCard(
                 OutlinedButton(
                     onClick = onGoogleSignIn,
                     border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
@@ -558,7 +557,7 @@ private fun ProfileIdentityCard(
                     OutlinedButton(
                         onClick = onTriggerSync,
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
@@ -581,7 +580,7 @@ private fun ProfileIdentityCard(
                     OutlinedButton(
                         onClick = onSignOut,
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
@@ -601,7 +600,7 @@ private fun ProfileIdentityCard(
                     OutlinedButton(
                         onClick = onDeleteAccount,
                         border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
@@ -642,7 +641,7 @@ private fun FocusAndHabitStatsCard(
     categoryCounts: List<Pair<TaskCategory, Int>>
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -736,7 +735,7 @@ private fun StatTile(
     modifier: Modifier = Modifier
 ) {
     TonalInsetPanel(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier
     ) {
         Column(
@@ -785,7 +784,7 @@ private fun DedicationQuickCard(
     onEditDedication: () -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 2.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -819,7 +818,7 @@ private fun DedicationQuickCard(
                 OutlinedButton(
                     onClick = onEditDedication,
                     border = BorderStroke(1.dp, SubtleBorder),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
@@ -840,7 +839,7 @@ private fun DedicationQuickCard(
                 }
             }
             TonalInsetPanel(
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(

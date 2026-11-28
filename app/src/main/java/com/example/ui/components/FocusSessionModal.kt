@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -121,7 +120,7 @@ fun LiveFocusSessionBannerCard(
             feedback.onPopOpen()
             onOpenModal()
         },
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         color = PureWhite,
         border = BorderStroke(
             width = 1.dp,
@@ -374,7 +373,7 @@ fun FocusSessionModal(
                         containerColor = if (focusState.phase == FocusPhase.BREAK) CalmSage else DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
                     modifier = Modifier
                         .height(52.dp)
@@ -439,7 +438,7 @@ fun FocusSessionModal(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(
@@ -459,7 +458,7 @@ fun FocusSessionModal(
                     }
                 }
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(
@@ -482,7 +481,7 @@ fun FocusSessionModal(
 
             // Distracting App Blocker Panel
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = if (focusState.blockAppsDuringFocus && permsReady) CalmSageContainer.copy(alpha = 0.55f) else SoftIceSurface,
                 border = BorderStroke(
                     1.dp,
@@ -535,7 +534,7 @@ fun FocusSessionModal(
                                 FocusSessionManager.setBlockAppsDuringFocus(context, enabled)
                             },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = PureWhite,
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = CalmSage
                             ),
                             modifier = Modifier.testTag("focus_session_block_apps_switch")
@@ -548,7 +547,7 @@ fun FocusSessionModal(
                             requestDismiss()
                             onOpenBlockedAppsSetup()
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier

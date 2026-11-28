@@ -37,7 +37,17 @@ data class ForgetMeNotColors(
     val calmSage: Color,
     val calmSageContainer: Color,
     val sharedInviteAccent: Color
-)
+) {
+    // Semantic role aliases (prefer these via LocalForgetMeNotColors.current over hue-named globals)
+    val surfaceCanvas: Color get() = cloudWhite
+    val surfaceCard: Color get() = pureWhite
+    val surfaceSubtle: Color get() = softIceSurface
+    val accentContainer: Color get() = skyBlue
+    val borderSubtle: Color get() = subtleBorder
+    val inkPrimary: Color get() = midnightNavy
+    val inkMuted: Color get() = mutedNavy
+    val accentPrimary: Color get() = deepBlue
+}
 
 // Light Palette — Airy Morning Sky Forget-Me-Not (WCAG 2.1 AA+ verified)
 internal val LightCloudWhite = Color(0xFFE5F2FE)

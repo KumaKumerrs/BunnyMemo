@@ -25,11 +25,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -211,7 +210,7 @@ fun ForgetMeNotHabitCalendarCard(
     val inspectedStatus = summary.statusByDate[inspectedDate]
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -368,7 +367,7 @@ fun ForgetMeNotHabitCalendarCard(
             // Inspected day status footer & legend
             TonalInsetPanel(
                 containerColor = SoftIceSurface,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -419,7 +418,7 @@ fun ForgetMeNotHabitCalendarCard(
                             modifier = Modifier.testTag("habit_calendar_add_task_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
+                                imageVector = Icons.Rounded.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(15.dp)
                             )
@@ -474,7 +473,7 @@ private fun HabitCalendarDayCell(
 ) {
     val bloomed = status?.hasCompletedDailyTask == true
     val pendingOnly = status != null && !bloomed && status.hasPendingTasks
-    val cellShape = RoundedCornerShape(12.dp)
+    val cellShape = MaterialTheme.shapes.small
 
     val bgColor = when {
         bloomed -> SkyBlue.copy(alpha = 0.52f)

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
@@ -49,6 +48,7 @@ import com.example.ui.theme.DeepBlue
 import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.SubtleBorder
+import androidx.compose.foundation.shape.CircleShape
 
 /**
  * First-minute editable dedication screen from Page 1 of the brief.
@@ -77,7 +77,7 @@ fun DedicationScreen(
                     .fillMaxWidth()
                     .widthIn(max = 500.dp)
                     .verticalScroll(rememberScrollState()),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 elevation = 6.dp
             ) {
                 Column(
@@ -135,7 +135,7 @@ fun DedicationScreen(
                         }
                     } else {
                         com.example.ui.components.TonalInsetPanel(
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -175,7 +175,7 @@ fun DedicationScreen(
                             containerColor = DeepBlue,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
@@ -193,7 +193,7 @@ fun DedicationScreen(
                             onClick = onCancel,
                             enabled = !isSaving,
                             border = androidx.compose.foundation.BorderStroke(1.dp, SubtleBorder),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
@@ -209,5 +209,18 @@ fun DedicationScreen(
                 }
             }
         }
+    }
+}
+
+@com.example.ui.components.BunnyPreview
+@Composable
+private fun DedicationScreenPreview() {
+    com.example.ui.theme.ForgetMeNotTheme {
+        DedicationScreen(
+            initialDedication = "For you, bb. I made this little planner so you have a place for all the things you look forward to.",
+            isSaving = false,
+            onOpenPlanner = {},
+            onCancel = {}
+        )
     }
 }

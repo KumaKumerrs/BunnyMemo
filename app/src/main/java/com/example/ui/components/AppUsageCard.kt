@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Timer
@@ -97,7 +96,7 @@ fun CompactAppUsageStrip(
     modifier: Modifier = Modifier
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 2.dp,
         onClick = onClick,
         modifier = modifier
@@ -171,7 +170,7 @@ fun AppUsageSummaryCard(
     val maxSec = (history.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(60L)
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -354,7 +353,7 @@ private fun UsageMetricPill(
 ) {
     TonalInsetPanel(
         containerColor = if (highlighted) SkyBlue.copy(alpha = 0.48f) else SoftIceSurface,
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier
     ) {
         Column(

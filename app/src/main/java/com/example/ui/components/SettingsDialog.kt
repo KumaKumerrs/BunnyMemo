@@ -17,13 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -93,6 +92,7 @@ import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SubtleBorder
 import com.example.ui.theme.ThemePreferencesManager
 import kotlin.math.roundToInt
+import androidx.compose.foundation.shape.CircleShape
 
 @Composable
 fun SettingsDialog(
@@ -133,7 +133,7 @@ fun SettingsDialog(
         ) {
             // Editable Dedication Note
             TonalInsetPanel(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -168,7 +168,7 @@ fun SettingsDialog(
                             containerColor = DeepBlue,
                             contentColor = PureWhite
                         ),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier.align(Alignment.End)
                     ) {
                         Text("Save note")
@@ -181,7 +181,7 @@ fun SettingsDialog(
 
             // Anti-Doomscroll Bunny Focus Guard
             TonalInsetPanel(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -222,7 +222,7 @@ fun SettingsDialog(
                             onOpenFocusGuard()
                         },
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier.testTag("settings_open_focus_guard_button")
                     ) {
                         Text(
@@ -239,7 +239,7 @@ fun SettingsDialog(
 
             // Gentle Daily Forget-Me-Not Digest schedule
             TonalInsetPanel(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -310,7 +310,7 @@ fun SettingsDialog(
 
             // Default reminder time for date-only items
             TonalInsetPanel(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -354,7 +354,7 @@ fun SettingsDialog(
             // Notifications status
             if (!hasNotificationPermission) {
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -396,7 +396,7 @@ fun SettingsDialog(
 
             // Home Screen Widgets (1-tap pinning on supported launchers)
             TonalInsetPanel(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -435,7 +435,7 @@ fun SettingsDialog(
                     widgetOptions.forEach { (kind, labelRes, icon) ->
                         Surface(
                             color = PureWhite,
-                            shape = RoundedCornerShape(14.dp),
+                            shape = MaterialTheme.shapes.medium,
                             border = BorderStroke(0.75.dp, SubtleBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -466,7 +466,7 @@ fun SettingsDialog(
                                 OutlinedButton(
                                     onClick = { onPinWidget(kind) },
                                     border = BorderStroke(1.dp, SubtleBorder),
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier.testTag("settings_pin_widget_${kind.name.lowercase()}")
                                 ) {
                                     Text(
@@ -486,7 +486,7 @@ fun SettingsDialog(
             // Account & Sync Section (Local Mode vs Private Cloud Sync)
             if (isLocalMode) {
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -523,7 +523,7 @@ fun SettingsDialog(
                                 containerColor = DeepBlue,
                                 contentColor = PureWhite
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("settings_sign_in_google_button")
@@ -561,7 +561,7 @@ fun SettingsDialog(
                 }
 
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -603,7 +603,7 @@ fun SettingsDialog(
                                 onClick = onSyncNow,
                                 enabled = syncStatus.isOnline && syncStatus.phase != SyncPhase.SYNCING,
                                 border = BorderStroke(1.dp, SubtleBorder),
-                                shape = RoundedCornerShape(100.dp),
+                                shape = CircleShape,
                                 modifier = Modifier.testTag("settings_sync_now_button")
                             ) {
                                 Text(
@@ -679,7 +679,7 @@ private fun AppearanceSettingsCard() {
     val themeMode by themeManager.themeMode.collectAsStateWithLifecycle()
 
     TonalInsetPanel(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("settings_appearance_card")
@@ -749,7 +749,7 @@ private fun SensoryFeedbackSettingsCard() {
     }
 
     TonalInsetPanel(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("settings_sensory_card")
@@ -1002,7 +1002,7 @@ private fun SensoryFeedbackSettingsCard() {
 
                     Surface(
                         color = PureWhite,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         border = BorderStroke(0.75.dp, SubtleBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1050,7 +1050,7 @@ private fun SensoryFeedbackSettingsCard() {
                                         modifier = Modifier.testTag("settings_bgm_clear_custom")
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Close,
+                                            imageVector = Icons.Rounded.Close,
                                             contentDescription = stringResource(R.string.settings_bgm_clear_custom_cd),
                                             tint = OverdueTerracotta,
                                             modifier = Modifier.size(18.dp)
@@ -1072,7 +1072,7 @@ private fun SensoryFeedbackSettingsCard() {
                                 OutlinedButton(
                                     onClick = { runCatching { audioPickerLauncher.launch(arrayOf("audio/*")) } },
                                     border = BorderStroke(1.dp, SubtleBorder),
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -1101,7 +1101,7 @@ private fun SensoryFeedbackSettingsCard() {
                                         runCatching { context.startActivity(ytIntent) }
                                     },
                                     border = BorderStroke(1.dp, SubtleBorder),
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier
                                         .heightIn(min = 48.dp)
                                         .testTag("settings_bgm_youtube_button")
@@ -1129,7 +1129,7 @@ private fun SensoryFeedbackSettingsCard() {
             OutlinedButton(
                 onClick = { feedbackManager.onTestFeedback() },
                 border = BorderStroke(1.dp, SubtleBorder),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .align(Alignment.End)
                     .testTag("settings_test_feedback_button")

@@ -21,12 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
@@ -129,7 +128,7 @@ fun TaskAudioMemoCard(
     }
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -189,7 +188,7 @@ fun TaskAudioMemoCard(
 
             if (isRecordingThis) {
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -201,7 +200,7 @@ fun TaskAudioMemoCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.GraphicEq,
+                                imageVector = Icons.Rounded.GraphicEq,
                                 contentDescription = null,
                                 tint = OverdueTerracotta,
                                 modifier = Modifier.size(18.dp)
@@ -230,12 +229,12 @@ fun TaskAudioMemoCard(
                                 containerColor = OverdueTerracotta,
                                 contentColor = MaterialTheme.colorScheme.onError
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("audio_memo_stop_button")
                         ) {
-                            Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("${stringResource(R.string.audio_memo_stop_button)} (${TaskAudioMemoManager.formatSeconds(playbackState.recordingElapsedSeconds)} / 1:00)")
                         }
@@ -243,7 +242,7 @@ fun TaskAudioMemoCard(
                 }
             } else if (hasSavedMemo) {
                 TonalInsetPanel(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -273,7 +272,7 @@ fun TaskAudioMemoCard(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = if (isPlayingThis) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        imageVector = if (isPlayingThis) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                                         contentDescription = if (isPlayingThis) "Stop voice memo" else "Play voice memo",
                                         tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(22.dp)
@@ -330,12 +329,12 @@ fun TaskAudioMemoCard(
                                 confirmOverwriteMemo = true
                             },
                             border = BorderStroke(1.dp, SubtleBorder),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("audio_memo_rerecord_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Mic,
+                                imageVector = Icons.Rounded.Mic,
                                 contentDescription = null,
                                 tint = DeepBlue,
                                 modifier = Modifier.size(16.dp)
@@ -358,12 +357,12 @@ fun TaskAudioMemoCard(
                 OutlinedButton(
                     onClick = { onRecordClicked() },
                     border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
                     modifier = Modifier.testTag("audio_memo_record_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Mic,
+                        imageVector = Icons.Rounded.Mic,
                         contentDescription = null,
                         tint = DeepBlue,
                         modifier = Modifier.size(18.dp)
@@ -380,7 +379,7 @@ fun TaskAudioMemoCard(
             if (permissionDeniedMessage) {
                 Surface(
                     color = OverdueContainer,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -412,7 +411,7 @@ fun TaskAudioMemoCard(
             } else if (!playbackState.errorMessage.isNullOrBlank()) {
                 Surface(
                     color = SoftIceSurface,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     border = BorderStroke(1.dp, SubtleBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {

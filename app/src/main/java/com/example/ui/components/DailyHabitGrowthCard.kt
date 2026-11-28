@@ -29,10 +29,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
@@ -138,7 +137,7 @@ fun DailyHabitGrowthCard(
     }
 
     ModernPanel(
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -178,13 +177,13 @@ fun DailyHabitGrowthCard(
                         feedback.onPopOpen()
                         showAddHabitModal = true
                     },
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     border = BorderStroke(1.dp, DeepBlue.copy(alpha = 0.4f)),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier.testTag("add_daily_habit_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = Icons.Rounded.Add,
                         contentDescription = null,
                         tint = DeepBlue,
                         modifier = Modifier.size(16.dp)
@@ -200,7 +199,7 @@ fun DailyHabitGrowthCard(
 
             // Animated Bunny Growth Habitat
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = SoftIceSurface,
                 border = BorderStroke(1.dp, SubtleBorder.copy(alpha = 0.7f)),
                 modifier = Modifier.fillMaxWidth()
@@ -227,9 +226,9 @@ fun DailyHabitGrowthCard(
                         Box(
                             modifier = Modifier
                                 .size(104.dp)
-                                .clip(RoundedCornerShape(22.dp))
+                                .clip(MaterialTheme.shapes.large)
                                 .background(PureWhite.copy(alpha = 0.85f))
-                                .border(1.dp, SubtleBorder.copy(alpha = 0.7f), RoundedCornerShape(22.dp))
+                                .border(1.dp, SubtleBorder.copy(alpha = 0.7f), MaterialTheme.shapes.large)
                                 .clickable {
                                     feedback.onLightTick()
                                     hopTriggerCount++
@@ -333,7 +332,7 @@ fun DailyHabitGrowthCard(
                                         stage
                                     }
                                 },
-                                shape = RoundedCornerShape(100.dp),
+                                shape = CircleShape,
                                 color = when {
                                     isShowing -> DeepBlue
                                     reached -> SkyBlue.copy(alpha = 0.6f)
@@ -361,9 +360,9 @@ fun DailyHabitGrowthCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(MaterialTheme.shapes.medium)
                             .background(PureWhite.copy(alpha = 0.78f))
-                            .border(0.75.dp, SubtleBorder.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
+                            .border(0.75.dp, SubtleBorder.copy(alpha = 0.8f), MaterialTheme.shapes.medium)
                             .padding(horizontal = 12.dp, vertical = 9.dp)
                             .testTag("habit_streak_counter_bar"),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -428,7 +427,7 @@ fun DailyHabitGrowthCard(
                                 )
                                 feedback.playBunnyVoice( com.example.audio.BunnyVoiceMood.HABIT_REWARD)
                             },
-                            shape = RoundedCornerShape(16.dp),
+                            shape = MaterialTheme.shapes.medium,
                             color = PollenSoft.copy(alpha = 0.85f),
                             border = BorderStroke(1.dp, CalmSage.copy(alpha = 0.55f)),
                             modifier = Modifier
@@ -492,11 +491,11 @@ fun DailyHabitGrowthCard(
                             showAddHabitModal = true
                         },
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier.testTag("create_first_habit_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
+                            imageVector = Icons.Rounded.Add,
                             contentDescription = null,
                             tint = DeepBlue,
                             modifier = Modifier.size(16.dp)
@@ -586,7 +585,7 @@ private fun DailyHabitRow(
             Box(contentAlignment = Alignment.Center) {
                 if (habit.completedToday) {
                     Icon(
-                        imageVector = Icons.Default.Check,
+                        imageVector = Icons.Rounded.Check,
                         contentDescription = "Completed today",
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(22.dp)
@@ -762,7 +761,7 @@ private fun AddDailyHabitModal(
             ) {
                 OutlinedButton(
                     onClick = requestDismiss,
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Cancel")
@@ -778,7 +777,7 @@ private fun AddDailyHabitModal(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .weight(1f)
                         .testTag("save_daily_habit_button")

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -59,6 +58,7 @@ import com.example.ui.theme.MidnightNavy
 import com.example.ui.theme.MutedNavy
 import com.example.ui.theme.PollenSoft
 import com.example.ui.theme.PollenYellow
+import com.example.ui.theme.SharedInviteAccent
 import com.example.ui.theme.SkyBlue
 import com.example.ui.theme.SoftIceSurface
 import com.example.ui.theme.SubtleBorder
@@ -80,7 +80,7 @@ fun MonthlyCompletedTasksChartCard(
     val weekLabels = remember { listOf("W1", "W2", "W3", "W4", "W5") }
 
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -105,7 +105,7 @@ fun MonthlyCompletedTasksChartCard(
                     Box(
                         modifier = Modifier
                             .size(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(CalmSageContainer),
                         contentAlignment = Alignment.Center
                     ) {
@@ -148,7 +148,7 @@ fun MonthlyCompletedTasksChartCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(142.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(SoftIceSurface.copy(alpha = 0.55f))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 ) {
@@ -260,7 +260,7 @@ fun MonthlyCompletedTasksChartCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(MaterialTheme.shapes.small)
                                 .clickable {
                                     selectedWeekIndex = if (selectedWeekIndex == idx) -1 else idx
                                 }
@@ -381,7 +381,7 @@ fun MonthlyMilestoneTimeChartCard(
     val weekLabels = remember { listOf("W1", "W2", "W3", "W4", "W5") }
 
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -406,7 +406,7 @@ fun MonthlyMilestoneTimeChartCard(
                     Box(
                         modifier = Modifier
                             .size(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(PollenSoft),
                         contentAlignment = Alignment.Center
                     ) {
@@ -440,7 +440,7 @@ fun MonthlyMilestoneTimeChartCard(
             // Native Compose Canvas Bar + Smooth Area visualization
             val gridColor = SubtleBorder.copy(alpha = 0.7f)
             val areaTop = ForgetMeNotBlue.copy(alpha = 0.34f)
-            val barPrimary = Color(0xFF6B52D1)
+            val barPrimary = SharedInviteAccent
             val barSecondary = ForgetMeNotBlue
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -448,7 +448,7 @@ fun MonthlyMilestoneTimeChartCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(138.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(SoftIceSurface.copy(alpha = 0.55f))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 ) {
@@ -549,7 +549,7 @@ fun MonthlyMilestoneTimeChartCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(MaterialTheme.shapes.small)
                                 .clickable {
                                     selectedWeekIndex = if (selectedWeekIndex == idx) -1 else idx
                                 }

@@ -21,13 +21,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Schedule
@@ -208,7 +207,7 @@ fun ClassScheduleEditorModal(
                 label = { Text("Subject name") },
                 placeholder = { Text("e.g., Calculus II, Art History, Biology Lab") },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -221,7 +220,7 @@ fun ClassScheduleEditorModal(
                 label = { Text("Room or instructor (optional)") },
                 placeholder = { Text("e.g., Room 204 · Prof. Cruz") },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -269,7 +268,7 @@ fun ClassScheduleEditorModal(
                                         validationError = null
                                     },
                                     color = if (selected) DeepBlue else PureWhite,
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     border = BorderStroke(
                                         1.dp,
                                         if (selected) DeepBlue else SubtleBorder
@@ -326,7 +325,7 @@ fun ClassScheduleEditorModal(
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            imageVector = Icons.Default.Remove,
+                                            imageVector = Icons.Rounded.Remove,
                                             contentDescription = "Previous day of month",
                                             tint = MidnightNavy,
                                             modifier = Modifier.size(16.dp)
@@ -350,7 +349,7 @@ fun ClassScheduleEditorModal(
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            imageVector = Icons.Default.Add,
+                                            imageVector = Icons.Rounded.Add,
                                             contentDescription = "Next day of month",
                                             tint = MidnightNavy,
                                             modifier = Modifier.size(16.dp)
@@ -450,7 +449,7 @@ fun ClassScheduleEditorModal(
                         Surface(
                             onClick = { showStartDatePicker = true },
                             color = PureWhite,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             border = BorderStroke(1.dp, SubtleBorder),
                             modifier = Modifier.testTag("class_semester_start_button")
                         ) {
@@ -499,7 +498,7 @@ fun ClassScheduleEditorModal(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = Icons.Default.Remove,
+                                        imageVector = Icons.Rounded.Remove,
                                         contentDescription = "Fewer months",
                                         tint = MidnightNavy,
                                         modifier = Modifier.size(16.dp)
@@ -522,7 +521,7 @@ fun ClassScheduleEditorModal(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = Icons.Default.Add,
+                                        imageVector = Icons.Rounded.Add,
                                         contentDescription = "More months",
                                         tint = MidnightNavy,
                                         modifier = Modifier.size(16.dp)
@@ -577,7 +576,7 @@ fun ClassScheduleEditorModal(
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(
-                                imageVector = if (notifyEnabled) Icons.Default.NotificationsActive else Icons.Outlined.NotificationsOff,
+                                imageVector = if (notifyEnabled) Icons.Rounded.NotificationsActive else Icons.Outlined.NotificationsOff,
                                 contentDescription = null,
                                 tint = if (notifyEnabled) DeepBlue else MutedNavy,
                                 modifier = Modifier.size(20.dp)
@@ -717,7 +716,7 @@ fun ClassScheduleEditorModal(
                     modifier = Modifier.testTag("class_delete_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.DeleteOutline,
+                        imageVector = Icons.Outlined.Delete,
                         contentDescription = null,
                         tint = OverdueTerracotta,
                         modifier = Modifier.size(18.dp)
@@ -732,7 +731,7 @@ fun ClassScheduleEditorModal(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = requestDismiss,
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     border = BorderStroke(1.dp, SubtleBorder)
                 ) {
                     Text("Cancel", color = MidnightNavy)
@@ -773,7 +772,7 @@ fun ClassScheduleEditorModal(
                         containerColor = DeepBlue,
                         contentColor = PureWhite
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                     modifier = Modifier.testTag("class_save_button")
                 ) {
@@ -850,7 +849,7 @@ private fun TimeSelectorChip(
     Surface(
         onClick = onClick,
         color = PureWhite,
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, SubtleBorder),
         modifier = modifier
     ) {

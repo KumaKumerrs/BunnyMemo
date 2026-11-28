@@ -26,8 +26,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.GroupAdd
@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.audio.BunnyFeedbackManager
 import com.example.audio.TaskAudioMemoManager
-import com.example.data.AppUsageSummary
 import com.example.data.CalendarDate
 import com.example.data.CalendarInvite
 import com.example.data.ClassScheduleItem
@@ -79,11 +78,13 @@ import com.example.data.TaskCategory
 import com.example.data.UnifiedStep
 import com.example.ui.components.BunnyBreed
 import com.example.ui.components.BunnyPose
-import com.example.ui.components.CompactAppUsageStrip
 import com.example.ui.components.DailyHabitGrowthCard
 import com.example.ui.components.FlowerProgressRow
 import com.example.ui.components.ForgetMeNotFlower
 import com.example.ui.components.ForgetMeNotHabitCalendarCard
+import com.example.ui.components.CompactFocusAndGuardStrip
+import com.example.ui.components.LiveCompactAppUsageStrip
+import com.example.ui.components.MiniPhotoBadgeRow
 import com.example.ui.components.ModernPanel
 import com.example.ui.components.ModernPillBadge
 import com.example.ui.components.ModernSectionHeader
@@ -117,7 +118,6 @@ import com.example.viewmodel.PlannerUiState
 @Composable
 fun TodayScreen(
     state: PlannerUiState.Ready,
-    usageSummary: AppUsageSummary,
     selectedItemId: String?,
     onSelectItem: (String) -> Unit,
     onToggleTask: (PlannerItem, Boolean) -> Unit,
@@ -125,6 +125,8 @@ fun TodayScreen(
     onAddClick: (CalendarDate) -> Unit,
     onEditClass: (ClassScheduleItem) -> Unit = {},
     onOpenReports: () -> Unit = {},
+    onOpenFocusSession: () -> Unit = {},
+    onOpenFocusGuard: () -> Unit = {},
     calendarInvites: List<CalendarInvite> = emptyList(),
     currentUserId: String? = null,
     onInviteFriendClick: () -> Unit = {},
@@ -366,7 +368,7 @@ fun TodayScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(100.dp))
+                                .clip(CircleShape)
                                 .clickable {
                                     feedback.onPopOpen()
                                     showBunnyAlmanac = true
@@ -441,7 +443,7 @@ fun TodayScreen(
             // Calm elevated empty state card
             item(key = "quiet_day_card") {
                 ModernPanel(
-                    shape = RoundedCornerShape(26.dp),
+                    shape = MaterialTheme.shapes.large,
                     elevation = 4.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -478,12 +480,12 @@ fun TodayScreen(
                                 containerColor = DeepBlue,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
                             modifier = Modifier.testTag("quiet_day_add_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
+                                imageVector = Icons.Rounded.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -496,7 +498,7 @@ fun TodayScreen(
         } else if (isFilteredEmpty) {
             item(key = "today_filtered_empty_card") {
                 ModernPanel(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = MaterialTheme.shapes.large,
                     elevation = 2.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -525,7 +527,7 @@ fun TodayScreen(
                                 categoryFilter = TaskCategoryFilter.ALL
                             },
                             border = BorderStroke(1.dp, SubtleBorder),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier.testTag("today_clear_filter_button")
                         ) {
                             Text("Clear filter", color = DeepBlue)
@@ -685,6 +687,14 @@ fun TodayScreen(
                 DailyHabitGrowthCard(modifier = Modifier.fillMaxWidth())
             }
 
+            item(key = "today_focus_and_guard_strip") {
+                CompactFocusAndGuardStrip(
+                    onOpenFocusSession = onOpenFocusSession,
+                    onOpenFocusGuard = onOpenFocusGuard,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             item(key = "activity_toggle") {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
@@ -694,26 +704,28 @@ fun TodayScreen(
                     TextButton(onClick = { showActivity = !showActivity }) {
                         Text(if (showActivity) "Hide activity & habit garden" else "Show activity & habit garden")
                     }
-                    TextButton(
-                        onClick = {
-                            feedback.onPopOpen()
-                            onInviteFriendClick()
-                        },
-                        modifier = Modifier.testTag("today_quick_invite_friend_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.GroupAdd,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.profile_invite_friend_cta))
+                    if (todaySharedInvites.isEmpty()) {
+                        TextButton(
+                            onClick = {
+                                feedback.onPopOpen()
+                                onInviteFriendClick()
+                            },
+                            modifier = Modifier.testTag("today_quick_invite_friend_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.GroupAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.profile_invite_friend_cta))
+                        }
                     }
                 }
             }
             if (showActivity) {
                 item(key = "today_usage_strip") {
-                    CompactAppUsageStrip(usage = usageSummary, onClick = onOpenReports)
+                    LiveCompactAppUsageStrip(onClick = onOpenReports)
                 }
                 item(key = "today_habit_garden") {
                     ForgetMeNotHabitCalendarCard(
@@ -745,7 +757,7 @@ private fun QuickNotesGroupedPanel(
     val context = LocalContext.current
     val feedback = remember(context) { BunnyFeedbackManager.getInstance(context) }
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -834,7 +846,7 @@ private fun TodayClassRowCard(
 ) {
     val (fill, accent) = classColorPalette(cls.colorKeyEnum())
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         borderColor = accent.copy(alpha = 0.35f),
         elevation = 2.dp,
         onClick = onClick,
@@ -852,7 +864,7 @@ private fun TodayClassRowCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(fill),
                 contentAlignment = Alignment.Center
             ) {
@@ -890,7 +902,7 @@ private fun TodayClassRowCard(
             }
             if (cls.notifyEnabled) {
                 Icon(
-                    imageVector = Icons.Default.NotificationsActive,
+                    imageVector = Icons.Rounded.NotificationsActive,
                     contentDescription = "Class reminder active",
                     tint = DeepBlue,
                     modifier = Modifier.size(16.dp)
@@ -912,7 +924,7 @@ private fun DueTodayGroupedPanel(
     onSelectItem: (String) -> Unit
 ) {
     ModernPanel(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.large,
         elevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -978,7 +990,7 @@ private fun EventTodayCard(
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
         borderColor = selectedPanelBorder(isSelected),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
         modifier = Modifier
@@ -1059,6 +1071,10 @@ private fun EventTodayCard(
                     if (event.hasAudioMemo()) {
                         AudioMemoMiniTag(durationSeconds = event.audioMemoDurationSeconds)
                     }
+                }
+
+                if (event.imagePaths.isNotEmpty()) {
+                    MiniPhotoBadgeRow(imagePaths = event.imagePaths)
                 }
 
                 if (progress.totalCount > 0) {
@@ -1174,6 +1190,12 @@ private fun TaskRowItem(
                     )
                 }
             }
+            if (task.imagePaths.isNotEmpty()) {
+                MiniPhotoBadgeRow(
+                    imagePaths = task.imagePaths,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
         if (parentPlanTitle != null) {
             Box(modifier = Modifier.padding(end = 8.dp)) {
@@ -1259,7 +1281,7 @@ private fun PlanTodayCard(
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
         borderColor = selectedPanelBorder(isSelected, progress.overdueCount > 0, OverdueTerracotta),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
         modifier = Modifier
@@ -1344,6 +1366,10 @@ private fun PlanTodayCard(
                             contentColor = CalmSage
                         )
                     }
+                }
+
+                if (plan.imagePaths.isNotEmpty()) {
+                    MiniPhotoBadgeRow(imagePaths = plan.imagePaths)
                 }
 
                 if (progress.totalCount > 0) {

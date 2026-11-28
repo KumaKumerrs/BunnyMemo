@@ -19,9 +19,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -67,7 +66,7 @@ fun MonthlyBunnyAlmanacModal(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             color = PureWhite,
             tonalElevation = 6.dp,
             border = BorderStroke(1.dp, SubtleBorder),
@@ -104,7 +103,7 @@ fun MonthlyBunnyAlmanacModal(
                         modifier = Modifier.testTag("close_bunny_almanac_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.close_button),
                             tint = MidnightNavy
                         )
@@ -130,7 +129,7 @@ fun MonthlyBunnyAlmanacModal(
                             breed.coatDescription
                         )
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.medium,
                             color = if (isHighlighted) SoftIceSurface else PureWhite,
                             border = BorderStroke(
                                 width = if (isHighlighted) 1.5.dp else 1.dp,
@@ -138,7 +137,7 @@ fun MonthlyBunnyAlmanacModal(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(MaterialTheme.shapes.medium)
                                 .then(
                                     if (onSelectMonth != null) {
                                         Modifier.clickable {
@@ -172,7 +171,7 @@ fun MonthlyBunnyAlmanacModal(
                                     if (isCurrentMonth) {
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(100.dp))
+                                                .clip(CircleShape)
                                                 .background(PollenSoft)
                                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
@@ -236,7 +235,7 @@ fun MonthlyBunnyAlmanacModal(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)

@@ -48,19 +48,18 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -72,7 +71,6 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.Badge
@@ -140,7 +138,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.audio.BunnyFeedbackManager
 import com.example.audio.TaskAudioMemoManager
-import com.example.data.AppUsageSummary
 import com.example.data.AppUsageTracker
 import com.example.data.CalendarDate
 import com.example.data.CalendarInvite
@@ -210,6 +207,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.shape.CircleShape
 
 private const val MODE_PREFS_NAME = "bunny_memo_mode_prefs"
 private const val KEY_LOCAL_MODE_ENABLED = "local_mode_enabled"
@@ -327,7 +325,6 @@ fun AppContent(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val usageTracker = remember(context) { AppUsageTracker.getInstance(context) }
-    val usageSummary by usageTracker.usageSummary.collectAsStateWithLifecycle()
     val syncService = remember(context) { RoomFirestoreSyncService.getInstance(context) }
     val syncStatus by syncService.syncStatus.collectAsStateWithLifecycle()
     val feedbackManager = remember(context) { BunnyFeedbackManager.getInstance(context) }
@@ -441,7 +438,6 @@ fun AppContent(
                         userDisplayName = user?.displayName,
                         userEmail = user?.email,
                         userPhotoUrl = user?.photoUrl?.toString(),
-                        usageSummary = usageSummary,
                         syncStatus = syncStatus,
                         onRequestManualSync = { syncService.requestSync(restoredFromOffline = false) },
                         launchDirective = launchDirective,
@@ -482,7 +478,6 @@ private fun PlannerWorkspaceShell(
     userDisplayName: String?,
     userEmail: String?,
     userPhotoUrl: String?,
-    usageSummary: AppUsageSummary,
     syncStatus: RoomSyncStatus,
     onRequestManualSync: () -> Unit,
     launchDirective: LaunchDirective?,
@@ -792,7 +787,7 @@ private fun PlannerWorkspaceShell(
                     ) {
                         Surface(
                             color = PureWhite,
-                            shape = RoundedCornerShape(24.dp),
+                            shape = MaterialTheme.shapes.large,
                             border = BorderStroke(1.dp, SubtleBorder),
                             modifier = Modifier
                                 .widthIn(max = 420.dp)
@@ -820,7 +815,7 @@ private fun PlannerWorkspaceShell(
                                         containerColor = DeepBlue,
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     ),
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("error_retry_button")
@@ -831,7 +826,7 @@ private fun PlannerWorkspaceShell(
                                     OutlinedButton(
                                         onClick = onFallbackToLocalMode,
                                         border = BorderStroke(1.dp, SubtleBorder),
-                                        shape = RoundedCornerShape(100.dp),
+                                        shape = CircleShape,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .testTag("error_continue_locally_button")
@@ -841,7 +836,7 @@ private fun PlannerWorkspaceShell(
                                     OutlinedButton(
                                         onClick = performCleanSignOut,
                                         border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.5f)),
-                                        shape = RoundedCornerShape(100.dp),
+                                        shape = CircleShape,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .testTag("error_sign_out_button")
@@ -974,56 +969,11 @@ private fun PlannerWorkspaceShell(
                                             unselectedTextColor = MidnightNavy
                                         )
 
-                                        PlannerTab.entries.forEach { tab ->
-                                            NavigationDrawerItem(
-                                                label = { Text(stringResource(tab.labelRes)) },
-                                                selected = activeTab == tab,
-                                                icon = {
-                                                    TabIcon(
-                                                        tab = tab,
-                                                        selected = activeTab == tab,
-                                                        badgeCount = if (tab == PlannerTab.NOTIFICATIONS) dueInboxCount else 0
-                                                    )
-                                                },
-                                                colors = drawerItemColors,
-                                                onClick = {
-                                                    feedbackManager.onTabSwitch()
-                                                    activeTab = tab
-                                                    selectedItemId = null
-                                                    searchQuery = ""
-                                                    searchOpen = false
-                                                    scope.launch { drawerState.close() }
-                                                }
-                                            )
-                                        }
-
                                         HorizontalDivider(
-                                            modifier = Modifier.padding(vertical = 10.dp),
+                                            modifier = Modifier.padding(bottom = 10.dp),
                                             color = SubtleBorder
                                         )
 
-                                        NavigationDrawerItem(
-                                            label = { Text(stringResource(R.string.focus_session_title)) },
-                                            selected = false,
-                                            icon = { Icon(Icons.Outlined.Timer, contentDescription = null, tint = DeepBlue) },
-                                            colors = drawerItemColors,
-                                            onClick = {
-                                                feedbackManager.onPopOpen()
-                                                scope.launch { drawerState.close() }
-                                                showFocusSessionModal = true
-                                            }
-                                        )
-                                        NavigationDrawerItem(
-                                            label = { Text(stringResource(R.string.focus_guard_title)) },
-                                            selected = false,
-                                            icon = { Icon(Icons.Outlined.Shield, contentDescription = null, tint = DeepBlue) },
-                                            colors = drawerItemColors,
-                                            onClick = {
-                                                feedbackManager.onPopOpen()
-                                                scope.launch { drawerState.close() }
-                                                showDoomscrollGuardModal = true
-                                            }
-                                        )
                                         NavigationDrawerItem(
                                             label = { Text(if (isLocalMode) "Back up memos" else "Sync now") },
                                             selected = false,
@@ -1187,7 +1137,7 @@ private fun PlannerWorkspaceShell(
                                                         modifier = Modifier.testTag("top_bar_drawer_button")
                                                     ) {
                                                         Icon(
-                                                            Icons.Default.Menu,
+                                                            Icons.Rounded.Menu,
                                                             contentDescription = "Open planner navigation",
                                                             tint = MidnightNavy
                                                         )
@@ -1233,7 +1183,7 @@ private fun PlannerWorkspaceShell(
                                                         modifier = Modifier.testTag("top_bar_search_button")
                                                     ) {
                                                         Icon(
-                                                            imageVector = if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                                                            imageVector = if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
                                                             contentDescription = if (searchOpen) "Close search" else "Search planner",
                                                             tint = MidnightNavy
                                                         )
@@ -1303,7 +1253,7 @@ private fun PlannerWorkspaceShell(
                                                     },
                                                     containerColor = DeepBlue,
                                                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                                                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                                    icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                                                     text = { Text("Create") },
                                                     modifier = Modifier.testTag("workspace_create_fab")
                                                 )
@@ -1488,7 +1438,6 @@ private fun PlannerWorkspaceShell(
                                                             when (targetTab) {
                                                                 PlannerTab.TODAY -> TodayScreen(
                                                                     state = current,
-                                                                    usageSummary = usageSummary,
                                                                     selectedItemId = selectedItemId,
                                                                     onSelectItem = { id -> selectedItemId = id },
                                                                     onToggleTask = { task, checked ->
@@ -1512,6 +1461,14 @@ private fun PlannerWorkspaceShell(
                                                                     onOpenReports = {
                                                                         feedbackManager.onTabSwitch()
                                                                         activeTab = PlannerTab.REPORTS
+                                                                    },
+                                                                    onOpenFocusSession = {
+                                                                        feedbackManager.onPopOpen()
+                                                                        showFocusSessionModal = true
+                                                                    },
+                                                                    onOpenFocusGuard = {
+                                                                        feedbackManager.onPopOpen()
+                                                                        showDoomscrollGuardModal = true
                                                                     },
                                                                     calendarInvites = calendarInvites,
                                                                     currentUserId = if (isLocalMode) null else currentUserId,

@@ -20,12 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
@@ -245,7 +244,7 @@ fun ItemDetailScreen(
                                 modifier = Modifier.testTag("detail_close_pane_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
+                                    imageVector = Icons.Rounded.Close,
                                     contentDescription = "Close detail pane",
                                     tint = MutedNavy
                                 )
@@ -260,7 +259,7 @@ fun ItemDetailScreen(
             AnimatedVisibility(visible = isCelebrating && progress.allStepsDone) {
                 Surface(
                     color = PollenSoft,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(1.dp, ForgetMeNotBlue),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -303,7 +302,7 @@ fun ItemDetailScreen(
         // Title, Timing, Event Countdown & Notes Card
         item(key = "detail_hero") {
             ModernPanel(
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 elevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -367,7 +366,7 @@ fun ItemDetailScreen(
                             // Event countdown shown separately from preparation progress (Brief Page 2)
                             Surface(
                                 color = SkyBlue.copy(alpha = 0.65f),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = MaterialTheme.shapes.small
                             ) {
                                 Text(
                                     text = "Countdown: $countdown",
@@ -438,7 +437,7 @@ fun ItemDetailScreen(
                             if (parentTitle != null) {
                                 Surface(
                                     color = SoftIceSurface,
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = MaterialTheme.shapes.small
                                 ) {
                                     Text(
                                         text = "Counts as a step in: $parentTitle",
@@ -474,7 +473,7 @@ fun ItemDetailScreen(
 
                     if (!item.notes.isNullOrBlank()) {
                         TonalInsetPanel(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -504,13 +503,13 @@ fun ItemDetailScreen(
                                     containerColor = if (item.completed) CalmSage else DeepBlue,
                                     contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
-                                shape = RoundedCornerShape(100.dp),
+                                shape = CircleShape,
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("detail_complete_toggle_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Check,
+                                    imageVector = Icons.Rounded.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -521,7 +520,7 @@ fun ItemDetailScreen(
                         OutlinedButton(
                             onClick = { onEditItem(item) },
                             border = BorderStroke(1.dp, SubtleBorder),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("detail_reschedule_button")
@@ -556,7 +555,7 @@ fun ItemDetailScreen(
         if (supportsChecklist) {
             item(key = "detail_progress_card") {
                 ModernPanel(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = MaterialTheme.shapes.large,
                     elevation = 3.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -577,7 +576,7 @@ fun ItemDetailScreen(
                             if (progress.overdueCount > 0) {
                                 Surface(
                                     color = OverdueContainer,
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = MaterialTheme.shapes.small
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -600,7 +599,7 @@ fun ItemDetailScreen(
                             } else if (progress.totalCount > 0 && progress.allStepsDone) {
                                 Surface(
                                     color = CalmSageContainer,
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = MaterialTheme.shapes.small
                                 ) {
                                     Text(
                                         text = if (item.itemType() == ItemType.EVENT) "Fully prepared" else "Complete",
@@ -637,10 +636,10 @@ fun ItemDetailScreen(
                                     containerColor = DeepBlue,
                                     contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
-                                shape = RoundedCornerShape(14.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 modifier = Modifier.testTag("add_first_step_button")
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Add first step")
                             }
@@ -713,7 +712,7 @@ fun ItemDetailScreen(
             items(steps, key = { "detail_step_${it.id}" }) { step ->
                 val overdue = step.isOverdue(nowMillis)
                 ModernPanel(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = MaterialTheme.shapes.medium,
                     borderColor = if (overdue) OverdueTerracotta.copy(alpha = 0.4f) else SubtleBorder.copy(alpha = 0.85f),
                     elevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
@@ -852,7 +851,7 @@ fun ItemDetailScreen(
         // Reminders section
         item(key = "detail_reminders_card") {
             ModernPanel(
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 elevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -884,7 +883,7 @@ fun ItemDetailScreen(
                     } else {
                         reminders.forEach { rem ->
                             TonalInsetPanel(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(

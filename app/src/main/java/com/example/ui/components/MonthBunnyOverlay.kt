@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -490,6 +492,8 @@ fun MonthBunnyOverlay(
         BunnyCompanionExpression.NEUTRAL -> "${monthBreed.shortMonthName} · ${monthBreed.breedName}"
     }
 
+    var isMinimized by rememberSaveable { mutableStateOf(false) }
+
     // Bottom-left overlay: larger bunny at BottomStart + speech bubble comfortably above bottom-right FAB
     Box(
         modifier = modifier
@@ -498,6 +502,42 @@ fun MonthBunnyOverlay(
             .testTag("month_bunny_companion_root"),
         contentAlignment = Alignment.BottomStart
     ) {
+        if (isMinimized) {
+            Surface(
+                onClick = {
+                    feedback.onPopOpen()
+                    isMinimized = false
+                },
+                shape = CircleShape,
+                color = PureWhite.copy(alpha = 0.94f),
+                border = BorderStroke(1.dp, SubtleBorder),
+                shadowElevation = 3.dp,
+                modifier = Modifier
+                    .heightIn(min = 44.dp)
+                    .testTag("month_bunny_minimized_tab")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    SmallBunnyIllustration(
+                        pose = BunnyPose.GREETING,
+                        breed = monthBreed,
+                        size = 24.dp,
+                        contentDesc = "Show ${monthBreed.breedName} bunny"
+                    )
+                    Text(
+                        text = monthBreed.shortMonthName,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DeepBlue
+                    )
+                }
+            }
+            return@Box
+        }
+
         // Speech bubble tucked neatly to the right of the bunny's upper head/ears, clear of Create FAB
         AnimatedVisibility(
             visible = bubbleExpanded,
@@ -565,7 +605,7 @@ fun MonthBunnyOverlay(
                                 .testTag("month_bunny_bubble_close")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
+                                imageVector = Icons.Rounded.Close,
                                 contentDescription = stringResource(R.string.cd_month_bunny_hide_bubble),
                                 tint = MutedNavy,
                                 modifier = Modifier.size(16.dp)
@@ -593,7 +633,7 @@ fun MonthBunnyOverlay(
                             moodOptions.forEach { (chipLabel, replyText) ->
                                 Surface(
                                     color = SoftIceSurface,
-                                    shape = RoundedCornerShape(100.dp),
+                                    shape = CircleShape,
                                     border = BorderStroke(0.75.dp, SkyBlue),
                                     modifier = Modifier.clickable {
                                         transientReaction = BunnyTransientReaction.CHECK_IN_REPLY
@@ -621,7 +661,7 @@ fun MonthBunnyOverlay(
                     if (actionTaskId != null) {
                         Surface(
                             color = if (activeExpression == BunnyCompanionExpression.SAD) OverdueContainer else SkyBlue.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .testTag("month_bunny_open_task")
                                 .clickable {
@@ -806,7 +846,7 @@ fun MonthBunnyOverlay(
 
             Surface(
                 color = if (allHabitsDoneToday) CalmSage.copy(alpha = 0.16f) else SoftIceSurface.copy(alpha = 0.95f),
-                shape = RoundedCornerShape(100.dp),
+                shape = CircleShape,
                 border = BorderStroke(
                     0.85.dp,
                     if (allHabitsDoneToday) CalmSage.copy(alpha = 0.65f) else SubtleBorder
@@ -841,15 +881,34 @@ fun MonthBunnyOverlay(
                     else ->
                         "${monthBreed.shortMonthName} · ${monthBreed.breedName}"
                 }
-                Text(
-                    text = badgeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (allHabitsDoneToday) CalmSage else MidnightNavy,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 2.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(start = 9.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = badgeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (allHabitsDoneToday) CalmSage else MidnightNavy,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Minimize bunny",
+                        tint = MutedNavy,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                feedback.onLightTick()
+                                bubbleExpanded = false
+                                isMinimized = true
+                            }
+                            .testTag("month_bunny_minimize_button")
+                    )
+                }
             }
         }
     }

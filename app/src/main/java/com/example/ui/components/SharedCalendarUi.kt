@@ -17,12 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Email
@@ -177,7 +176,7 @@ fun SharedScheduleCard(
     val parsedDate = remember(invite.plannedDate) { CalendarDate.parse(invite.plannedDate) }
 
     ModernPanel(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         containerColor = SoftIceSurface,
         borderColor = DeepBlue.copy(alpha = 0.45f),
         borderWidth = 1.dp,
@@ -311,7 +310,7 @@ fun InviteFriendToCalendarDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         ModernPanel(
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             elevation = 8.dp,
             modifier = Modifier
                 .fillMaxWidth(0.94f)
@@ -337,7 +336,7 @@ fun InviteFriendToCalendarDialog(
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(MaterialTheme.shapes.small)
                                 .background(SkyBlue.copy(alpha = 0.65f)),
                             contentAlignment = Alignment.Center
                         ) {
@@ -363,7 +362,7 @@ fun InviteFriendToCalendarDialog(
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.close_button),
                             tint = MutedNavy
                         )
@@ -372,7 +371,7 @@ fun InviteFriendToCalendarDialog(
 
                 if (!isSignedIn) {
                     TonalInsetPanel(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         containerColor = OverdueContainer,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -399,7 +398,7 @@ fun InviteFriendToCalendarDialog(
                     leadingIcon = {
                         Icon(Icons.Outlined.Email, contentDescription = null, tint = DeepBlue)
                     },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("invite_friend_email_input")
@@ -410,7 +409,7 @@ fun InviteFriendToCalendarDialog(
                     onValueChange = { scheduleTitle = it.take(140) },
                     label = { Text(stringResource(R.string.invite_schedule_title_label)) },
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("invite_friend_title_input")
@@ -423,7 +422,7 @@ fun InviteFriendToCalendarDialog(
                     OutlinedButton(
                         onClick = { showDatePicker = true },
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 52.dp)
@@ -449,7 +448,7 @@ fun InviteFriendToCalendarDialog(
                         label = { Text("Time (optional)") },
                         placeholder = { Text("3:00 PM") },
                         singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -460,7 +459,7 @@ fun InviteFriendToCalendarDialog(
                     label = { Text("Message or location note") },
                     minLines = 2,
                     maxLines = 3,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -488,7 +487,7 @@ fun InviteFriendToCalendarDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         border = BorderStroke(1.dp, SubtleBorder),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
@@ -511,7 +510,7 @@ fun InviteFriendToCalendarDialog(
                             containerColor = DeepBlue,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        shape = RoundedCornerShape(100.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .weight(1.3f)
                             .heightIn(min = 48.dp)
@@ -573,7 +572,7 @@ fun FriendScheduleDetailModal(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         ModernPanel(
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             elevation = 8.dp,
             modifier = Modifier
                 .fillMaxWidth(0.94f)
@@ -618,11 +617,11 @@ fun FriendScheduleDetailModal(
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close_button), tint = MutedNavy)
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.close_button), tint = MutedNavy)
                     }
                 }
 
-                TonalInsetPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                TonalInsetPanel(shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -678,7 +677,7 @@ fun FriendScheduleDetailModal(
                         replies.forEach { reply ->
                             val (bg, fg) = rsvpStatusColors(reply.rsvpStatusEnum())
                             TonalInsetPanel(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("invite_reply_${reply.id}")
@@ -772,7 +771,7 @@ fun FriendScheduleDetailModal(
                     placeholder = { Text(stringResource(R.string.invite_reply_placeholder)) },
                     minLines = 2,
                     maxLines = 3,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("invite_reply_input")
@@ -787,7 +786,7 @@ fun FriendScheduleDetailModal(
                         containerColor = DeepBlue,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(100.dp),
+                    shape = CircleShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
@@ -810,7 +809,7 @@ fun FriendScheduleDetailModal(
                         OutlinedButton(
                             onClick = onResendEmail,
                             border = BorderStroke(1.dp, SubtleBorder),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
@@ -822,7 +821,7 @@ fun FriendScheduleDetailModal(
                         OutlinedButton(
                             onClick = { confirmDeleteInvite = true },
                             border = BorderStroke(1.dp, OverdueTerracotta.copy(alpha = 0.45f)),
-                            shape = RoundedCornerShape(100.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("invite_delete_button")

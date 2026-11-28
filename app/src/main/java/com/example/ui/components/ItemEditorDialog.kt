@@ -14,11 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
@@ -426,7 +425,7 @@ fun ItemEditorDialog(
                     if (!dateTimeError.isNullOrBlank()) {
                         Surface(
                             color = com.example.ui.theme.OverdueContainer,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("editor_datetime_error")
@@ -528,7 +527,7 @@ fun ItemEditorDialog(
                                 modifier = Modifier.testTag("editor_add_step_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Add,
+                                    imageVector = Icons.Rounded.Add,
                                     contentDescription = "Add step",
                                     tint = DeepBlue
                                 )
@@ -544,7 +543,7 @@ fun ItemEditorDialog(
                         draftSteps.forEachIndexed { index, step ->
                             Surface(
                                 color = PureWhite,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 border = BorderStroke(1.dp, SubtleBorder)
                             ) {
                                 Row(
@@ -569,7 +568,7 @@ fun ItemEditorDialog(
                                     }
                                     IconButton(onClick = { draftSteps.removeAt(index) }) {
                                         Icon(
-                                            imageVector = Icons.Default.Close,
+                                            imageVector = Icons.Rounded.Close,
                                             contentDescription = "Remove step",
                                             modifier = Modifier.size(18.dp)
                                         )
@@ -658,7 +657,7 @@ fun ItemEditorDialog(
                 ) {
                     OutlinedButton(
                         onClick = requestDismiss,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Cancel")
@@ -758,7 +757,7 @@ fun ItemEditorDialog(
                             containerColor = DeepBlue,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .weight(1.2f)
                             .testTag("editor_save_button")
@@ -858,7 +857,7 @@ private fun PickerChipButton(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.medium,
         color = PureWhite,
         border = BorderStroke(1.dp, SubtleBorder)
     ) {

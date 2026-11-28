@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.outlined.Flag
@@ -175,13 +174,13 @@ fun TaskPrioritySelector(
                     label = "priority_fg"
                 )
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = bgColor,
                     border = BorderStroke(if (isSelected) 1.25.dp else 0.75.dp, borderColor),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .clickable { onSelect(priority) }
                         .testTag("${tagPrefix}_${priority.name.lowercase()}")
                 ) {
