@@ -40,6 +40,10 @@ internal fun Context.findActivity(): Activity? {
 }
 
 private fun resolveDefaultWebClientId(context: Context): String? {
+    val direct = runCatching {
+        context.getString(R.string.default_web_client_id).trim().takeIf { it.isNotBlank() }
+    }.getOrNull()
+    if (direct != null) return direct
     return runCatching {
         @Suppress("DiscouragedApi")
         val resId = context.resources.getIdentifier(
