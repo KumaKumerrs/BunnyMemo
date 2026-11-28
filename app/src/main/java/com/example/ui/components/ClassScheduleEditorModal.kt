@@ -142,11 +142,11 @@ fun ClassScheduleEditorModal(
     var semesterMonths by remember(existing?.id) {
         mutableIntStateOf((existing?.semesterMonths ?: 4).coerceIn(1, 12))
     }
-    var startTimeMinutes by remember(existing?.id) {
-        mutableIntStateOf(existing?.startTimeMinutes ?: (9 * 60))
+    var startTimeText by remember(existing?.id) {
+        mutableStateOf(PlannerDateUtils.formatTimeOfDay(existing?.startTimeMinutes ?: (9 * 60)))
     }
-    var endTimeMinutes by remember(existing?.id) {
-        mutableIntStateOf(existing?.endTimeMinutes ?: (10 * 60 + 30))
+    var endTimeText by remember(existing?.id) {
+        mutableStateOf(PlannerDateUtils.formatTimeOfDay(existing?.endTimeMinutes ?: (10 * 60 + 30)))
     }
     var notifyEnabled by remember(existing?.id) {
         mutableStateOf(existing?.notifyEnabled ?: true)
@@ -160,7 +160,6 @@ fun ClassScheduleEditorModal(
 
     var validationError by remember { mutableStateOf<String?>(null) }
     var showStartDatePicker by remember { mutableStateOf(false) }
-    var activeTimePicker by remember { mutableStateOf<String?>(null) } // "start" or "end"
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val endInclusiveDate = remember(semesterStartDate, semesterMonths) {
@@ -403,21 +402,29 @@ fun ClassScheduleEditorModal(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        TimeSelectorChip(
+                        DirectTimeTextField(
                             label = "Starts",
-                            value = PlannerDateUtils.formatTimeOfDay(startTimeMinutes),
-                            onClick = { activeTimePicker = "start" },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("class_start_time_button")
+                            value = startTimeText,
+                            onValueChange = {
+                                startTimeText = it
+                                validationError = null
+                            },
+                            optional = false,
+                            placeholder = "9:00 AM",
+                            modifier = Modifier.weight(1f),
+                            testTag = "class_start_time_input"
                         )
-                        TimeSelectorChip(
+                        DirectTimeTextField(
                             label = "Ends",
-                            value = PlannerDateUtils.formatTimeOfDay(endTimeMinutes),
-                            onClick = { activeTimePicker = "end" },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("class_end_time_button")
+                            value = endTimeText,
+                            onValueChange = {
+                                endTimeText = it
+                                validationError = null
+                            },
+                            optional = false,
+                            placeholder = "10:30 AM",
+                            modifier = Modifier.weight(1f),
+                            testTag = "class_end_time_input"
                         )
                     }
                 }
@@ -748,10 +755,15 @@ fun ClassScheduleEditorModal(
                             validationError = "Pick at least one day of the week."
                             return@Button
                         }
-                        val safeEnd = if (endTimeMinutes <= startTimeMinutes) {
-                            (startTimeMinutes + 60).coerceAtMost(23 * 60 + 55)
-                        } else {
-                            endTimeMinutes
+                        val parsedStart = PlannerDateUtils.parseFlexibleTimeMinutes(startTimeText)
+                        val parsedEnd = PlannerDateUtils.parseFlexibleTimeMinutes(endTimeText)
+                        if (parsedStart == null || parsedEnd == null) {
+                            validationError = "Enter valid start and end times (e.g. 9:00 AM or 14:30)."
+                            return@Button
+                        }
+                        if (parsedEnd <= parsedStart) {
+                            validationError = "Class end time must be after start time."
+                            return@Button
                         }
                         onSave(
                             trimmed,
@@ -759,8 +771,8 @@ fun ClassScheduleEditorModal(
                             repeatMode,
                             selectedDays.sorted(),
                             dayOfMonth.coerceIn(1, 31),
-                            startTimeMinutes,
-                            safeEnd,
+                            parsedStart,
+                            parsedEnd,
                             semesterStartDate.toIsoString(),
                             semesterMonths.coerceIn(1, 12),
                             notifyEnabled,
@@ -794,33 +806,6 @@ fun ClassScheduleEditorModal(
                 showStartDatePicker = false
             },
             onDismiss = { showStartDatePicker = false }
-        )
-    }
-
-    if (activeTimePicker != null) {
-        val pickingStart = activeTimePicker == "start"
-        val currentMins = if (pickingStart) startTimeMinutes else endTimeMinutes
-        BunnyMemoTimePickerModal(
-            title = if (pickingStart) "Class start time" else "Class end time",
-            initialHour = currentMins / 60,
-            initialMinute = currentMins % 60,
-            onTimeSelected = { h, m ->
-                val chosen = h * 60 + m
-                if (pickingStart) {
-                    startTimeMinutes = chosen
-                    if (endTimeMinutes <= chosen) {
-                        endTimeMinutes = (chosen + 60).coerceAtMost(23 * 60 + 55)
-                    }
-                } else {
-                    endTimeMinutes = if (chosen <= startTimeMinutes) {
-                        (startTimeMinutes + 30).coerceAtMost(23 * 60 + 55)
-                    } else {
-                        chosen
-                    }
-                }
-                activeTimePicker = null
-            },
-            onDismiss = { activeTimePicker = null }
         )
     }
 

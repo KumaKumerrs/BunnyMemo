@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -561,7 +562,11 @@ fun TodayScreen(
                                     progress = state.progressFor(event),
                                     nowMillis = nowMillis,
                                     isSelected = event.id == selectedItemId,
-                                    onClick = { onSelectItem(event.id) }
+                                    onClick = { onSelectItem(event.id) },
+                                    onToggleCompleted = { completed ->
+                                        feedback.onTaskToggled(completed)
+                                        onToggleTask(event, completed)
+                                    }
                                 )
                             }
                         }
@@ -591,7 +596,11 @@ fun TodayScreen(
                                 progress = state.progressFor(plan),
                                 today = today,
                                 isSelected = plan.id == selectedItemId,
-                                onClick = { onSelectItem(plan.id) }
+                                onClick = { onSelectItem(plan.id) },
+                                onToggleCompleted = { completed ->
+                                    feedback.onTaskToggled(completed)
+                                    onToggleTask(plan, completed)
+                                }
                             )
                         }
                     }
@@ -620,7 +629,11 @@ fun TodayScreen(
                         progress = progress,
                         nowMillis = nowMillis,
                         isSelected = event.id == selectedItemId,
-                        onClick = { onSelectItem(event.id) }
+                        onClick = { onSelectItem(event.id) },
+                        onToggleCompleted = { completed ->
+                            feedback.onTaskToggled(completed)
+                            onToggleTask(event, completed)
+                        }
                     )
                 }
             }
@@ -659,7 +672,11 @@ fun TodayScreen(
                         progress = progress,
                         today = today,
                         isSelected = plan.id == selectedItemId,
-                        onClick = { onSelectItem(plan.id) }
+                        onClick = { onSelectItem(plan.id) },
+                        onToggleCompleted = { completed ->
+                            feedback.onTaskToggled(completed)
+                            onToggleTask(plan, completed)
+                        }
                     )
                 }
             }
@@ -980,7 +997,8 @@ private fun EventTodayCard(
     progress: ItemProgress,
     nowMillis: Long,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onToggleCompleted: (Boolean) -> Unit
 ) {
     val countdown = PlannerDateUtils.formatEventCountdown(
         event.startAtUtcMillis,
@@ -989,7 +1007,7 @@ private fun EventTodayCard(
     )
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
-        borderColor = selectedPanelBorder(isSelected),
+        borderColor = if (event.completed) CalmSage.copy(alpha = 0.45f) else selectedPanelBorder(isSelected),
         shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
@@ -1007,7 +1025,7 @@ private fun EventTodayCard(
                 modifier = Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(DeepBlue)
+                    .background(if (event.completed) CalmSage else DeepBlue)
             )
             Column(
                 modifier = Modifier
@@ -1027,24 +1045,55 @@ private fun EventTodayCard(
                         Icon(
                             imageVector = Icons.Outlined.Event,
                             contentDescription = null,
-                            tint = DeepBlue,
+                            tint = if (event.completed) CalmSage else DeepBlue,
                             modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = event.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MidnightNavy,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                textDecoration = if (event.completed) TextDecoration.LineThrough else TextDecoration.None
+                            ),
+                            color = if (event.completed) MutedNavy else MidnightNavy,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     ModernPillBadge(
-                        text = countdown,
-                        containerColor = SkyBlue.copy(alpha = 0.65f),
-                        contentColor = DeepBlue
+                        text = if (event.completed) "Done" else countdown,
+                        containerColor = if (event.completed) CalmSageContainer else SkyBlue.copy(alpha = 0.65f),
+                        contentColor = if (event.completed) CalmSage else DeepBlue
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        onClick = { onToggleCompleted(!event.completed) },
+                        shape = CircleShape,
+                        color = if (event.completed) CalmSage else SoftIceSurface,
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 1.25.dp,
+                            color = if (event.completed) CalmSage else DeepBlue.copy(alpha = 0.45f)
+                        ),
+                        modifier = Modifier
+                            .size(34.dp)
+                            .testTag("today_event_complete_${event.id}")
+                            .semantics {
+                                contentDescription = if (event.completed) {
+                                    "Mark ${event.title} incomplete"
+                                } else {
+                                    "Mark ${event.title} complete"
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = if (event.completed) MaterialTheme.colorScheme.onPrimary else DeepBlue,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                    }
                 }
 
                 FlowRow(
@@ -1270,17 +1319,20 @@ private fun PlanTodayCard(
     progress: ItemProgress,
     today: CalendarDate,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onToggleCompleted: (Boolean) -> Unit
 ) {
     val dueDate = CalendarDate.parse(plan.dueDate)
     val accentColor = when {
+        plan.completed -> CalmSage
         progress.overdueCount > 0 -> OverdueTerracotta
         progress.allStepsDone && progress.totalCount > 0 -> CalmSage
         else -> ForgetMeNotBlue
     }
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
-        borderColor = selectedPanelBorder(isSelected, progress.overdueCount > 0, OverdueTerracotta),
+        borderColor = if (plan.completed) CalmSage.copy(alpha = 0.45f)
+        else selectedPanelBorder(isSelected, progress.overdueCount > 0, OverdueTerracotta),
         shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
@@ -1316,8 +1368,10 @@ private fun PlanTodayCard(
                     ) {
                         Text(
                             text = plan.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MidnightNavy
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                textDecoration = if (plan.completed) TextDecoration.LineThrough else TextDecoration.None
+                            ),
+                            color = if (plan.completed) MutedNavy else MidnightNavy
                         )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1336,35 +1390,68 @@ private fun PlanTodayCard(
                             }
                         }
                     }
-                    if (progress.overdueCount > 0) {
-                        Surface(
-                            color = OverdueContainer,
-                            shape = CircleShape
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (progress.overdueCount > 0 && !plan.completed) {
+                            Surface(
+                                color = OverdueContainer,
+                                shape = CircleShape
                             ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.WarningAmber,
+                                        contentDescription = null,
+                                        tint = OverdueTerracotta,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "${progress.overdueCount} overdue",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = OverdueTerracotta
+                                    )
+                                }
+                            }
+                        } else if (plan.completed || (progress.allStepsDone && progress.totalCount > 0)) {
+                            ModernPillBadge(
+                                text = "Done",
+                                containerColor = CalmSageContainer,
+                                contentColor = CalmSage
+                            )
+                        }
+                        Surface(
+                            onClick = { onToggleCompleted(!plan.completed) },
+                            shape = CircleShape,
+                            color = if (plan.completed) CalmSage else SoftIceSurface,
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 1.25.dp,
+                                color = if (plan.completed) CalmSage else DeepBlue.copy(alpha = 0.45f)
+                            ),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("today_plan_complete_${plan.id}")
+                                .semantics {
+                                    contentDescription = if (plan.completed) {
+                                        "Mark ${plan.title} incomplete"
+                                    } else {
+                                        "Mark ${plan.title} complete"
+                                    }
+                                }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Outlined.WarningAmber,
+                                    imageVector = Icons.Rounded.Check,
                                     contentDescription = null,
-                                    tint = OverdueTerracotta,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "${progress.overdueCount} overdue",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = OverdueTerracotta
+                                    tint = if (plan.completed) MaterialTheme.colorScheme.onPrimary else DeepBlue,
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
                         }
-                    } else if (progress.allStepsDone && progress.totalCount > 0) {
-                        ModernPillBadge(
-                            text = "Done",
-                            containerColor = CalmSageContainer,
-                            contentColor = CalmSage
-                        )
                     }
                 }
 

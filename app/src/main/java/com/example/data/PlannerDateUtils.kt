@@ -177,6 +177,72 @@ object PlannerDateUtils {
         return cachedFormat("h:mm a", utc).format(cal.time)
     }
 
+    /**
+     * Parses a user-typed time string in 12-hour or 24-hour format into minutes since midnight (0..1439).
+     * Accepts flexible inputs such as "2:30 PM", "2:30pm", "2pm", "14:30", "9:05", "0905", or "930am".
+     * Returns null when blank or invalid.
+     */
+    fun parseFlexibleTimeMinutes(raw: String): Int? {
+        val cleaned = raw
+            .trim()
+            .uppercase(Locale.US)
+            .replace(".", "")
+            .replace(Regex("\\s+"), " ")
+        if (cleaned.isEmpty()) return null
+
+        val isAm = cleaned.endsWith("AM")
+        val isPm = cleaned.endsWith("PM")
+        val hasMeridiem = isAm || isPm
+        val core = if (hasMeridiem) cleaned.dropLast(2).trim() else cleaned
+        if (core.isEmpty()) return null
+
+        val hour: Int
+        val minute: Int
+        if (core.contains(":")) {
+            val parts = core.split(":")
+            if (parts.size != 2) return null
+            hour = parts[0].trim().toIntOrNull() ?: return null
+            val minStr = parts[1].trim()
+            if (minStr.length !in 1..2) return null
+            minute = minStr.toIntOrNull() ?: return null
+        } else if (core.all { it.isDigit() }) {
+            when (core.length) {
+                1, 2 -> {
+                    if (!hasMeridiem) return null
+                    hour = core.toIntOrNull() ?: return null
+                    minute = 0
+                }
+                3 -> {
+                    hour = core.substring(0, 1).toIntOrNull() ?: return null
+                    minute = core.substring(1, 3).toIntOrNull() ?: return null
+                }
+                4 -> {
+                    hour = core.substring(0, 2).toIntOrNull() ?: return null
+                    minute = core.substring(2, 4).toIntOrNull() ?: return null
+                }
+                else -> return null
+            }
+        } else {
+            return null
+        }
+
+        if (minute !in 0..59) return null
+
+        val hour24 = if (hasMeridiem) {
+            if (hour !in 1..12) return null
+            when {
+                isAm && hour == 12 -> 0
+                isPm && hour == 12 -> 12
+                isPm -> hour + 12
+                else -> hour
+            }
+        } else {
+            if (hour !in 0..23) return null
+            hour
+        }
+        return hour24 * 60 + minute
+    }
+
     fun formatUtcMillisTime(utcMillis: Long): String {
         return cachedFormat("h:mm a").format(Date(utcMillis))
     }

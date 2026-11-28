@@ -493,29 +493,27 @@ fun ItemDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (item.itemType() == ItemType.TASK || (item.itemType() == ItemType.PLAN && progress.totalCount == 0)) {
-                            Button(
-                                onClick = {
-                                    feedback.onTaskToggled(!item.completed)
-                                    onToggleItemCompleted(item, !item.completed)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (item.completed) CalmSage else DeepBlue,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("detail_complete_toggle_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(if (item.completed) "Done · Reopen" else "Mark complete")
-                            }
+                        Button(
+                            onClick = {
+                                feedback.onTaskToggled(!item.completed)
+                                onToggleItemCompleted(item, !item.completed)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (item.completed) CalmSage else DeepBlue,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("detail_complete_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (item.completed) "Done · Reopen" else "Mark complete")
                         }
                         OutlinedButton(
                             onClick = { onEditItem(item) },

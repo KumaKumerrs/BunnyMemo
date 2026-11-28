@@ -196,4 +196,24 @@ class PlannerLogicAndReportTest {
         assertTrue(entry!!.isSnoozed)
         assertEquals(snoozedUntil, entry.triggerUtcMillis)
     }
+
+    @Test
+    fun parseFlexibleTimeMinutes_accepts12h24hCompactAndRejectsInvalid() {
+        assertEquals(14 * 60 + 30, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("2:30 PM"))
+        assertEquals(14 * 60 + 30, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("2:30pm"))
+        assertEquals(14 * 60 + 30, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("14:30"))
+        assertEquals(14 * 60, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("2pm"))
+        assertEquals(0, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("12:00 AM"))
+        assertEquals(12 * 60, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("12:00 PM"))
+        assertEquals(9 * 60 + 5, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("09:05"))
+        assertEquals(9 * 60 + 30, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("930am"))
+        assertEquals(23 * 60 + 59, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("2359"))
+
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes(""))
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("   "))
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("25:00"))
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("13:00 PM"))
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("9:65 AM"))
+        assertEquals(null, com.example.data.PlannerDateUtils.parseFlexibleTimeMinutes("hello"))
+    }
 }

@@ -39,11 +39,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +70,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -136,10 +140,11 @@ private fun buildDayBucket(
     date: CalendarDate,
     state: PlannerUiState.Ready,
     overdueIds: Set<String>,
-    invitesByDateIso: Map<String, List<CalendarInvite>>
+    invitesByDateIso: Map<String, List<CalendarInvite>>,
+    includeClasses: Boolean
 ): CalendarDayBucket {
     val itemsOnDay = state.items.filter { it.appearsOnDate(date) }
-    val classesOnDay = state.classesOnDate(date)
+    val classesOnDay = if (includeClasses) state.classesOnDate(date) else emptyList()
     val invitesOnDay = invitesByDateIso[date.toIsoString()].orEmpty()
     var hasEvent = false
     var hasPlan = false
@@ -150,11 +155,9 @@ private fun buildDayBucket(
         when (item.itemType()) {
             ItemType.EVENT -> hasEvent = true
             ItemType.PLAN -> hasPlan = true
-            ItemType.TASK -> {
-                hasTask = true
-                if (item.completed) hasCompletedDailyTask = true
-            }
+            ItemType.TASK -> hasTask = true
         }
+        if (item.completed) hasCompletedDailyTask = true
         if (item.id in overdueIds) hasOverdue = true
     }
     if (!hasCompletedDailyTask) {
@@ -187,6 +190,7 @@ fun CalendarScreen(
     onSelectItem: (String) -> Unit,
     onAddForDate: (CalendarDate) -> Unit,
     onEditClass: (ClassScheduleItem) -> Unit = {},
+    onToggleItemCompleted: (PlannerItem, Boolean) -> Unit = { _, _ -> },
     calendarInvites: List<CalendarInvite> = emptyList(),
     currentUserId: String? = null,
     onInviteFriendClick: (CalendarDate) -> Unit = {},
@@ -203,6 +207,7 @@ fun CalendarScreen(
     }
     var showBunnyAlmanac by rememberSaveable { mutableStateOf(false) }
     var categoryFilter by rememberSaveable { mutableStateOf(TaskCategoryFilter.ALL) }
+    var showClassesOnCalendar by rememberSaveable { mutableStateOf(false) }
 
     val invitesByDateIso = remember(calendarInvites) {
         calendarInvites.groupBy { it.plannedDate }
@@ -247,8 +252,8 @@ fun CalendarScreen(
         if (selectedCat == null) allDayItems else allDayItems.filter { it.taskCategory() == selectedCat }
     }
 
-    val dayClasses = remember(state.classSchedules, selectedDate) {
-        state.classesOnDate(selectedDate)
+    val dayClasses = remember(state.classSchedules, selectedDate, showClassesOnCalendar) {
+        if (showClassesOnCalendar) state.classesOnDate(selectedDate) else emptyList()
     }
     val dayInvites = remember(invitesByDateIso, selectedDate) {
         invitesByDateIso[selectedDate.toIsoString()].orEmpty()
@@ -258,12 +263,13 @@ fun CalendarScreen(
     val weekTimingsDates = remember(selectedDate, mode) {
         if (mode == CalendarMode.WEEK) PlannerDateUtils.buildWeekDates(selectedDate) else emptyList()
     }
-    val weekTimingsBuckets = remember(weekTimingsDates, state.items, state.classSchedules, overdueItemIds) {
+    val weekTimingsBuckets = remember(weekTimingsDates, state.items, state.classSchedules, overdueItemIds, showClassesOnCalendar) {
         weekTimingsDates.associateWith { date ->
             val itemsForDay = state.items
                 .filter { it.appearsOnDate(date) }
                 .sortedBy { it.startAtUtcMillis ?: (it.dueTimeMinutes?.toLong() ?: Long.MAX_VALUE) }
-            itemsForDay to state.classesOnDate(date)
+            val classesForDay = if (showClassesOnCalendar) state.classesOnDate(date) else emptyList()
+            itemsForDay to classesForDay
         }
     }
 
@@ -299,6 +305,11 @@ fun CalendarScreen(
                         today = today,
                         overdueItemIds = overdueItemIds,
                         invitesByDateIso = invitesByDateIso,
+                        showClassesOnCalendar = showClassesOnCalendar,
+                        onToggleShowClasses = {
+                            feedback.onLightTick()
+                            showClassesOnCalendar = !showClassesOnCalendar
+                        },
                         reducedMotion = reducedMotion,
                         roomyCells = isRoomyCells,
                         onModeChange = {
@@ -409,7 +420,11 @@ fun CalendarScreen(
                                 item = item,
                                 state = state,
                                 isSelected = item.id == selectedItemId,
-                                onClick = { onSelectItem(item.id) }
+                                onClick = { onSelectItem(item.id) },
+                                onToggleCompleted = { completed ->
+                                    feedback.onTaskToggled(completed)
+                                    onToggleItemCompleted(item, completed)
+                                }
                             )
                         }
                     }
@@ -456,6 +471,11 @@ fun CalendarScreen(
                         today = today,
                         overdueItemIds = overdueItemIds,
                         invitesByDateIso = invitesByDateIso,
+                        showClassesOnCalendar = showClassesOnCalendar,
+                        onToggleShowClasses = {
+                            feedback.onLightTick()
+                            showClassesOnCalendar = !showClassesOnCalendar
+                        },
                         reducedMotion = reducedMotion,
                         roomyCells = isRoomyCells,
                         onModeChange = {
@@ -558,7 +578,11 @@ fun CalendarScreen(
                             item = item,
                             state = state,
                             isSelected = item.id == selectedItemId,
-                            onClick = { onSelectItem(item.id) }
+                            onClick = { onSelectItem(item.id) },
+                            onToggleCompleted = { completed ->
+                                feedback.onTaskToggled(completed)
+                                onToggleItemCompleted(item, completed)
+                            }
                         )
                     }
                 }
@@ -616,6 +640,8 @@ private fun CalendarGridPanel(
     today: CalendarDate,
     overdueItemIds: Set<String>,
     invitesByDateIso: Map<String, List<CalendarInvite>>,
+    showClassesOnCalendar: Boolean,
+    onToggleShowClasses: () -> Unit,
     reducedMotion: Boolean,
     roomyCells: Boolean,
     onModeChange: (CalendarMode) -> Unit,
@@ -736,15 +762,56 @@ private fun CalendarGridPanel(
                 }
             }
 
-            ModernSegmentedToggle(
-                options = listOf(
-                    CalendarMode.MONTH to "Month",
-                    CalendarMode.WEEK to "Week"
-                ),
-                selected = mode,
-                onSelect = onModeChange,
-                tagPrefix = "calendar_mode"
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ModernSegmentedToggle(
+                    options = listOf(
+                        CalendarMode.MONTH to "Month",
+                        CalendarMode.WEEK to "Week"
+                    ),
+                    selected = mode,
+                    onSelect = onModeChange,
+                    tagPrefix = "calendar_mode",
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = showClassesOnCalendar,
+                    onClick = onToggleShowClasses,
+                    label = {
+                        Text(
+                            text = if (showClassesOnCalendar) "Classes on" else "Classes",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.School,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = SoftIceSurface,
+                        labelColor = MutedNavy,
+                        iconColor = MutedNavy,
+                        selectedContainerColor = CalmSageContainer,
+                        selectedLabelColor = CalmSage,
+                        selectedLeadingIconColor = CalmSage
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = showClassesOnCalendar,
+                        borderColor = SubtleBorder,
+                        selectedBorderColor = CalmSage.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.testTag("calendar_toggle_classes_chip")
+                )
+            }
 
             // Weekday headers with full day names for screen readers
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -797,9 +864,9 @@ private fun CalendarGridPanel(
                         PlannerDateUtils.buildMonthGrid(anchorDate)
                     }
                     // Precompute ALL day buckets for this month ONCE (including state.steps for accurate bloom dots)
-                    val monthBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso) {
+                    val monthBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso, showClassesOnCalendar) {
                         gridCells.filterNotNull().associateWith { date ->
-                            buildDayBucket(date, state, overdueItemIds, invitesByDateIso)
+                            buildDayBucket(date, state, overdueItemIds, invitesByDateIso, includeClasses = showClassesOnCalendar)
                         }
                     }
                     val rows = remember(gridCells) { gridCells.chunked(7) }
@@ -834,8 +901,10 @@ private fun CalendarGridPanel(
                     val weekDates = remember(anchorDate) {
                         PlannerDateUtils.buildWeekDates(anchorDate)
                     }
-                    val weekBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso) {
-                        weekDates.associateWith { date -> buildDayBucket(date, state, overdueItemIds, invitesByDateIso) }
+                    val weekBuckets = remember(anchorDate, state.items, state.steps, state.classSchedules, overdueItemIds, invitesByDateIso, showClassesOnCalendar) {
+                        weekDates.associateWith { date ->
+                            buildDayBucket(date, state, overdueItemIds, invitesByDateIso, includeClasses = showClassesOnCalendar)
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -879,7 +948,9 @@ private fun CalendarGridPanel(
                 CalendarLegendItem(color = DeepBlue, fill = SkyBlue.copy(alpha = 0.56f), label = "Event")
                 CalendarLegendItem(color = ForgetMeNotBlue, fill = SkyBlue.copy(alpha = 0.30f), label = "Plan")
                 CalendarLegendItem(color = PollenYellow, fill = PollenSoft, label = "Task")
-                CalendarLegendItem(color = CalmSage, fill = CalmSageContainer, label = "Class")
+                if (showClassesOnCalendar) {
+                    CalendarLegendItem(color = CalmSage, fill = CalmSageContainer, label = "Class")
+                }
                 CalendarLegendItem(color = SharedInviteAccent, fill = SharedInviteAccent.copy(alpha = 0.16f), label = "Shared")
             }
         }
@@ -1351,7 +1422,8 @@ private fun CalendarAgendaCard(
     item: PlannerItem,
     state: PlannerUiState.Ready,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onToggleCompleted: (Boolean) -> Unit
 ) {
     val progress = state.progressFor(item)
     val timingText = when (item.itemType()) {
@@ -1365,7 +1437,7 @@ private fun CalendarAgendaCard(
 
     ModernPanel(
         containerColor = selectedPanelContainer(isSelected),
-        borderColor = selectedPanelBorder(isSelected),
+        borderColor = if (item.completed) CalmSage.copy(alpha = 0.45f) else selectedPanelBorder(isSelected),
         shape = MaterialTheme.shapes.medium,
         elevation = 3.dp,
         onClick = onClick,
@@ -1377,36 +1449,82 @@ private fun CalendarAgendaCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MidnightNavy
-                )
-                Text(
-                    text = timingText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MutedNavy
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    TaskCategoryBadge(
-                        category = item.taskCategory(),
-                        compact = true
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (item.completed) MutedNavy else MidnightNavy
                     )
-                    if (item.itemType() == ItemType.TASK) {
-                        TaskPriorityBadge(
-                            priority = item.taskPriority(),
+                    Text(
+                        text = timingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MutedNavy
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TaskCategoryBadge(
+                            category = item.taskCategory(),
                             compact = true
                         )
+                        if (item.itemType() == ItemType.TASK) {
+                            TaskPriorityBadge(
+                                priority = item.taskPriority(),
+                                compact = true
+                            )
+                        }
+                        ModernPillBadge(
+                            text = item.itemType().label,
+                            containerColor = SoftIceSurface,
+                            contentColor = MutedNavy
+                        )
+                        if (item.completed) {
+                            ModernPillBadge(
+                                text = "Done",
+                                containerColor = CalmSageContainer,
+                                contentColor = CalmSage
+                            )
+                        }
                     }
-                    ModernPillBadge(
-                        text = item.itemType().label,
-                        containerColor = SoftIceSurface,
-                        contentColor = MutedNavy
-                    )
+                }
+                Surface(
+                    onClick = { onToggleCompleted(!item.completed) },
+                    shape = CircleShape,
+                    color = if (item.completed) CalmSage else SoftIceSurface,
+                    border = BorderStroke(
+                        width = 1.25.dp,
+                        color = if (item.completed) CalmSage else DeepBlue.copy(alpha = 0.45f)
+                    ),
+                    modifier = Modifier
+                        .size(38.dp)
+                        .testTag("calendar_agenda_complete_${item.id}")
+                        .semantics {
+                            contentDescription = if (item.completed) {
+                                "Mark ${item.title} incomplete"
+                            } else {
+                                "Mark ${item.title} complete"
+                            }
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = if (item.completed) MaterialTheme.colorScheme.onPrimary else DeepBlue,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                 }
             }
             if (progress.totalCount > 0) {

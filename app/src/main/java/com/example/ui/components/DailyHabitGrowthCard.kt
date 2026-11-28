@@ -128,10 +128,9 @@ fun DailyHabitGrowthCard(
     val snapshot by repo.snapshot.collectAsStateWithLifecycle()
 
     var showAddHabitModal by remember { mutableStateOf(false) }
-    var previewStageOverride by remember { mutableStateOf<BunnyGrowthStage?>(null) }
     var hopTriggerCount by remember { mutableIntStateOf(0) }
 
-    val activeStage = previewStageOverride ?: snapshot.bunnyStage
+    val activeStage = snapshot.bunnyStage
     val allHabitsDoneToday = snapshot.totalHabitsCount > 0 &&
         snapshot.completedTodayCount >= snapshot.totalHabitsCount
     val bunnyHappinessPct = remember(snapshot) {
@@ -257,19 +256,11 @@ fun DailyHabitGrowthCard(
                                     containerColor = if (activeStage == BunnyGrowthStage.GOLDEN_GUARDIAN) PollenSoft else SkyBlue.copy(alpha = 0.7f),
                                     contentColor = MidnightNavy
                                 )
-                                if (previewStageOverride != null) {
-                                    ModernPillBadge(
-                                        text = "Preview",
-                                        containerColor = PollenSoft,
-                                        contentColor = DeepBlue
-                                    )
-                                } else {
-                                    ModernPillBadge(
-                                        text = "${snapshot.overallStreakDays}d streak",
-                                        containerColor = CalmSageContainer,
-                                        contentColor = CalmSage
-                                    )
-                                }
+                                ModernPillBadge(
+                                    text = "${snapshot.overallStreakDays}d streak",
+                                    containerColor = CalmSageContainer,
+                                    contentColor = CalmSage
+                                )
                                 ModernPillBadge(
                                     text = "$bunnyHappinessPct% Happy",
                                     containerColor = if (allHabitsDoneToday) PollenSoft else SkyBlue.copy(alpha = 0.55f),
@@ -288,34 +279,32 @@ fun DailyHabitGrowthCard(
                                 maxLines = 2
                             )
 
-                            if (previewStageOverride == null) {
-                                val nextTarget = snapshot.bunnyStage.nextStreakTarget
-                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    LinearProgressIndicator(
-                                        progress = { snapshot.progressToNextStage },
-                                        color = DeepBlue,
-                                        trackColor = SubtleBorder,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(6.dp)
-                                            .clip(CircleShape)
-                                    )
-                                    Text(
-                                        text = if (nextTarget != null) {
-                                            val needed = (nextTarget - snapshot.overallStreakDays).coerceAtLeast(1)
-                                            "$needed more consistent ${if (needed == 1) "day" else "days"} to grow"
-                                        } else {
-                                            "Max bunny growth reached · Radiant!"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = DeepBlue
-                                    )
-                                }
+                            val nextTarget = snapshot.bunnyStage.nextStreakTarget
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                LinearProgressIndicator(
+                                    progress = { snapshot.progressToNextStage },
+                                    color = DeepBlue,
+                                    trackColor = SubtleBorder,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(CircleShape)
+                                )
+                                Text(
+                                    text = if (nextTarget != null) {
+                                        val needed = (nextTarget - snapshot.overallStreakDays).coerceAtLeast(1)
+                                        "$needed more consistent ${if (needed == 1) "day" else "days"} until a surprise evolution"
+                                    } else {
+                                        "Max bunny growth reached · Radiant!"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DeepBlue
+                                )
                             }
                         }
                     }
 
-                    // Interactive Growth Evolution Strip (tap any dot to preview growth animation)
+                    // Read-only Growth Milestone Strip (future evolutions remain a surprise until unlocked)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -323,36 +312,39 @@ fun DailyHabitGrowthCard(
                     ) {
                         BunnyGrowthStage.entries.forEach { stage ->
                             val reached = snapshot.overallStreakDays >= stage.minStreakDays
-                            val isShowing = activeStage == stage
+                            val isCurrent = activeStage == stage
                             Surface(
-                                onClick = {
-                                    feedback.onLightTick()
-                                    hopTriggerCount++
-                                    previewStageOverride = if (stage == snapshot.bunnyStage || previewStageOverride == stage) {
-                                        null
-                                    } else {
-                                        stage
-                                    }
-                                },
                                 shape = CircleShape,
                                 color = when {
-                                    isShowing -> DeepBlue
-                                    reached -> SkyBlue.copy(alpha = 0.6f)
+                                    isCurrent -> DeepBlue
+                                    reached -> CalmSageContainer
                                     else -> PureWhite.copy(alpha = 0.7f)
                                 },
                                 border = BorderStroke(
                                     width = 1.dp,
-                                    color = if (isShowing) DeepBlue else SubtleBorder
+                                    color = when {
+                                        isCurrent -> DeepBlue
+                                        reached -> CalmSage.copy(alpha = 0.45f)
+                                        else -> SubtleBorder
+                                    }
                                 ),
                                 modifier = Modifier.testTag("bunny_stage_pill_${stage.level}")
                             ) {
                                 Text(
-                                    text = "${stage.minStreakDays}d",
+                                    text = when {
+                                        isCurrent -> "${stage.minStreakDays}d ★"
+                                        reached -> "${stage.minStreakDays}d ✓"
+                                        else -> "${stage.minStreakDays}d ?"
+                                    },
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isShowing) FontWeight.Bold else FontWeight.Medium
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
                                     ),
-                                    color = if (isShowing) PureWhite else MidnightNavy,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    color = when {
+                                        isCurrent -> MaterialTheme.colorScheme.onPrimary
+                                        reached -> CalmSage
+                                        else -> MutedNavy
+                                    },
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                 )
                             }
                         }
@@ -418,20 +410,12 @@ fun DailyHabitGrowthCard(
                         }
                     }
 
-                    // Celebratory 8-bit mascot reward banner when all marked habits for the day are complete
+                    // Calm celebratory banner when all marked habits for the day are complete
                     AnimatedVisibility(visible = allHabitsDoneToday) {
                         Surface(
-                            onClick = {
-                                hopTriggerCount++
-                                feedback.onHabitRewardEarned(
-                                    allDoneToday = true,
-                                    isStreakMilestone = snapshot.overallStreakDays >= 2
-                                )
-                                feedback.playBunnyVoice( com.example.audio.BunnyVoiceMood.HABIT_REWARD)
-                            },
                             shape = MaterialTheme.shapes.medium,
-                            color = PollenSoft.copy(alpha = 0.85f),
-                            border = BorderStroke(1.dp, CalmSage.copy(alpha = 0.55f)),
+                            color = CalmSageContainer.copy(alpha = 0.92f),
+                            border = BorderStroke(1.dp, CalmSage.copy(alpha = 0.45f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("all_habits_completed_reward_banner")
@@ -449,7 +433,7 @@ fun DailyHabitGrowthCard(
                                     Icon(
                                         imageVector = Icons.Outlined.AutoAwesome,
                                         contentDescription = null,
-                                        tint = DeepBlue,
+                                        tint = CalmSage,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -459,16 +443,16 @@ fun DailyHabitGrowthCard(
                                             color = MidnightNavy
                                         )
                                         Text(
-                                            text = "Bunny is beaming! Tap to replay 8-bit victory fanfare",
+                                            text = "Your bunny is beaming today — keep your streak going!",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = DeepBlue
+                                            color = CalmSage
                                         )
                                     }
                                 }
                                 ModernPillBadge(
-                                    text = "8-Bit Fanfare",
+                                    text = "100% Today",
                                     containerColor = PureWhite,
-                                    contentColor = DeepBlue
+                                    contentColor = CalmSage
                                 )
                             }
                         }

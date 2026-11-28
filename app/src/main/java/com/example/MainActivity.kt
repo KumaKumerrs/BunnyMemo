@@ -1499,6 +1499,9 @@ private fun PlannerWorkspaceShell(
                                                                         classPrefillDayOfWeek = null
                                                                         showClassEditorModal = true
                                                                     },
+                                                                    onToggleItemCompleted = { item, completed ->
+                                                                        viewModel.toggleItemCompleted(item, completed)
+                                                                    },
                                                                     calendarInvites = calendarInvites,
                                                                     currentUserId = if (isLocalMode) null else currentUserId,
                                                                     onInviteFriendClick = { date ->
