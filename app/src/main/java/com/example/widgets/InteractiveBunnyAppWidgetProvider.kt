@@ -172,7 +172,15 @@ class InteractiveBunnyAppWidgetProvider : AppWidgetProvider() {
                     else -> 3
                 }
 
-                val familyBitmap = WidgetBitmapRenderer.renderInteractiveBunnyWidgetBitmap(
+                val familyBitmap = renderStudioWidgetBunny(
+                    context = context,
+                    expression = activeExpression,
+                    babyBunnyCount = babyCount,
+                    allHabitsDoneToday = allHabitsDoneToday,
+                    widthPx = bitmapW,
+                    heightPx = bitmapH,
+                    isDark = isDark
+                ) ?: WidgetBitmapRenderer.renderInteractiveBunnyWidgetBitmap(
                     month = snapshot.today.month,
                     expression = activeExpression,
                     pinchSide = pinchSide,
@@ -211,5 +219,72 @@ class InteractiveBunnyAppWidgetProvider : AppWidgetProvider() {
                 appWidgetManager.updateAppWidget(widgetId, views)
             }
         }
+
+        private fun renderStudioWidgetBunny(
+            context: Context,
+            expression: BunnyCompanionExpression,
+            babyBunnyCount: Int,
+            allHabitsDoneToday: Boolean,
+            widthPx: Int,
+            heightPx: Int,
+            isDark: Boolean
+        ): android.graphics.Bitmap? = runCatching {
+            val (w, h) = WidgetBitmapRenderer.scaleToSafeWidgetBudget(widthPx, heightPx, bytesPerPixel = 4)
+            val mainRes = when (expression) {
+                BunnyCompanionExpression.PATTED -> R.drawable.bunny_pose_patted
+                BunnyCompanionExpression.CHEEK_PINCHED -> R.drawable.bunny_expr_cheek_pinched
+                BunnyCompanionExpression.SAD -> R.drawable.bunny_expr_sad
+                BunnyCompanionExpression.HAPPY -> R.drawable.bunny_pose_celebrating
+                BunnyCompanionExpression.TALKING -> R.drawable.bunny_expr_talking
+                else -> if (allHabitsDoneToday) R.drawable.bunny_pose_celebrating else R.drawable.bunny_pose_greeting
+            }
+            val mainSrc = android.graphics.BitmapFactory.decodeResource(context.resources, mainRes) ?: return null
+            val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(out)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+            val haloPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = if (allHabitsDoneToday) {
+                    if (isDark) 0x38FAD976 else 0x55F7D56E
+                } else {
+                    if (isDark) 0x368CC3FF else 0x457CB6F9
+                }
+            }
+            val mainSize = (minOf(w, h) * 0.86f)
+            val cx = w * 0.5f
+            val cy = h * 0.52f
+            canvas.drawCircle(cx, cy, mainSize * 0.44f, haloPaint)
+
+            val kitsToShow = babyBunnyCount.coerceIn(0, 4)
+            if (kitsToShow > 0) {
+                val kitSrc = android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.bunny_expr_sprout)
+                if (kitSrc != null) {
+                    val kitSize = mainSize * 0.46f
+                    val offsets = listOf(-0.34f, 0.34f, -0.44f, 0.44f)
+                    for (i in 0 until kitsToShow) {
+                        val kx = w * (0.5f + offsets[i])
+                        val ky = h * 0.72f
+                        val dst = android.graphics.RectF(
+                            kx - kitSize / 2f,
+                            ky - kitSize / 2f,
+                            kx + kitSize / 2f,
+                            ky + kitSize / 2f
+                        )
+                        canvas.drawBitmap(kitSrc, null, dst, paint)
+                    }
+                    kitSrc.recycle()
+                }
+            }
+
+            val mainDst = android.graphics.RectF(
+                cx - mainSize / 2f,
+                cy - mainSize / 2f,
+                cx + mainSize / 2f,
+                cy + mainSize / 2f
+            )
+            canvas.drawBitmap(mainSrc, null, mainDst, paint)
+            mainSrc.recycle()
+            out
+        }.getOrNull()
     }
 }

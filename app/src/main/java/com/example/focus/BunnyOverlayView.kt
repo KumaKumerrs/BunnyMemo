@@ -287,6 +287,17 @@ class BunnyOverlayView(
             }
         }
 
+        private val guardBitmap by lazy {
+            runCatching {
+                android.graphics.BitmapFactory.decodeResource(
+                    resources,
+                    com.example.R.drawable.bunny_pose_guard
+                )
+            }.getOrNull()
+        }
+        private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val bitmapDst = RectF()
+
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val w = width.toFloat()
@@ -296,14 +307,23 @@ class BunnyOverlayView(
 
             val ox = (w - size) / 2f
             val oy = (h - size) / 2f
-            val strokeW = (size * 0.026f).coerceIn(3f, 10f)
-            strokePaint.strokeWidth = strokeW
 
             // Soft sky halo behind bunny when growing big
             if (progress > 0.25f) {
                 fillPaint.color = Color.argb(((progress * 110f).toInt()).coerceIn(25, 115), 124, 182, 249)
                 canvas.drawCircle(ox + size * 0.50f, oy + size * 0.56f, size * 0.43f, fillPaint)
             }
+
+            val bmp = guardBitmap
+            if (bmp != null && !bmp.isRecycled) {
+                val pad = size * 0.04f
+                bitmapDst.set(ox + pad, oy + pad, ox + size - pad, oy + size - pad)
+                canvas.drawBitmap(bmp, null, bitmapDst, bitmapPaint)
+                return
+            }
+
+            val strokeW = (size * 0.026f).coerceIn(3f, 10f)
+            strokePaint.strokeWidth = strokeW
 
             // Left & right ears anchored into head crown
             val earTilt = 10f + progress * 8f

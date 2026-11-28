@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -437,6 +438,40 @@ fun HoppingBunnyLoader(
         )
     }
 
+    val phase = hopPhase.value
+    val arcHeight = if (reducedMotion) 0f else sin(phase * PI).toFloat().coerceAtLeast(0f)
+    val shadowScale = 1f - arcHeight * 0.32f
+    val tiltDeg = if (reducedMotion) 0f else (-8f + arcHeight * 14f)
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .semantics { contentDescription = "Hopping ${breed.breedName} bunny loading animation" }
+            .testTag("hopping_bunny_loader"),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val shadowW = this.size.width * 0.44f * shadowScale
+            val shadowH = this.size.height * 0.08f * shadowScale
+            drawOval(
+                color = (if (isDarkTheme) Color.Black else MidnightNavy).copy(alpha = 0.14f * shadowScale),
+                topLeft = Offset((this.size.width - shadowW) / 2f, this.size.height * 0.80f),
+                size = Size(shadowW, shadowH)
+            )
+        }
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.bunny_expr_hopping),
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier
+                .size(size * 0.86f)
+                .graphicsLayer {
+                    translationY = -arcHeight * 26f
+                    rotationZ = tiltDeg
+                }
+        )
+    }
+    return
     Box(
         modifier = modifier
             .size(size)

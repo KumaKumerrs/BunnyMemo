@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -852,6 +854,46 @@ fun AnimatedGrowthBunnyCanvas(
         label = "bunny_bob_phase"
     )
 
+    val stageDrawable = when (stage.level) {
+        1, 2 -> R.drawable.bunny_expr_sprout
+        3 -> R.drawable.bunny_pose_greeting
+        4 -> R.drawable.bunny_pose_celebrating
+        else -> R.drawable.bunny_expr_guardian
+    }
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        if (stage.level >= 5) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.86f)
+                    .clip(CircleShape)
+                    .background(PollenYellow.copy(alpha = 0.24f + idleBob * 0.12f))
+            )
+        } else if (stage.level >= 3) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.76f)
+                    .clip(CircleShape)
+                    .background(SkyBlue.copy(alpha = 0.24f))
+            )
+        }
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = stageDrawable),
+            contentDescription = stage.title,
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize(0.92f)
+                .graphicsLayer {
+                    scaleX = animatedScale
+                    scaleY = animatedScale
+                    translationY = (hopOffsetFraction * 90f) + ((idleBob - 0.5f) * 4f)
+                }
+        )
+    }
+    return
     Canvas(modifier = modifier) {
         val s = size.minDimension
         if (s <= 4f) return@Canvas

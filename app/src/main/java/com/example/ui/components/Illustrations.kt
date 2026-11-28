@@ -246,14 +246,19 @@ enum class BunnyPose {
     GUARD
 }
 
-private fun studioBreedPortraitRes(breed: BunnyBreed): Int? = when (breed) {
+private fun studioBreedPortraitRes(breed: BunnyBreed): Int = when (breed) {
+    BunnyBreed.HIMALAYAN -> R.drawable.bunny_breed_himalayan
     BunnyBreed.HOLLAND_LOP -> R.drawable.bunny_breed_holland_lop
-    BunnyBreed.NETHERLAND_DWARF -> R.drawable.bunny_breed_netherland_dwarf
     BunnyBreed.DUTCH -> R.drawable.bunny_breed_dutch
     BunnyBreed.LIONHEAD -> R.drawable.bunny_breed_lionhead
-    BunnyBreed.HARLEQUIN -> R.drawable.bunny_breed_harlequin
     BunnyBreed.ENGLISH_ANGORA -> R.drawable.bunny_breed_angora
-    else -> null
+    BunnyBreed.MINI_REX -> R.drawable.bunny_breed_mini_rex
+    BunnyBreed.ENGLISH_SPOT -> R.drawable.bunny_breed_english_spot
+    BunnyBreed.HARLEQUIN -> R.drawable.bunny_breed_harlequin
+    BunnyBreed.CALIFORNIAN -> R.drawable.bunny_breed_californian
+    BunnyBreed.FLEMISH_GIANT -> R.drawable.bunny_breed_flemish_giant
+    BunnyBreed.NETHERLAND_DWARF -> R.drawable.bunny_breed_netherland_dwarf
+    BunnyBreed.BLANC_DE_HOTOT -> R.drawable.bunny_breed_blanc_hotot
 }
 
 private fun studioPoseRes(pose: BunnyPose): Int = when (pose) {
